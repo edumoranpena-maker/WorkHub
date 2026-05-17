@@ -4,7 +4,7 @@ import {
   ChevronLeft, Search, X, Heart, MessageCircle, Image, Video,
   Mic, MicOff, Send, Play, Pause, Square, Globe, Users, Lock,
   CalendarDays, Filter, Check, ChevronDown, ChevronRight,
-  Bookmark, Share2, Clock, MoreHorizontal, FileText, Megaphone, Hash, Plus,
+  Bookmark, Share2, Clock, MoreHorizontal, FileText, Megaphone, Hash, Plus, MessageSquare
 } from "lucide-react";
 
 // ─── useIsDesktop ─────────────────────────────────────────────────────────────
