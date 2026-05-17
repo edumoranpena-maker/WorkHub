@@ -645,7 +645,7 @@ function MediaPicker({ type, onFile, onClose }) {
         initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 36 }}
         onClick={e => e.stopPropagation()}
-        style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 151, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderRadius: "24px 24px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 40px rgba(124,77,255,0.18)", padding: "14px 16px 36px" }}
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 480, margin: "0 auto", zIndex: 151, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderRadius: "24px 24px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 40px rgba(124,77,255,0.18)", padding: "14px 16px 36px", boxSizing: "border-box" }}
       >
         {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
@@ -729,7 +729,7 @@ function PostingBar({ onSubmit, onClose }) {
         initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 36 }}
         onClick={e => e.stopPropagation()}
-        style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 99, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderTop: `1px solid rgba(92,47,255,0.25)`, borderRadius: "24px 24px 0 0", boxShadow: `0 -4px 40px rgba(124,77,255,0.22)`, padding: "16px 16px 32px" }}>
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 480, margin: "0 auto", zIndex: 99, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderTop: `1px solid rgba(92,47,255,0.25)`, borderRadius: "24px 24px 0 0", boxShadow: `0 -4px 40px rgba(124,77,255,0.22)`, padding: "16px 16px 32px", boxSizing: "border-box" }}>
 
         {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
