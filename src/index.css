@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global resets ─────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background-color: #08080e;
+  color: #eaeaf5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+/* ── Scrollbar hiding (used by filter tabs / stat pills) ───── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Textarea resize prevention ─────────────────────────────── */
+textarea {
+  resize: none;
+}
+
+/* ── Input / button baseline ─────────────────────────────────── */
+input, textarea, button {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}

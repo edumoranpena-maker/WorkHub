@@ -1,0 +1,647 @@
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CalendarDays, FileText, Megaphone, Hash,
+  Bell, Search, Sparkles, TrendingUp, Clock,
+  Pin, ChevronLeft, Plus, ArrowRight,
+} from "lucide-react";
+import Planning from "./sections/Planning";
+import Recaps from "./sections/Recaps";
+
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+const C = {
+  bg: "#08080e",
+  surface: "#0e0e18",
+  card: "#13131f",
+  cardHover: "#19192a",
+  border: "#1c1c2e",
+  borderGlow: "#5c2fff",
+  accent: "#7c4dff",
+  accentLight: "#9d71ff",
+  accentDim: "#3d2480",
+  accentPulse: "rgba(124,77,255,0.18)",
+  text: "#eaeaf5",
+  textMuted: "#6a6a82",
+  textDim: "#32324a",
+  green: "#1ed99a",
+  greenDim: "rgba(30,217,154,0.12)",
+  amber: "#f5a623",
+  blue: "#4fa3ff",
+  red: "#ff4f6a",
+};
+
+const font = "'DM Sans', sans-serif";
+
+const SECTIONS = [
+  { id: "planning",      label: "Planning",           icon: CalendarDays, subtitle: "Trade plans & market analysis",      activity: "24 active posts",      accentColor: "#7c4dff", glowColor: "rgba(124,77,255,0.18)",   badge: "4 new" },
+  { id: "recaps",        label: "Recaps & Updates",   icon: FileText,     subtitle: "Weekly summaries & progress",        activity: "12 updates this week", accentColor: "#22d3a0", glowColor: "rgba(34,211,160,0.15)",    badge: "1 new" },
+  { id: "announcements", label: "Announcements",      icon: Megaphone,    subtitle: "Official updates from leadership",   activity: "5 announcements",      accentColor: "#f59e0b", glowColor: "rgba(245,158,11,0.15)",    badge: null    },
+  { id: "rooms",         label: "Rooms",              icon: Hash,         subtitle: "Live group sessions & channels",     activity: "3 active rooms",       accentColor: "#60a5fa", glowColor: "rgba(96,165,250,0.15)",    badge: "2 live" },
+];
+
+// ─── Preview posts per section ────────────────────────────────────────────────
+const PREVIEW_POSTS = {
+  planning: {
+    title: "Weekly Market Outlook",
+    excerpt: "Major confluence zones aligning across DXY and XAUUSD. Expecting a corrective move before continuation.",
+    author: "Alex H.",
+    timestamp: "2h ago",
+    tag: "Analysis",
+  },
+  recaps: {
+    title: "Week 20 Recap — Targets Hit",
+    excerpt: "XAUUSD confirmed the rejection at 2340. Target hit at 2310. Full breakdown of the week's moves inside.",
+    author: "Alex H.",
+    timestamp: "Today",
+    tag: "Weekly",
+  },
+  announcements: {
+    title: "New Room Schedule — May",
+    excerpt: "We've updated the live room schedule for May. Daily sessions now at 8 AM and 2 PM EST. Check the full calendar.",
+    author: "Admin",
+    timestamp: "Yesterday",
+    tag: "Official",
+  },
+  rooms: {
+    title: "🔴 Live: Pre-Market Session",
+    excerpt: "Alex H. is hosting a live pre-market session. Join now for real-time analysis and trade setups.",
+    author: "Alex H.",
+    timestamp: "Live now",
+    tag: "Live",
+  },
+};
+
+const slideVariants = {
+  enter: (d) => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit:  (d) => ({ x: d > 0 ? "-100%" : "100%", opacity: 0 }),
+};
+const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
+
+// ─── useIsDesktop ─────────────────────────────────────────────────────────────
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return isDesktop;
+}
+
+// ─── Shared Sidebar ───────────────────────────────────────────────────────────
+function Sidebar({ activeId, onNavigate, onBack }) {
+  return (
+    <motion.aside
+      initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      style={{
+        width: 230, flexShrink: 0,
+        background: C.surface, borderRight: `1px solid ${C.border}`,
+        display: "flex", flexDirection: "column",
+        position: "sticky", top: 0, height: "100vh", overflowY: "auto",
+      }}
+    >
+      {/* Logo / back area */}
+      <div style={{ padding: "20px 18px 14px", borderBottom: `1px solid ${C.border}` }}>
+        {onBack && (
+          <button onClick={onBack}
+            style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: C.accentLight, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}>
+            <ChevronLeft size={17} strokeWidth={2.2} /> Back
+          </button>
+        )}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <img
+            src="/workspace_logo.png"
+            alt="Workspace"
+            style={{ height: 32, width: "auto", mixBlendMode: "screen", filter: "brightness(1.15) contrast(1.05)", userSelect: "none", pointerEvents: "none" }}
+          />
+        </div>
+      </div>
+
+      {/* Nav items */}
+      <div style={{ padding: "10px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+        {SECTIONS.map(s => {
+          const active = s.id === activeId;
+          return (
+            <motion.button key={s.id} whileHover={{ x: active ? 0 : 2 }} whileTap={{ scale: 0.97 }}
+              onClick={() => !active && onNavigate && onNavigate(s.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 11, padding: "11px 13px",
+                borderRadius: 14,
+                border: active ? `1px solid ${s.accentColor}35` : "1px solid transparent",
+                background: active ? `${s.accentColor}10` : "transparent",
+                cursor: active ? "default" : "pointer",
+                textAlign: "left", width: "100%", transition: "all 0.15s",
+              }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: `${s.accentColor}${active ? "22" : "14"}`,
+                border: `1px solid ${s.accentColor}${active ? "38" : "22"}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <s.icon size={16} color={s.accentColor} strokeWidth={1.8} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  margin: 0, fontFamily: font, fontSize: 13,
+                  fontWeight: active ? 700 : 500,
+                  color: active ? s.accentColor : C.textMuted,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>{s.label}</p>
+                {active && <p style={{ margin: "1px 0 0", fontFamily: font, fontSize: 10, color: s.accentColor, fontWeight: 600, opacity: 0.75 }}>You are here</p>}
+              </div>
+              {/* Active dot */}
+              {active && (
+                <div style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: s.accentColor, boxShadow: `0 0 8px ${s.accentColor}`,
+                  flexShrink: 0,
+                }} />
+              )}
+              {/* Badge for inactive */}
+              {!active && s.badge && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: s.accentColor,
+                  background: `${s.accentColor}18`, border: `1px solid ${s.accentColor}30`,
+                  borderRadius: 20, padding: "2px 7px", fontFamily: font,
+                }}>{s.badge}</span>
+              )}
+            </motion.button>
+          );
+        })}
+      </div>
+    </motion.aside>
+  );
+}
+
+// ─── IconBtn ──────────────────────────────────────────────────────────────────
+function IconBtn({ icon: Icon, badge, onClick }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        width: 36, height: 36, borderRadius: 10, border: `1px solid ${hov ? C.accentDim : C.border}`,
+        background: C.card, color: hov ? C.text : C.textMuted,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", position: "relative", transition: "all 0.15s",
+      }}>
+      <Icon size={16} strokeWidth={2} />
+      {badge && (
+        <span style={{
+          position: "absolute", top: 7, right: 7, width: 6, height: 6,
+          borderRadius: "50%", background: C.accent, boxShadow: `0 0 6px ${C.accent}`,
+        }} />
+      )}
+    </button>
+  );
+}
+
+// ─── MobileTopBar ─────────────────────────────────────────────────────────────
+function MobileTopBar({ onBack, title, accent, showIcons }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      style={{
+        display: "flex", alignItems: "center",
+        padding: "10px 16px",
+        gap: 12, borderBottom: `1px solid ${C.border}`,
+        background: `${C.surface}f0`, backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30,
+        minHeight: 58,
+      }}
+    >
+      {onBack && (
+        <button onClick={onBack} style={{
+          display: "flex", alignItems: "center", gap: 3,
+          color: accent || C.accentLight, background: "none", border: "none",
+          cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500,
+          padding: "4px 0", flexShrink: 0,
+        }}>
+          <ChevronLeft size={19} strokeWidth={2.2} /> Back
+        </button>
+      )}
+      <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
+        {title ? (
+          <span style={{ color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            {title}
+          </span>
+        ) : (
+          <img src="/workspace_logo.png" alt="Workspace" style={{ height: 34, width: "auto", mixBlendMode: "screen", filter: "brightness(1.15) contrast(1.05)", userSelect: "none", pointerEvents: "none" }} />
+        )}
+      </div>
+      {showIcons && (
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <IconBtn icon={Search} /><IconBtn icon={Bell} badge />
+        </div>
+      )}
+      {onBack && <div style={{ width: 44 }} />}
+    </motion.div>
+  );
+}
+
+// ─── Home Preview Post Card ───────────────────────────────────────────────────
+function HomePreviewCard({ section, onClick }) {
+  const [hov, setHov] = useState(false);
+  const post = PREVIEW_POSTS[section.id];
+  const Icon = section.icon;
+  if (!post) return null;
+
+  const tagColors = { Live: C.red };
+  const tagColor = tagColors[post.tag] || section.accentColor;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        background: hov ? C.cardHover : C.card,
+        border: `1px solid ${hov ? section.accentColor + "44" : C.border}`,
+        borderRadius: 18, overflow: "hidden", cursor: "pointer",
+        transition: "all 0.2s cubic-bezier(0.22,1,0.36,1)",
+        boxShadow: hov ? `0 0 0 1px ${section.accentColor}22, 0 8px 32px ${section.glowColor}` : "none",
+        transform: hov ? "translateY(-2px)" : "translateY(0)",
+        position: "relative",
+      }}
+    >
+      {/* Accent bar top */}
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${section.accentColor}, transparent)` }} />
+
+      <div style={{ padding: "14px 16px" }}>
+        {/* Section label row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: 8,
+              background: `${section.accentColor}20`, border: `1px solid ${section.accentColor}30`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Icon size={13} color={section.accentColor} strokeWidth={1.8} />
+            </div>
+            <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: section.accentColor, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              {section.label}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: tagColor,
+              background: `${tagColor}18`, border: `1px solid ${tagColor}30`,
+              borderRadius: 20, padding: "2px 8px", fontFamily: font,
+            }}>{post.tag}</span>
+            <motion.div animate={{ x: hov ? 2 : 0 }} transition={{ duration: 0.15 }} style={{ color: C.textDim }}>
+              <ArrowRight size={14} strokeWidth={2} />
+            </motion.div>
+          </div>
+        </div>
+
+        {/* Post content */}
+        <h3 style={{ margin: "0 0 5px", fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.3 }}>
+          {post.title}
+        </h3>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {post.excerpt}
+        </p>
+
+        {/* Footer */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+          <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{post.author}</span>
+          <span style={{ width: 2, height: 2, borderRadius: "50%", background: C.textDim }} />
+          <span style={{ fontFamily: font, fontSize: 11, color: post.timestamp === "Live now" ? C.red : C.textDim }}>{post.timestamp}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── HomeScreen (Desktop) ─────────────────────────────────────────────────────
+function HomeScreenDesktop({ onNavigate, isHost, setIsHost }) {
+  return (
+    <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
+      <Sidebar activeId="home" onNavigate={onNavigate} />
+
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+        {/* Sticky top bar */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 30,
+          background: `${C.surface}f2`, backdropFilter: "blur(24px)",
+          borderBottom: `1px solid ${C.border}`, padding: "14px 28px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={13} color={C.accentLight} />
+            <span style={{ color: C.accentLight, fontFamily: font, fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>Your workspace</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <IconBtn icon={Search} />
+            <IconBtn icon={Bell} badge />
+          </div>
+        </div>
+
+        {/* Hero */}
+        <div style={{ padding: "32px 28px 20px" }}>
+          <h1 style={{ margin: "0 0 4px", color: C.text, fontFamily: font, fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>
+            Good morning,{" "}
+            <span style={{ background: `linear-gradient(90deg, ${C.accentLight}, #c4b5fd)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              team.
+            </span>
+          </h1>
+          <p style={{ margin: 0, color: C.textMuted, fontFamily: font, fontSize: 14 }}>4 new updates since your last visit</p>
+
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+            {[
+              { icon: TrendingUp, label: "Active",   value: "24", color: C.green       },
+              { icon: Clock,      label: "Pending",  value: "7",  color: C.amber       },
+              { icon: Bell,       label: "Mentions", value: "3",  color: C.accentLight },
+            ].map(stat => (
+              <div key={stat.label} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "9px 14px",
+              }}>
+                <stat.icon size={14} color={stat.color} strokeWidth={2} />
+                <span style={{ color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>{stat.label}</span>
+                <span style={{ color: stat.color, fontFamily: font, fontSize: 13, fontWeight: 700 }}>{stat.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Feed — 1 post per section */}
+        <div style={{ padding: "0 28px 48px", maxWidth: 760, display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            Latest from each section
+          </p>
+          {SECTIONS.map((s, i) => (
+            <motion.div key={s.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 + i * 0.07 }}>
+              <HomePreviewCard section={s} onClick={() => onNavigate(s.id)} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── HomeScreen (Mobile) ──────────────────────────────────────────────────────
+function HomeScreenMobile({ onNavigate }) {
+  return (
+    <div style={{ height: "100%", overflowY: "auto", overflowX: "hidden" }}>
+      <MobileTopBar showIcons />
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }} style={{ padding: "24px 20px 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Sparkles size={14} color={C.accentLight} />
+          <span style={{ color: C.accentLight, fontFamily: font, fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            Your workspace
+          </span>
+        </div>
+        <h1 style={{ margin: 0, color: C.text, fontFamily: font, fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
+          Good morning,{" "}
+          <span style={{ background: `linear-gradient(90deg, ${C.accentLight}, #c4b5fd)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            team.
+          </span>
+        </h1>
+        <p style={{ margin: "6px 0 0", color: C.textMuted, fontFamily: font, fontSize: 14 }}>
+          4 new updates since your last visit
+        </p>
+      </motion.div>
+
+      {/* Stats */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15, duration: 0.35 }}
+        style={{ display: "flex", gap: 10, padding: "16px 20px", overflowX: "auto", scrollbarWidth: "none" }}>
+        {[
+          { icon: TrendingUp, label: "Active",   value: "24", color: C.green       },
+          { icon: Clock,      label: "Pending",  value: "7",  color: C.amber       },
+          { icon: Bell,       label: "Mentions", value: "3",  color: C.accentLight },
+        ].map((stat) => (
+          <div key={stat.label} style={{
+            flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8,
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "9px 14px",
+          }}>
+            <stat.icon size={14} color={stat.color} strokeWidth={2} />
+            <span style={{ color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>{stat.label}</span>
+            <span style={{ color: stat.color, fontFamily: font, fontSize: 13, fontWeight: 700 }}>{stat.value}</span>
+          </div>
+        ))}
+      </motion.div>
+
+      {/* Section divider */}
+      <div style={{ padding: "0 20px 8px" }}>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Latest from each section
+        </p>
+      </div>
+
+      {/* Preview posts */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "4px 20px 32px" }}>
+        {SECTIONS.map((s, i) => (
+          <motion.div key={s.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.08 }}>
+            <HomePreviewCard section={s} onClick={() => onNavigate(s.id)} />
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── GenericSectionScreen ─────────────────────────────────────────────────────
+function GenericSectionScreen({ section, onBack, onNavigate, isHost }) {
+  const isDesktop = useIsDesktop();
+  const posts = [
+    { id: 1, title: "Week 28 — Team Recap",       meta: "Today",       pinned: true,  tag: "Weekly"    },
+    { id: 2, title: "Backend API milestone hit",   meta: "2 days ago",  pinned: false, tag: "Milestone" },
+    { id: 3, title: "Design review — July",        meta: "1 week ago",  pinned: false, tag: "Design"    },
+  ];
+
+  const FeedContent = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: isDesktop ? "20px 28px 48px" : "16px 18px 32px", maxWidth: isDesktop ? 760 : "none", margin: isDesktop ? "0 auto" : 0 }}>
+      {posts.map((p, i) => (
+        <motion.div key={p.id} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.06 + i * 0.07 }}
+          style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
+          <div style={{ width: 3, height: 36, borderRadius: 99, background: p.pinned ? section.accentColor : C.border, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+              {p.pinned && <Pin size={11} color={section.accentColor} strokeWidth={2.5} />}
+              <span style={{ color: C.text, fontFamily: font, fontSize: 14, fontWeight: 600 }}>{p.title}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: C.textMuted, fontFamily: font, fontSize: 12 }}>{p.meta}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: section.accentColor, background: `${section.accentColor}18`, borderRadius: 6, padding: "2px 7px", fontFamily: font }}>{p.tag}</span>
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+
+  if (isDesktop) {
+    return (
+      <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
+        <Sidebar activeId={section.id} onNavigate={onNavigate} onBack={onBack} />
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          {/* Top bar */}
+          <div style={{
+            position: "sticky", top: 0, zIndex: 30,
+            background: `${C.surface}f2`, backdropFilter: "blur(24px)",
+            borderBottom: `1px solid ${C.border}`, padding: "14px 28px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: `${section.accentColor}20`, border: `1px solid ${section.accentColor}30`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <section.icon size={18} color={section.accentColor} strokeWidth={1.8} />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>{section.label}</h2>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>{section.subtitle}</p>
+              </div>
+            </div>
+            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px" }}>
+              {isHost ? "Host" : "Member"}
+            </span>
+          </div>
+          <FeedContent />
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile
+  return (
+    <div style={{ height: "100%", overflowY: "auto" }}>
+      <MobileTopBar title={section.label} onBack={onBack} accent={section.accentColor} />
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+        style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.border}`, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: section.glowColor, filter: "blur(50px)", pointerEvents: "none" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 14,
+            background: `linear-gradient(135deg, ${section.accentColor}30, ${section.accentColor}12)`,
+            border: `1px solid ${section.accentColor}40`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <section.icon size={22} color={section.accentColor} strokeWidth={1.7} />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, color: C.text, fontFamily: font, fontSize: 18, fontWeight: 800 }}>{section.label}</h2>
+            <p style={{ margin: "3px 0 0", color: C.textMuted, fontFamily: font, fontSize: 13 }}>{section.subtitle}</p>
+          </div>
+        </div>
+      </motion.div>
+      <FeedContent />
+    </div>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [currentSection, setCurrentSection] = useState(null);
+  const [direction, setDirection] = useState(1);
+  const [isHost, setIsHost] = useState(true);
+  const isDesktop = useIsDesktop();
+
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }, []);
+
+  const navigate = (sectionId) => {
+    const target = SECTIONS.find(s => s.id === sectionId);
+    if (target) { setDirection(1); setCurrentSection(target); }
+  };
+  const goBack = () => { setDirection(-1); setCurrentSection(null); };
+
+  const navigateTo = (sectionId) => {
+    const target = SECTIONS.find(s => s.id === sectionId);
+    if (target) { setDirection(1); setCurrentSection(target); }
+  };
+
+  // On desktop, no max-width constraint at all
+  const maxW = isDesktop ? "none" : 430;
+
+  return (
+    <div style={{
+      height: "100vh", width: "100vw",
+      background: C.bg,
+      display: "flex", justifyContent: "center", alignItems: "stretch",
+      overflow: "hidden",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: maxW,
+        height: "100vh",
+        background: C.surface,
+        position: "relative",
+        overflow: "hidden",
+        boxShadow: "0 0 80px rgba(0,0,0,0.7)",
+      }}>
+        {/* Ambient glow */}
+        <div style={{
+          position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)",
+          width: 300, height: 120, borderRadius: "50%",
+          background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`,
+          pointerEvents: "none", zIndex: 0,
+        }} />
+
+        {/* Role toggle (dev tool) — only show on mobile or when no desktop sidebar */}
+        {!isDesktop && (
+          <div style={{
+            position: "fixed", top: 12, right: currentSection ? 12 : 60,
+            zIndex: 9998,
+            background: C.card, border: `1px solid ${C.border}`,
+            borderRadius: 20, padding: "4px 4px 4px 10px",
+            display: "flex", alignItems: "center", gap: 6,
+            boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+          }}>
+            <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {isHost ? "Host" : "Member"}
+            </span>
+            <button onClick={() => setIsHost(h => !h)} style={{
+              width: 34, height: 18, borderRadius: 9, border: "none",
+              background: isHost ? C.accent : C.border, cursor: "pointer",
+              position: "relative", transition: "background 0.2s",
+            }}>
+              <motion.div animate={{ x: isHost ? 16 : 2 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2 }} />
+            </button>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <AnimatePresence mode="sync" custom={direction}>
+          {!currentSection ? (
+            <motion.div key="home" custom={direction} variants={slideVariants}
+              initial="enter" animate="center" exit="exit" transition={springTrans}
+              style={{ position: "absolute", inset: 0, zIndex: 1, background: C.surface, overflow: "hidden" }}>
+              {isDesktop ? (
+                <HomeScreenDesktop onNavigate={navigate} isHost={isHost} setIsHost={setIsHost} />
+              ) : (
+                <HomeScreenMobile onNavigate={navigate} />
+              )}
+            </motion.div>
+          ) : (
+            <motion.div key={currentSection.id} custom={direction} variants={slideVariants}
+              initial="enter" animate="center" exit="exit" transition={springTrans}
+              style={{ position: "absolute", inset: 0, zIndex: 1, background: C.surface, overflow: "hidden" }}>
+              {currentSection.id === "planning" ? (
+                <Planning section={currentSection} onBack={goBack} isHost={isHost} onNavigate={navigateTo} />
+              ) : currentSection.id === "recaps" ? (
+                <Recaps section={currentSection} onBack={goBack} isHost={isHost} onNavigate={navigateTo} />
+              ) : (
+                <GenericSectionScreen section={currentSection} onBack={goBack} onNavigate={navigateTo} isHost={isHost} />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
