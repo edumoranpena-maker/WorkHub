@@ -6,7 +6,14 @@ import {
   Globe, Users, Lock, Send, ChevronRight, ChevronDown,
   BarChart2, Clock, Eye, EyeOff, CalendarDays, FileText,
   Megaphone, Hash, MessageSquare, Volume2, Play, Pause,
+Loader,
 } from "lucide-react";
+import {
+  fetchAnnouncements,
+  createAnnouncement,
+  deleteAnnouncement,
+  toggleAnnouncementLike,
+} from "../lib/announcementsApi.js";
 
 // ─── Design Tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -995,10 +1002,21 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 export default function Announcements({ section, onBack, isHost, onNavigate }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
+  const [loadingPosts, setLoadingPosts] = useState(true);
   const [stories, setStories] = useState(MOCK_STORIES);
   const [viewingStory, setViewingStory] = useState(null); // index
   const [showUploader, setShowUploader] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
+
+  // ── Load announcements from Supabase ──────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetchAnnouncements().then(data => {
+      if (!cancelled && data.length > 0) setPosts(data);
+      if (!cancelled) setLoadingPosts(false);
+    }).catch(() => { if (!cancelled) setLoadingPosts(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleVote = (postId, optId) => {
     setPosts(ps => ps.map(p => {
@@ -1008,16 +1026,20 @@ export default function Announcements({ section, onBack, isHost, onNavigate }) {
     }));
   };
 
-  const handleDeletePost = id => setPosts(ps => ps.filter(p => p.id !== id));
+  const handleDeletePost = async (id) => {
+    setPosts(ps => ps.filter(p => p.id !== id));
+    await deleteAnnouncement(id);
+  };
 
   const handlePublishStory = (data) => {
     setStories(s => [{ id: `s${Date.now()}`, author: "Alex H.", role: "host", bg: data.bg, text: data.text, img: data.imgPreview, createdAt: Date.now(), expiresIn: data.duration, seen: false }, ...s]);
     setShowUploader(false);
   };
 
-  const handlePublishPost = (data) => {
-    const newPost = {
-      id: `a${Date.now()}`, type: data.type,
+  const handlePublishPost = async (data) => {
+    const tempId = `a_temp_${Date.now()}`;
+    const tempPost = {
+      id: tempId, type: data.type,
       title: data.title, content: data.content,
       media: data.imgPreview ? [{ type: "image", url: data.imgPreview }] : [],
       author: "Alex H.", role: "host", createdAt: Date.now(),
@@ -1028,7 +1050,9 @@ export default function Announcements({ section, onBack, isHost, onNavigate }) {
       revealAt: data.revealAt || undefined,
       revealed: false,
     };
-    setPosts(ps => [newPost, ...ps]);
+    setPosts(ps => [tempPost, ...ps]);
+    const saved = await createAnnouncement({ title: data.title, content: data.content, tag: data.type || "Official" });
+    if (saved) setPosts(ps => ps.map(p => p.id === tempId ? { ...tempPost, ...saved } : p));
   };
 
   // ── Feed panel (shared between mobile and desktop) ─────────────────────────

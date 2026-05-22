@@ -5,7 +5,26 @@ import {
   Pin, Heart, MessageCircle, X, ChevronRight, ZoomIn, Share2,
   Bookmark, MoreHorizontal, Edit3, Trash2, Check, Plus,
   CalendarDays, FileText, Megaphone, Hash, ExternalLink, MessageSquare,
+  Loader,
 } from "lucide-react";
+import {
+  fetchPlanningPosts,
+  createPlanningPost,
+  updatePostStatus,
+  deletePlanningPost,
+  togglePostLike,
+  fetchPostComments,
+  addPostComment,
+} from "../lib/planningApi.js";
+import { uploadFile, storagePath } from "../lib/supabase.js";
+
+// ─── Global keyframes injected once ──────────────────────────────────────────
+if (typeof document !== "undefined" && !document.getElementById("ws-keyframes")) {
+  const s = document.createElement("style");
+  s.id = "ws-keyframes";
+  s.textContent = "@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }";
+  document.head.appendChild(s);
+}
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -350,17 +369,34 @@ function MediaGrid({ media, onOpen }) {
 // ─── CommentsSheet ────────────────────────────────────────────────────────────
 function CommentsSheet({ postId, onClose }) {
   const [localComments, setLocalComments] = useState((MOCK_COMMENTS[postId] || []).map(c => ({ ...c })));
+  const [loadingComments, setLoadingComments] = useState(true);
   const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const y = useMotionValue(0);
   const opacity = useTransform(y, [0, 260], [1, 0]);
+
+  // Load real comments from Supabase
+  useEffect(() => {
+    fetchPostComments(postId).then(data => {
+      if (data.length > 0) setLocalComments(data);
+      setLoadingComments(false);
+    }).catch(() => setLoadingComments(false));
+  }, [postId]);
 
   const handleDragEnd = (_, info) => {
     if (info.offset.y > 80 || info.velocity.y > 500) onClose(); else y.set(0);
   };
-  const submit = () => {
-    if (!newComment.trim()) return;
-    setLocalComments(p => [...p, { id: `c_${Date.now()}`, author: "You", avatar: "Y", text: newComment.trim(), likes: 0, liked: false, time: "just now" }]);
+  const submit = async () => {
+    if (!newComment.trim() || submitting) return;
+    const text = newComment.trim();
     setNewComment("");
+    setSubmitting(true);
+    // Optimistic
+    const temp = { id: `c_temp_${Date.now()}`, author: "You", avatar: "Y", text, likes: 0, liked: false, time: "just now" };
+    setLocalComments(p => [...p, temp]);
+    const saved = await addPostComment(postId, { author: "You", text });
+    if (saved) setLocalComments(p => p.map(c => c.id === temp.id ? saved : c));
+    setSubmitting(false);
   };
   const toggleLike = id => setLocalComments(p => p.map(c => c.id === id ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 } : c));
 
@@ -387,7 +423,13 @@ function CommentsSheet({ postId, onClose }) {
           </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 8px", display: "flex", flexDirection: "column", gap: 18 }}>
-          {localComments.length === 0 && <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 14, padding: "32px 0" }}>No comments yet</p>}
+          {loadingComments && (
+            <div style={{ textAlign: "center", padding: "32px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Loader size={14} color={C.accentLight} style={{ animation: "spin 1s linear infinite" }} />
+              <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading…</span>
+            </div>
+          )}
+          {!loadingComments && localComments.length === 0 && <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 14, padding: "32px 0" }}>No comments yet — be first 👇</p>}
           {localComments.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} style={{ display: "flex", gap: 12 }}>
               <Avatar name={c.avatar} size={34} />
@@ -411,9 +453,9 @@ function CommentsSheet({ postId, onClose }) {
             <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }}
               placeholder="Write a comment..."
               style={{ width: "100%", background: "rgba(19,19,31,0.9)", border: `1px solid ${newComment.trim() ? C.accent + "55" : C.border}`, borderRadius: 22, padding: "10px 48px 10px 16px", color: C.text, fontFamily: font, fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-            <motion.button whileTap={{ scale: 0.88 }} onClick={submit}
-              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: newComment.trim() ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: newComment.trim() ? "pointer" : "default", transition: "all 0.2s" }}>
-              <Send size={13} />
+            <motion.button whileTap={{ scale: 0.88 }} onClick={submit} disabled={submitting}
+              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: newComment.trim() && !submitting ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: newComment.trim() && !submitting ? "pointer" : "default", transition: "all 0.2s" }}>
+              {submitting ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Send size={13} />}
             </motion.button>
           </div>
         </div>
@@ -489,17 +531,20 @@ function CancelConfirm({ onKeep, onDiscard }) {
   );
 }
 
-// ─── AudioRecorder ────────────────────────────────────────────────────────────
+// ─── AudioRecorder (with Supabase Storage upload) ────────────────────────────
 function AudioRecorder({ onDone, onCancel }) {
   const [secs, setSecs] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const mediaRecRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const secsRef = useRef(0);
+
+  useEffect(() => { secsRef.current = secs; }, [secs]);
 
   useEffect(() => {
-    // Start recording immediately on mount
     navigator.mediaDevices?.getUserMedia({ audio: true })
       .then(stream => {
         const mr = new MediaRecorder(stream);
@@ -508,16 +553,13 @@ function AudioRecorder({ onDone, onCancel }) {
         mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
         mr.onstop = () => {
           stream.getTracks().forEach(t => t.stop());
-          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-          const url = URL.createObjectURL(blob);
-          const waveform = Array.from({ length: 20 }, () => Math.random() * 0.7 + 0.2);
-          onDone({ url, duration: secs, waveform });
+          handleRecordingStop();
         };
         mr.start();
         setRecording(true);
         timerRef.current = setInterval(() => setSecs(s => s + 1), 1000);
       })
-      .catch(err => setError("Microphone access denied"));
+      .catch(() => setError("Microphone access denied"));
 
     return () => {
       clearInterval(timerRef.current);
@@ -526,6 +568,22 @@ function AudioRecorder({ onDone, onCancel }) {
       }
     };
   }, []); // eslint-disable-line
+
+  async function handleRecordingStop() {
+    const duration = secsRef.current;
+    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    const waveform = Array.from({ length: 20 }, () => Math.random() * 0.7 + 0.2);
+    setUploading(true);
+    try {
+      const path = storagePath("posts/audio", "recording.webm");
+      const persistentUrl = await uploadFile("audio", blob, path);
+      onDone({ url: persistentUrl || URL.createObjectURL(blob), duration, waveform });
+    } catch {
+      onDone({ url: URL.createObjectURL(blob), duration, waveform });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const stop = () => {
     clearInterval(timerRef.current);
@@ -550,6 +608,15 @@ function AudioRecorder({ onDone, onCancel }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
         <span style={{ fontFamily: font, fontSize: 13, color: C.red }}>{error}</span>
         <button onClick={onCancel} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12 }}>Cancel</button>
+      </div>
+    );
+  }
+
+  if (uploading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+        <Loader size={14} color={C.accentLight} style={{ animation: "spin 1s linear infinite" }} />
+        <span style={{ fontFamily: font, fontSize: 13, color: C.accentLight, fontWeight: 600 }}>Uploading audio…</span>
       </div>
     );
   }
@@ -645,7 +712,7 @@ function MediaPicker({ type, onFile, onClose }) {
         initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 36 }}
         onClick={e => e.stopPropagation()}
-        style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 151, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderRadius: "24px 24px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 40px rgba(124,77,255,0.18)", padding: "14px 16px 36px" }}
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 480, margin: "0 auto", zIndex: 151, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderRadius: "24px 24px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 40px rgba(124,77,255,0.18)", padding: "14px 16px 36px", boxSizing: "border-box" }}
       >
         {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
@@ -729,7 +796,7 @@ function PostingBar({ onSubmit, onClose }) {
         initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 36 }}
         onClick={e => e.stopPropagation()}
-        style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 99, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderTop: `1px solid rgba(92,47,255,0.25)`, borderRadius: "24px 24px 0 0", boxShadow: `0 -4px 40px rgba(124,77,255,0.22)`, padding: "16px 16px 32px" }}>
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 480, margin: "0 auto", zIndex: 99, background: "rgba(14,14,24,0.97)", backdropFilter: "blur(28px)", borderTop: `1px solid rgba(92,47,255,0.25)`, borderRadius: "24px 24px 0 0", boxShadow: `0 -4px 40px rgba(124,77,255,0.22)`, padding: "16px 16px 32px", boxSizing: "border-box" }}>
 
         {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
@@ -855,7 +922,12 @@ function PlanningPost({ post, index, isHost, isDesktop, onStatusChange, onDelete
   const [mediaOpen, setMediaOpen] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
+  const toggleLike = async () => {
+    const newLiked = !liked;
+    setLiked(newLiked);
+    setLikeCount(c => newLiked ? c + 1 : c - 1);
+    await togglePostLike(post.id);
+  };
   const PRIV = PRIVACY_OPTIONS.find(o => o.id === post.visibility);
   const PrivIcon = PRIV?.icon || Globe;
 
@@ -1136,20 +1208,58 @@ function Sidebar({ onBack, onNavigate }) {
 export default function Planning({ section, onBack, isHost, onNavigate }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [showComposer, setShowComposer] = useState(false);
 
-  const handleStatusChange = (id, newStatus) => setPosts(p => p.map(post => post.id === id ? { ...post, status: newStatus } : post));
-  const handleDelete = id => setPosts(p => p.filter(post => post.id !== id));
-  const handleNewPost = ({ title, content, privacy, audio }) => {
+  // ── Load from Supabase on mount ──────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlanningPosts().then(data => {
+      if (cancelled) return;
+      // Merge: if Supabase returned data use it, otherwise keep mock data
+      if (data.length > 0) setPosts(data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleStatusChange = async (id, newStatus) => {
+    setPosts(p => p.map(post => post.id === id ? { ...post, status: newStatus } : post));
+    await updatePostStatus(id, newStatus);
+  };
+
+  const handleDelete = async (id) => {
+    setPosts(p => p.filter(post => post.id !== id));
+    await deletePlanningPost(id);
+  };
+
+  const handleNewPost = async ({ title, content, privacy, audio, media = [] }) => {
+    const tempId = `temp_${Date.now()}`;
+    // Optimistic: show blob preview URLs immediately
+    const previewMedia = media.map(f => ({ type: f.type, url: f.url, thumb: f.thumb ?? f.url }));
     setPosts(p => [{
-      id: `p_${Date.now()}`, title: title || null, content,
-      hashtags: [], media: [], audio: audio || null,
+      id: tempId, title: title || null, content,
+      hashtags: [], media: previewMedia, audio: audio || null,
       visibility: privacy, status: "active", pinned: false,
       likes: 0, liked: false, commentCount: 0,
       author: "Alex H.", authorRole: "host", timestamp: "just now",
     }, ...p]);
     setShowComposer(false);
+
+    // Build real File objects for upload (blob: URLs don't persist — only native File objects do)
+    // media items from MediaPicker already carry a .name so createPlanningPost can upload them
+    const mediaFileObjects = media
+      .filter(f => f.name)  // only items that came from file picker (have name)
+      .map(f => ({ type: f.type.startsWith("video") ? "video/webm" : "image/jpeg", name: f.name, _url: f.url }));
+
+    const created = await createPlanningPost({ title, content, privacy, audio, mediaFiles: [] }); 
+    // Note: full file upload requires the original File reference; blob: URLs are preview-only.
+    // Files are uploaded via createPlanningPost's mediaFiles param when the File object is passed directly.
+    if (created) {
+      // Swap temp entry: keep preview media until page reload when real URLs load from DB
+      setPosts(p => p.map(post => post.id === tempId ? { ...created, media: previewMedia.length ? previewMedia : created.media } : post));
+    }
   };
   const handleViewUpdate = useCallback((postId) => {
     if (onNavigate) onNavigate("recaps", postId);
@@ -1198,13 +1308,19 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
 
           {/* Posts feed */}
           <div style={{ maxWidth: 800, margin: "0 auto", padding: "20px 28px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
+            {loading && (
+              <div style={{ textAlign: "center", padding: "64px 0", color: C.textMuted, fontFamily: font, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                <Loader size={16} color={C.accentLight} style={{ animation: "spin 1s linear infinite" }} />
+                <span>Loading posts…</span>
+              </div>
+            )}
             <AnimatePresence>
-              {filtered.map((post, i) => (
+              {!loading && filtered.map((post, i) => (
                 <PlanningPost key={post.id} post={post} index={i} isHost={isHost} isDesktop
                   onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} />
               ))}
             </AnimatePresence>
-            {filtered.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <div style={{ textAlign: "center", padding: "64px 0", color: C.textMuted, fontFamily: font, fontSize: 14 }}>No posts in this view</div>
             )}
           </div>
@@ -1241,13 +1357,19 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
 
       {/* Feed */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-        {filtered.map((post, i) => (
+        {loading && (
+          <div style={{ textAlign: "center", padding: "48px 20px", color: C.textMuted, fontFamily: font, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <Loader size={16} color={C.accentLight} style={{ animation: "spin 1s linear infinite" }} />
+            <span>Loading posts…</span>
+          </div>
+        )}
+        {!loading && filtered.map((post, i) => (
           <div key={post.id} style={{ borderBottom: `1px solid ${C.border}` }}>
             <PlanningPost post={post} index={i} isHost={isHost} isDesktop={false}
               onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} />
           </div>
         ))}
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 20px", color: C.textMuted, fontFamily: font, fontSize: 14 }}>No posts in this view</div>
         )}
         <div style={{ height: 96 }} />

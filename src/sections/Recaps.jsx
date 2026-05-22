@@ -4,8 +4,29 @@ import {
   ChevronLeft, Search, X, Heart, MessageCircle, Image, Video,
   Mic, MicOff, Send, Play, Pause, Square, Globe, Users, Lock,
   CalendarDays, Filter, Check, ChevronDown, ChevronRight,
-  Bookmark, Share2, Clock, MoreHorizontal, FileText, Megaphone, Hash, Plus, MessageSquare,
+  Bookmark, Share2, Clock, MoreHorizontal, FileText, Megaphone, Hash, Plus,
+  MessageSquare, Loader,
 } from "lucide-react";
+import {
+  fetchRecapThreads,
+  createRecapThread,
+  addThreadUpdate,
+  toggleThreadLike,
+  toggleUpdateLike,
+  addThreadComment,
+  updateThreadStatus,
+  deleteRecapThread,
+  fetchThreadComments,
+} from "../lib/recapsApi.js";
+import { uploadFile, storagePath } from "../lib/supabase.js";
+
+// ─── Global keyframes injected once ──────────────────────────────────────────
+if (typeof document !== "undefined" && !document.getElementById("ws-keyframes")) {
+  const s = document.createElement("style");
+  s.id = "ws-keyframes";
+  s.textContent = "@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }";
+  document.head.appendChild(s);
+}
 
 // ─── useIsDesktop ─────────────────────────────────────────────────────────────
 function useIsDesktop() {
@@ -32,7 +53,7 @@ const font = "'DM Sans', sans-serif";
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 const MOCK_THREADS = [
   {
-    id: "t1", title: "Weekly Market Outlook — Week 20",
+    id: "t1", planningPostId: "p1", title: "Weekly Market Outlook — Week 20",
     content: "Major confluence zones aligning across DXY and XAUUSD. Expecting a corrective move before continuation. Watch the 4H structure closely and monitor liquidity sweeps below recent lows before looking for long setups.",
     hashtags: ["#XAUUSD", "#DXY", "#WeeklyBias"],
     status: "active", visibility: "members",
@@ -60,7 +81,7 @@ const MOCK_THREADS = [
     ],
   },
   {
-    id: "t2", title: "EURUSD Breakout Setup",
+    id: "t2", planningPostId: "p2", title: "EURUSD Breakout Setup",
     content: "Price is compressing into a key daily resistance zone. A confirmed break with a 4H close above 1.0940 could lead to a 150–200 pip move. Waiting for retest confirmation. Risk management is critical — size accordingly.",
     hashtags: ["#EURUSD", "#Breakout", "#Forex"],
     status: "closed", visibility: "public",
@@ -77,7 +98,7 @@ const MOCK_THREADS = [
     ],
   },
   {
-    id: "t3", title: "NASDAQ Pre-Market Analysis — May 8",
+    id: "t3", planningPostId: "p4", title: "NASDAQ Pre-Market Analysis — May 8",
     content: "Watching the 18,200 support level carefully. A bounce here could take NQ back to ATH territory. Macro data Thursday will be the real catalyst — NFP expectations already priced in by most desks.",
     hashtags: ["#NASDAQ", "#NQ", "#Indices"],
     status: "active", visibility: "members",
@@ -94,7 +115,7 @@ const MOCK_THREADS = [
     ],
   },
   {
-    id: "t4", title: "DXY Alert — Live Update",
+    id: "t4", planningPostId: "p3", title: "DXY Alert — Live Update",
     content: "Quick heads-up: DXY rejection happening in real-time off the 104.50 zone. Pairs like EURUSD and GBPUSD may see upside pressure. Stay alert and adjust open positions accordingly.",
     hashtags: ["#DXY", "#Live", "#Alert"],
     status: "closed", visibility: "members",
@@ -432,21 +453,41 @@ function AudioPlayer({ audio, accentColor }) {
 
 // ─── CommentsSheet ────────────────────────────────────────────────────────────
 function CommentsSheet({ threadId, onClose }) {
-  const comments = MOCK_COMMENTS[threadId] || [];
-  const [localComments, setLocalComments] = useState(comments.map(c => ({ ...c })));
+  const fallback = MOCK_COMMENTS[threadId] || [];
+  const [localComments, setLocalComments] = useState(fallback.map(c => ({ ...c })));
+  const [loadingComments, setLoadingComments] = useState(true);
   const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const y = useMotionValue(0);
   const opacity = useTransform(y, [0, 260], [1, 0]);
+
+  // Load real comments from Supabase
+  useEffect(() => {
+    let cancelled = false;
+    fetchThreadComments(threadId)
+      .then(data => {
+        if (!cancelled && data.length > 0) setLocalComments(data);
+        if (!cancelled) setLoadingComments(false);
+      })
+      .catch(() => { if (!cancelled) setLoadingComments(false); });
+    return () => { cancelled = true; };
+  }, [threadId]);
 
   const handleDragEnd = (_, info) => {
     if (info.offset.y > 80 || info.velocity.y > 500) onClose();
     else y.set(0);
   };
 
-  const submit = () => {
-    if (!newComment.trim()) return;
-    setLocalComments(prev => [...prev, { id: `c_${Date.now()}`, author: "You", avatar: "Y", text: newComment.trim(), likes: 0, liked: false, time: "just now" }]);
+  const submit = async () => {
+    if (!newComment.trim() || submitting) return;
+    const text = newComment.trim();
     setNewComment("");
+    setSubmitting(true);
+    const temp = { id: `c_temp_${Date.now()}`, author: "You", avatar: "Y", text, likes: 0, liked: false, time: "just now" };
+    setLocalComments(prev => [...prev, temp]);
+    const saved = await addThreadComment(threadId, { author: "You", text });
+    if (saved) setLocalComments(prev => prev.map(c => c.id === temp.id ? saved : c));
+    setSubmitting(false);
   };
 
   const toggleLike = (id) => setLocalComments(prev => prev.map(c => c.id === id ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 } : c));
@@ -455,7 +496,7 @@ function CommentsSheet({ threadId, onClose }) {
     <AnimatePresence>
       <motion.div key="ov" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }} />
-      <motion.div key="sh" style={{ position: "fixed", bottom: 0, left: "50%", x: "-50%", y, opacity, zIndex: 501, width: "100%", maxWidth: 430, background: "rgba(14,14,24,0.88)", backdropFilter: "blur(32px)", borderRadius: "28px 28px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 60px rgba(124,77,255,0.18)", maxHeight: "78vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
+      <motion.div key="sh" style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 430, margin: "0 auto", y, opacity, zIndex: 501, background: "rgba(14,14,24,0.88)", backdropFilter: "blur(32px)", borderRadius: "28px 28px 0 0", border: `1px solid rgba(92,47,255,0.2)`, borderBottom: "none", boxShadow: "0 -4px 60px rgba(124,77,255,0.18)", maxHeight: "78vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", stiffness: 360, damping: 38 }}
         drag="y" dragConstraints={{ top: 0 }} dragElastic={{ top: 0, bottom: 0.4 }}
@@ -471,7 +512,13 @@ function CommentsSheet({ threadId, onClose }) {
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", border: `1px solid ${C.border}`, background: C.card, color: C.textMuted, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={14} /></button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 8px", display: "flex", flexDirection: "column", gap: 18 }}>
-          {localComments.length === 0 && <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 14, padding: "32px 0" }}>No comments yet — be first 👇</p>}
+          {loadingComments && (
+            <div style={{ textAlign: "center", padding: "32px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Loader size={14} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+              <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading…</span>
+            </div>
+          )}
+          {!loadingComments && localComments.length === 0 && <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 14, padding: "32px 0" }}>No comments yet — be first 👇</p>}
           {localComments.map((c, i) => (
             <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} style={{ display: "flex", gap: 12 }}>
               <Avatar name={c.avatar} size={34} />
@@ -495,9 +542,9 @@ function CommentsSheet({ threadId, onClose }) {
             <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }}
               placeholder="Write a comment…"
               style={{ width: "100%", background: "rgba(19,19,31,0.9)", border: `1px solid ${newComment.trim() ? C.accent + "55" : C.border}`, borderRadius: 22, padding: "10px 48px 10px 16px", color: C.text, fontFamily: font, fontSize: 14, outline: "none", boxSizing: "border-box", transition: "border-color 0.2s" }} />
-            <motion.button whileTap={{ scale: 0.88 }} onClick={submit}
-              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: newComment.trim() ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: newComment.trim() ? "pointer" : "default", transition: "background 0.2s", boxShadow: newComment.trim() ? `0 0 14px ${C.accent}60` : "none" }}>
-              <Send size={13} />
+            <motion.button whileTap={{ scale: 0.88 }} onClick={submit} disabled={submitting}
+              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: newComment.trim() && !submitting ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: newComment.trim() && !submitting ? "pointer" : "default", transition: "background 0.2s", boxShadow: newComment.trim() && !submitting ? `0 0 14px ${C.accent}60` : "none" }}>
+              {submitting ? <Loader size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Send size={13} />}
             </motion.button>
           </div>
         </div>
@@ -506,25 +553,53 @@ function CommentsSheet({ threadId, onClose }) {
   );
 }
 
-// ─── UpdateComposer ───────────────────────────────────────────────────────────
+// ─── UpdateComposer (with Supabase audio upload) ─────────────────────────────
 function UpdateComposer({ onSubmit }) {
   const [content, setContent] = useState("");
   const [focused, setFocused] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   const timerRef = useRef(null);
+  const secsRef = useRef(0);
+  const mediaRecRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  useEffect(() => { secsRef.current = recordSecs; }, [recordSecs]);
 
   const startRecord = () => {
-    setRecording(true); setRecordSecs(0);
-    timerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000);
+    navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
+      const mr = new MediaRecorder(stream);
+      mediaRecRef.current = mr;
+      chunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const dur = secsRef.current;
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const wf = Array.from({ length: 20 }, () => Math.random() * 0.8 + 0.2);
+        setRecording(false);
+        setUploadingAudio(true);
+        try {
+          const path = storagePath("updates/audio", "recording.webm");
+          const url = await uploadFile("audio", blob, path);
+          onSubmit({ content: content.trim(), audio: { url: url || URL.createObjectURL(blob), duration: dur, waveform: wf } });
+        } finally {
+          setUploadingAudio(false);
+        }
+        setContent(""); setRecordSecs(0);
+      };
+      mr.start();
+      setRecording(true); setRecordSecs(0);
+      timerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000);
+    }).catch(() => alert("Microphone access denied"));
   };
+
   const stopRecord = () => {
-    clearInterval(timerRef.current); setRecording(false);
-    const dur = recordSecs;
-    const wf = Array.from({ length: 20 }, () => Math.random() * 0.8 + 0.2);
-    onSubmit({ content: content.trim(), audio: { duration: dur, waveform: wf } });
-    setContent(""); setRecordSecs(0);
+    clearInterval(timerRef.current);
+    if (mediaRecRef.current && mediaRecRef.current.state !== "inactive") mediaRecRef.current.stop();
   };
+
   const handleSubmit = () => {
     if (!content.trim()) return;
     onSubmit({ content: content.trim(), audio: null });
@@ -535,8 +610,7 @@ function UpdateComposer({ onSubmit }) {
     <motion.div
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
       style={{
-        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-        width: "100%", maxWidth: 430, zIndex: 40,
+        position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 430, margin: "0 auto", zIndex: 40,
         background: "rgba(14,14,24,0.92)", backdropFilter: "blur(28px)",
         borderTop: `1px solid rgba(92,47,255,0.2)`,
         boxShadow: "0 -4px 40px rgba(34,211,160,0.1)",
@@ -692,7 +766,12 @@ function ThreadCard({ thread, index, onClick }) {
 function UpdateBubble({ update, index }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
-  const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
+  const toggleLike = async () => {
+    const newLiked = !liked;
+    setLiked(newLiked);
+    setLikeCount(c => newLiked ? c + 1 : c - 1);
+    await toggleUpdateLike(update.id);
+  };
 
   return (
     <motion.div
@@ -743,11 +822,23 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
   const [showComments, setShowComments] = useState(false);
   const COMPOSER_H = isHost ? 130 : 0;
 
-  const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
+  const toggleLike = async () => {
+    const newLiked = !liked;
+    setLiked(newLiked);
+    setLikeCount(c => newLiked ? c + 1 : c - 1);
+    await toggleThreadLike(thread.id);
+  };
 
-  const handleNewUpdate = ({ content, audio }) => {
-    const newUpdate = { id: `u_${Date.now()}`, content, timestamp: new Date(), likes: 0, liked: false, media: [], audio };
-    setThread(t => ({ ...t, updates: [...t.updates, newUpdate] }));
+  const handleNewUpdate = async ({ content, audio }) => {
+    const tempId = `u_temp_${Date.now()}`;
+    const tempUpdate = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: [], audio: audio || null };
+    setThread(t => ({ ...t, updates: [...t.updates, tempUpdate] }));
+
+    // Persist to Supabase
+    const saved = await addThreadUpdate(thread.id, { content, audio });
+    if (saved) {
+      setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
+    }
   };
 
   return (
@@ -897,33 +988,55 @@ function Sidebar({ onBack, onNavigate }) {
 // ─── RecapsScreen (default export) ───────────────────────────────────────────
 export default function Recaps({ section, onBack, isHost, onNavigate, openThreadId }) {
   const [threads, setThreads] = useState(MOCK_THREADS);
+  const [loadingThreads, setLoadingThreads] = useState(true);
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState([]);   // [] = all
   const [filterDate, setFilterDate] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [openThread, setOpenThread] = useState(() => {
-    if (openThreadId) {
-      return MOCK_THREADS.find(t => t.id === openThreadId) || null;
-    }
-    return null;
-  });
-  const [direction, setDirection] = useState(openThreadId ? 1 : 1);
+  const [openThread, setOpenThread] = useState(null);
+  const [direction, setDirection] = useState(1);
   const feedScrollRef = useRef(0);
   const feedContainerRef = useRef(null);
+
+  // ── Load threads from Supabase ──────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    fetchRecapThreads().then(data => {
+      if (cancelled) return;
+      if (data.length > 0) setThreads(data);
+      setLoadingThreads(false);
+
+      // Navigate to openThreadId after load
+      if (openThreadId) {
+        const t = openThreadId.startsWith("p")
+          ? data.find(th => th.planningPostId === openThreadId)
+          : data.find(th => th.id === openThreadId);
+        // Fallback to mock data match
+        const fallback = openThreadId.startsWith("p")
+          ? MOCK_THREADS.find(t => t.planningPostId === openThreadId)
+          : MOCK_THREADS.find(t => t.id === openThreadId);
+        if (t || fallback) { setDirection(1); setOpenThread(t || fallback); }
+      }
+    }).catch(() => setLoadingThreads(false));
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
 
   // If openThreadId changes after mount, navigate to it
   useEffect(() => {
     if (openThreadId) {
-      const t = threads.find(th => th.id === openThreadId);
+      const t = openThreadId.startsWith("p")
+        ? threads.find(th => th.planningPostId === openThreadId)
+        : threads.find(th => th.id === openThreadId);
       if (t) { setDirection(1); setOpenThread(t); }
     }
   }, [openThreadId]); // eslint-disable-line
 
-  const handleStatusChange = (threadId, newStatus) => {
+  const handleStatusChange = async (threadId, newStatus) => {
     setThreads(prev => prev.map(t => t.id === threadId ? { ...t, status: newStatus } : t));
     if (openThread && openThread.id === threadId) setOpenThread(t => t ? { ...t, status: newStatus } : t);
+    await updateThreadStatus(threadId, newStatus);
   };
 
   // Restore scroll on back
@@ -1068,7 +1181,14 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
 
             {/* Feed */}
             <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isDesktop ? "4px 20px 24px" : "4px 14px 24px" }}>
-              {filtered.length === 0 && (
+              {loadingThreads && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  style={{ textAlign: "center", padding: "48px 20px", color: C.textMuted, fontFamily: font, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                  <span>Loading threads…</span>
+                </motion.div>
+              )}
+              {!loadingThreads && filtered.length === 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   style={{ textAlign: "center", padding: "48px 20px", color: C.textMuted, fontFamily: font, fontSize: 14 }}>
                   No threads found
