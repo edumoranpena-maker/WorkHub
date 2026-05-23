@@ -1129,12 +1129,14 @@ export default function Announcements({ section, onBack, isHost, onNavigate }) {
   // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
-      <Sidebar onBack={onBack} onNavigate={onNavigate} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Desktop top bar */}
+        {/* Desktop top bar — back + title + actions, NO inner sidebar */}
         <div style={{ position: "sticky", top: 0, zIndex: 30, background: `${C.surface}f2`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "14px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: A, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0, marginRight: 4 }}>
+              <ChevronLeft size={17} strokeWidth={2.2} /> Back
+            </button>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: `${A}20`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Megaphone size={18} color={A} strokeWidth={1.8} />
             </div>

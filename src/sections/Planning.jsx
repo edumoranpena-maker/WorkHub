@@ -1287,12 +1287,16 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
   if (isDesktop) {
     return (
       <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
-        <Sidebar onBack={onBack} onNavigate={id => onNavigate && onNavigate(id)} />
 
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-          {/* Sticky top bar */}
+          {/* Sticky top bar — back + filters, NO inner sidebar */}
           <div style={{ position: "sticky", top: 0, zIndex: 30, background: `${C.surface}f2`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "14px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <FilterTabs />
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: C.accentLight, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0, marginRight: 4 }}>
+                <ChevronLeft size={17} strokeWidth={2.2} /> Back
+              </button>
+              <FilterTabs />
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
               <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px" }}>
                 {isHost ? "Host" : "Member"}
@@ -1307,7 +1311,7 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
           </div>
 
           {/* Posts feed */}
-          <div style={{ maxWidth: 800, margin: "0 auto", padding: "20px 28px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ maxWidth: 760, margin: "0 auto", padding: "20px 28px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
             {loading && (
               <div style={{ textAlign: "center", padding: "64px 0", color: C.textMuted, fontFamily: font, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                 <Loader size={16} color={C.accentLight} style={{ animation: "spin 1s linear infinite" }} />

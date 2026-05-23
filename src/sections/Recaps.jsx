@@ -1104,7 +1104,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
             )}
 
             {/* Search bar */}
-            <div style={{ padding: isDesktop ? "12px 20px 8px" : "12px 14px 8px", flexShrink: 0 }}>
+            <div style={{ padding: isDesktop ? "12px 28px 8px" : "12px 14px 8px", flexShrink: 0 }}>
               <div style={{ display: "flex", gap: 8 }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, background: C.card, border: `1px solid ${activeQuery ? C.teal + "55" : C.border}`, borderRadius: 14, padding: "0 14px", transition: "border-color 0.2s" }}>
                   <Search size={15} color={C.textMuted} strokeWidth={2} />
@@ -1180,7 +1180,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
             </div>
 
             {/* Feed */}
-            <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isDesktop ? "4px 20px 24px" : "4px 14px 24px" }}>
+            <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isDesktop ? "4px 28px 24px" : "4px 14px 24px" }}>
               {loadingThreads && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   style={{ textAlign: "center", padding: "48px 20px", color: C.textMuted, fontFamily: font, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
@@ -1232,12 +1232,14 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
   if (isDesktop) {
     return (
       <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
-        <Sidebar onBack={onBack} onNavigate={id => onNavigate && onNavigate(id)} />
 
         <div style={{ flex: 1, overflowY: "hidden", display: "flex", flexDirection: "column" }}>
-          {/* Sticky desktop top bar */}
+          {/* Sticky desktop top bar — back + title, NO inner sidebar */}
           <div style={{ position: "sticky", top: 0, zIndex: 30, background: `${C.surface}f2`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: C.teal, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0, marginRight: 4 }}>
+                <ChevronLeft size={17} strokeWidth={2.2} /> Back
+              </button>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: `${C.teal}20`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <FileText size={18} color={C.teal} strokeWidth={1.8} />
               </div>
@@ -1251,7 +1253,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
             </span>
           </div>
 
-          <div style={{ flex: 1, overflow: "hidden", maxWidth: 800, width: "100%", alignSelf: "center", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <FeedPanel fullHeight />
           </div>
         </div>
