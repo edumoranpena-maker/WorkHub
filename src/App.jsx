@@ -5,7 +5,6 @@ import {
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight,
   Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil,
 } from "lucide-react";
-import Planning      from "./sections/Planning";
 import HomeFeed      from "./HomeFeed.jsx";
 import Recaps        from "./sections/Recaps";
 import Announcements from "./sections/Announcements";
@@ -43,11 +42,9 @@ const SECTIONS = DEFAULT_PROFILE_CONFIG.sections.map(resolveSection);
 
 // Latest post previews per section (for Perfil feed)
 const PREVIEW_POSTS = {
-  planning:      { title: "Weekly Market Outlook",         excerpt: "Major confluence zones aligning across DXY and XAUUSD. Expecting a corrective move before continuation.", author: "Alex H.",  timestamp: "2h ago",    tag: "Analysis"   },
-  recaps:        { title: "Week 20 Recap — Targets Hit",   excerpt: "XAUUSD confirmed the rejection at 2340. Target hit at 2310. Full breakdown of the week's moves inside.",  author: "Alex H.",  timestamp: "Today",     tag: "Weekly"     },
-  announcements: { title: "New Room Schedule — May",       excerpt: "Daily sessions now at 8 AM and 2 PM EST. Check the full calendar inside.",                                author: "Admin",    timestamp: "Yesterday", tag: "Official"   },
-  rooms:         { title: "🔴 Live: Pre-Market Session",   excerpt: "Alex H. is hosting a live pre-market session. Join now for real-time analysis and trade setups.",         author: "Alex H.",  timestamp: "Live now",  tag: "Live"       },
-  community:     { title: "Share your wins this week! 🏆", excerpt: "Drop your best trade of the week below. Let's celebrate the wins and learn from each other's setups.",   author: "Marco V.", timestamp: "5m ago",    tag: "Discussion" },
+  recaps:        { title: "Week 20 — Targets Hit",       excerpt: "XAUUSD confirmed the rejection at 2340. Target hit at 2310. Full breakdown inside.",                           author: "Alex H.",  timestamp: "Today",     tag: "Post"       },
+  announcements: { title: "New Room Schedule — May",     excerpt: "Daily sessions now at 8 AM and 2 PM EST. Check the full calendar inside.",                                    author: "Admin",    timestamp: "Yesterday", tag: "Official"   },
+  rooms:         { title: "🔴 Live: Pre-Market Session", excerpt: "Alex H. is hosting a live pre-market session. Join now for real-time analysis and trade setups.",             author: "Alex H.",  timestamp: "Live now",  tag: "Live"       },
 };
 
 // ─── Animations ───────────────────────────────────────────────────────────────
@@ -358,9 +355,8 @@ function MobileTopBar({ onHome, profileName, onAIPanel, onOpenSettings }) {
   return (
     <div style={{ display: "flex", alignItems: "center", padding: "8px 14px", gap: 10, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 50, flexShrink: 0 }}>
       <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
-        style={{ display: "flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 6px 4px 0", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
-        <ChevronLeft size={16} strokeWidth={2.4} color={C.accentLight} />
-        <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.accentLight }}>Home</span>
+        style={{ display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: "4px 8px 4px 2px", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
+        <ChevronLeft size={22} strokeWidth={2.6} color={C.accentLight} />
       </motion.button>
       <div style={{ flex: 1, overflow: "hidden" }}>
         <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profileName}</span>
@@ -1312,13 +1308,13 @@ function App({ onGoHome, onOpenSettings }) {
   const accentColor   = activeSection?.accentColor || C.accent;
 
   function renderContent() {
-    if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} />;
-    if (activeSectionId === "planning")      return <Planning      section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
-    if (activeSectionId === "recaps")        return <Recaps        section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
+    if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
+    // planning removed
+    if (activeSectionId === "recaps")        return <Recaps        section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onNewPost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
-    const customSec = allSections.find(s => s.id === activeSectionId && !["planning","recaps","announcements","metrics","rooms"].includes(activeSectionId));
+    const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","metrics","rooms"].includes(activeSectionId));
     if (customSec) return <CustomSectionContent section={customSec} />;
     return null;
   }
@@ -1429,9 +1425,9 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Render del feed móvil según sección activa — sin navegar a página nueva
   function renderMobileFeed() {
-    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} />;
-    if (activeSectionId === "planning")      return <Planning      section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
-    if (activeSectionId === "recaps")        return <Recaps        section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab />;
+    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
+    // planning mobile removed
+    if (activeSectionId === "recaps")        return <Recaps        section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab onNewPost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1449,28 +1445,7 @@ function App({ onGoHome, onOpenSettings }) {
         {/* ── TOP BAR: ← Home + nombre perfil (fija siempre) ── */}
         <MobileTopBar onHome={goHome} profileName={profileConfig.identity.name} onAIPanel={() => setShowAIPanel(v => !v)} onOpenSettings={onOpenSettings} />
 
-        {/* ── STICKY BAR: Follow/Subscribe/Message + chips — always visible below topbar ── */}
-        <div style={{ flexShrink: 0, zIndex: 20, background: `${C.surface}fa`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
-          {/* Action buttons row */}
-          <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
-            <motion.button whileTap={{ scale: 0.95 }}
-              style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`, color: "#fff", boxShadow: `0 4px 18px ${C.accent}50` }}>
-              Follow
-            </motion.button>
-            <motion.button whileTap={{ scale: 0.95 }}
-              style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`, border: "none", color: "#1a0f00", boxShadow: `0 4px 20px ${C.gold}45` }}>
-              Subscribe
-            </motion.button>
-            <motion.button whileTap={{ scale: 0.95 }}
-              style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40` }}>
-              Message
-            </motion.button>
-          </div>
-          {/* Chips */}
-          <div style={{ padding: "4px 14px 8px" }}>
-            <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
-          </div>
-        </div>
+
 
         {/* Role toggle dev tool */}
         <div style={{ position: "fixed", bottom: 20, right: 16, zIndex: 9998, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 4px 4px 10px", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}>
@@ -1502,19 +1477,42 @@ function App({ onGoHome, onOpenSettings }) {
           )}
         </AnimatePresence>
 
-        {/* ── FEED: profile card scrolls away inside here, chips+buttons stay above ── */}
+        {/* ── FEED: profile card scrolls away, buttons+chips sticky at scroll top ── */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
           onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
               initial="enter" animate="center" exit="exit" transition={springTrans}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-              {/* Profile header scrolls away inside the feed */}
+
+              {/* Profile card — scrolls away naturally */}
               {!activeSectionId && (
-                <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}20` }}>
+                <div style={{ background: C.surface }}>
                   <ProfileCard onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} hideButtons profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
                 </div>
               )}
+
+              {/* Sticky bar: buttons + chips — sticks right below topbar as profile scrolls away */}
+              <div style={{ position: "sticky", top: 0, zIndex: 20, background: `${C.surface}fc`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
+                  <motion.button whileTap={{ scale: 0.95 }}
+                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`, color: "#fff", boxShadow: `0 4px 18px ${C.accent}50` }}>
+                    Follow
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }}
+                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`, color: "#1a0f00", boxShadow: `0 4px 20px ${C.gold}45` }}>
+                    Subscribe
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }}
+                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40` }}>
+                    Message
+                  </motion.button>
+                </div>
+                <div style={{ padding: "4px 14px 8px" }}>
+                  <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
+                </div>
+              </div>
+
               {renderMobileFeed()}
             </motion.div>
           </AnimatePresence>

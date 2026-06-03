@@ -1123,7 +1123,7 @@ function Sidebar({ onBack, onNavigate }) {
 }
 
 // ─── RecapsScreen (default export) ───────────────────────────────────────────
-export default function Recaps({ section, onBack, isHost, onNavigate, openThreadId }) {
+export default function Recaps({ section, onBack, isHost, onNavigate, openThreadId, mobileTab, onNewPost }) {
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [query, setQuery] = useState("");
@@ -1265,25 +1265,15 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
   const isDesktop = useIsDesktop();
 
   // ── Core feed panel (used in both mobile and desktop) ──────────────────────
-  const FeedPanel = ({ fullHeight }) => (
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const FeedPanel = useCallback(({ fullHeight }) => (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: fullHeight ? "100%" : "100%", overflow: "hidden" }}>
       <AnimatePresence mode="popLayout" custom={direction}>
         {!openThread ? (
-          <motion.div key="feed" custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={springTrans}
+          <motion.div key="feed-list" variants={{}} initial={false} animate={{}} exit={{}}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
 
-            {/* TopBar — mobile only shows Back, desktop omits it */}
-            {!isDesktop && (
-              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, flexShrink: 0 }}>
-                <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-                  <ChevronLeft size={19} strokeWidth={2.2} /> Back
-                </button>
-                <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", textAlign: "center", marginRight: 44 }}>
-                  {section.label}
-                </span>
-              </motion.div>
-            )}
+
 
             {/* Search bar */}
             <div style={{ padding: isDesktop ? "12px 28px 8px" : "12px 14px 8px", flexShrink: 0 }}>
@@ -1408,53 +1398,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
         {showCalendar && <CalendarPicker value={filterDate} onChange={setFilterDate} onClose={() => setShowCalendar(false)} />}
       </AnimatePresence>
 
-      {/* ── FAB: circular action button (like Planning) ── */}
-      {isHost && !openThread && (
-        <>
-          {/* Backdrop when speed-dial open */}
-          <AnimatePresence>
-            {fabOpen && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setFabOpen(false)}
-                style={{ position: "absolute", inset: 0, zIndex: 48, background: "rgba(8,8,14,0.5)", backdropFilter: "blur(4px)" }} />
-            )}
-          </AnimatePresence>
-
-          {/* Speed-dial options */}
-          <AnimatePresence>
-            {fabOpen && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-                style={{ position: "absolute", bottom: 96, right: 22, zIndex: 50, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
-                {[
-                  { label: "Crear Subtema", icon: Layers, color: C.teal, action: () => { setFabOpen(false); setShowSubtemaComposer(true); } },
-                  { label: "Añadir Update", icon: FolderPlus, color: C.green, action: () => { setFabOpen(false); setShowUpdateComposer(true); } },
-                ].map((opt, i) => (
-                  <motion.div key={opt.label} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
-                    style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "6px 12px", whiteSpace: "nowrap", boxShadow: "0 2px 12px rgba(0,0,0,0.3)" }}>{opt.label}</span>
-                    <motion.button whileTap={{ scale: 0.88 }} onClick={opt.action}
-                      style={{ width: 44, height: 44, borderRadius: "50%", background: `${opt.color}22`, border: `1.5px solid ${opt.color}55`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-                      <opt.icon size={18} color={opt.color} />
-                    </motion.button>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Main FAB */}
-          <motion.button
-            key="recaps-fab"
-            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
-            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }}
-            onClick={() => setFabOpen(o => !o)}
-            style={{ position: "absolute", bottom: 28, right: 22, width: 58, height: 58, borderRadius: "50%", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.teal}, #0ea876)`, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 28px ${C.teal}70, 0 0 0 1px ${C.teal}40`, zIndex: 50, transition: "background 0.2s" }}>
-            <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
-              <Plus size={28} color="#fff" strokeWidth={2.5} />
-            </motion.div>
-          </motion.button>
-        </>
-      )}
+      {/* FAB moved to ThreadView only */}
 
       {/* Update Composer sheet */}
       <AnimatePresence>
@@ -1503,8 +1447,8 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
                 <FileText size={18} color={C.teal} strokeWidth={1.8} />
               </div>
               <div>
-                <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>{section.label}</h2>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>{section.subtitle}</p>
+                <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>Post</h2>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>Posts & threads</p>
               </div>
             </div>
             <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px" }}>
