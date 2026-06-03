@@ -999,7 +999,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1081,20 +1081,22 @@ export default function Announcements({ section, onBack, isHost, onNavigate }) {
   if (!isDesktop) {
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: C.surface }}>
-        {/* Top bar */}
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f2`, backdropFilter: "blur(24px)", flexShrink: 0 }}>
-          <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: A, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-            <ChevronLeft size={19} strokeWidth={2.2} /> Back
-          </button>
-          <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, textAlign: "center" }}>Announcements</span>
-          {isHost && (
-            <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComposer(true)}
-              style={{ width: 34, height: 34, borderRadius: 10, background: `${A}18`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-              <Plus size={18} color={A} strokeWidth={2.5} />
-            </motion.button>
-          )}
-        </motion.div>
+        {/* Top bar — hidden when used as tab inside mobile profile */}
+        {!mobileTab && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f2`, backdropFilter: "blur(24px)", flexShrink: 0 }}>
+            <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: A, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+              <ChevronLeft size={19} strokeWidth={2.2} /> Back
+            </button>
+            <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, textAlign: "center" }}>Announcements</span>
+            {isHost && (
+              <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComposer(true)}
+                style={{ width: 34, height: 34, borderRadius: 10, background: `${A}18`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <Plus size={18} color={A} strokeWidth={2.5} />
+              </motion.button>
+            )}
+          </motion.div>
+        )}
 
         <FeedPanel />
 

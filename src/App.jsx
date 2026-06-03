@@ -1,49 +1,45 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight,
-  Users, BarChart2, TrendingUp, TrendingDown, Star,
+  Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil,
 } from "lucide-react";
 import Planning      from "./sections/Planning";
+import HomeFeed      from "./HomeFeed.jsx";
 import Recaps        from "./sections/Recaps";
 import Announcements from "./sections/Announcements";
 
-// ─── Design Tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg:          "#08080e",
-  surface:     "#0e0e18",
-  card:        "#13131f",
-  cardHover:   "#19192a",
-  border:      "#1c1c2e",
-  accent:      "#7c4dff",
-  accentLight: "#9d71ff",
-  accentDim:   "#3d2480",
-  text:        "#eaeaf5",
-  textMuted:   "#6a6a82",
-  textDim:     "#32324a",
-  green:       "#1ed99a",
-  greenDim:    "rgba(30,217,154,0.12)",
-  amber:       "#f5a623",
-  gold:        "#d4a843",
-  goldLight:   "#f0c866",
-  blue:        "#4fa3ff",
-  red:         "#ff4f6a",
-  orange:      "#f97316",
-};
-const font = "'DM Sans', sans-serif";
+// ─── Config + Engine imports ──────────────────────────────────────────────────
+import { DEFAULT_PROFILE_CONFIG, mergeProfileConfig } from "./config/profileConfig.js";
+import { resolveTheme, tokensToC }                   from "./config/themes.js";
+import { resolveIcon, ICON_OPTIONS as ICON_REG_OPTIONS } from "./registry/icons.js";
+import { ThemeProvider, useTheme }                   from "./engine/ThemeProvider.jsx";
+import { AIPromptPanel }                              from "./engine/AIPromptPanel.jsx";
 
-// ─── Section registry ─────────────────────────────────────────────────────────
-// null = Perfil (home)
-const SECTIONS = [
-  { id: "planning",      label: "Planning",       icon: CalendarDays,  subtitle: "Trade plans & market analysis",    accentColor: "#7c4dff", glowColor: "rgba(124,77,255,0.18)",  badge: "4 new"  },
-  { id: "recaps",        label: "Updates",        icon: FileText,      subtitle: "Weekly summaries & progress",      accentColor: "#22d3a0", glowColor: "rgba(34,211,160,0.15)",  badge: "1 new"  },
-  { id: "announcements", label: "Announcements",  icon: Megaphone,     subtitle: "Official updates from leadership", accentColor: "#f59e0b", glowColor: "rgba(245,158,11,0.15)",  badge: null     },
-  { id: "metrics",       label: "Metrics",        icon: BarChart2,     subtitle: "Performance & trade stats",        accentColor: "#22d3a0", glowColor: "rgba(34,211,160,0.15)",  badge: null     },
-  { id: "rooms",         label: "Rooms",          icon: Hash,          subtitle: "Live group sessions & channels",   accentColor: "#60a5fa", glowColor: "rgba(96,165,250,0.15)",  badge: "2 live" },
-  { id: "community",     label: "Community Chat", icon: MessageSquare, subtitle: "Open chat for all members",        accentColor: "#e879f9", glowColor: "rgba(232,121,249,0.15)", badge: "12 new" },
-  { id: "reviews",       label: "Reviews",        icon: Star,          subtitle: "Member reviews & testimonials",    accentColor: "#d4a843", glowColor: "rgba(212,168,67,0.15)",  badge: null     },
-];
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+// C and font are now derived from ThemeProvider at runtime.
+// Components inside ThemeProvider use useTheme() to access them.
+// For components defined OUTSIDE the provider tree (none currently), use CSS vars.
+const font = "'DM Sans', sans-serif"; // still needed for non-themed static strings
+
+// Fallback C for module-level code (replaced by useTheme() inside components)
+const C = tokensToC(resolveTheme("dark-purple"));
+
+// ─── Section resolver ─────────────────────────────────────────────────────────
+// Converts a config section object (JSON-safe) to a render-ready object with
+// the actual icon component resolved from the registry.
+function resolveSection(configSection) {
+  return {
+    ...configSection,
+    icon:      resolveIcon(configSection.iconId),
+    glowColor: configSection.accentColor + "25",
+  };
+}
+
+// Legacy SECTIONS constant for backward compat with non-config code
+// (replaced at runtime by profileConfig.sections)
+const SECTIONS = DEFAULT_PROFILE_CONFIG.sections.map(resolveSection);
 
 // Latest post previews per section (for Perfil feed)
 const PREVIEW_POSTS = {
@@ -88,7 +84,7 @@ function IconBtn({ icon: Icon, badge, onClick }) {
 }
 
 // ─── Premium Profile Card ─────────────────────────────────────────────────────
-function ProfileCard({ onNavigate }) {
+function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
   const [followed,   setFollowed]   = useState(false);
   const [subscribed, setSubscribed] = useState(false);
 
@@ -103,31 +99,47 @@ function ProfileCard({ onNavigate }) {
 
         {/* Left column: avatar ring + name/handle/verified below */}
         <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-          {/* Avatar with orange story ring — clickable to view announcements stories */}
-          <div style={{ position: "relative", cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
-            <div style={{
-              width: 80, height: 80, borderRadius: "50%",
-              background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
-              padding: 3,
-              boxShadow: `0 0 18px ${C.orange}55, 0 0 6px ${C.orange}40`,
-            }}>
-              <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.card}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontFamily: font, fontSize: 26, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
+          {/* Avatar with orange story ring + pencil edit button */}
+          <div style={{ position: "relative" }}>
+            <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
+              <div style={{
+                width: 80, height: 80, borderRadius: "50%",
+                background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
+                padding: 3,
+                boxShadow: `0 0 18px ${C.orange}55, 0 0 6px ${C.orange}40`,
+              }}>
+                <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.card}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontFamily: font, fontSize: 26, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
+                </div>
               </div>
             </div>
             {/* Live dot */}
             <div style={{ position: "absolute", bottom: 4, right: 4, width: 14, height: 14, borderRadius: "50%", background: C.green, border: `2px solid ${C.card}`, boxShadow: `0 0 8px ${C.green}` }} />
+            {/* Pencil edit button */}
+            {onEditAvatar && (
+              <motion.button whileTap={{ scale: 0.88 }} onClick={onEditAvatar}
+                style={{ position: "absolute", bottom: 0, left: 0, width: 24, height: 24, borderRadius: "50%", background: C.accent, border: `2px solid ${C.card}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 2px 8px ${C.accent}60` }}>
+                <Pencil size={11} color="#fff" strokeWidth={2.5} />
+              </motion.button>
+            )}
           </div>
 
           {/* Name + verified + handle — below the avatar */}
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 2 }}>
-              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>Alex Herrera</h2>
+              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Alex Herrera"}</h2>
               <div style={{ width: 14, height: 14, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <span style={{ fontSize: 8, color: "#fff" }}>✓</span>
               </div>
             </div>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>@alexherrera.trades</p>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@alexherrera.trades"}</p>
+            {/* Rating */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5 }}>
+              <div style={{ display: "flex", gap: 1 }}>
+                {[...Array(5)].map((_, i) => <Star key={i} size={9} color={C.gold} fill={C.gold} />)}
+              </div>
+              {(profile?.showRating !== false) && <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.goldLight }}>{profile?.rating ?? 4.9}</span>}
+            </div>
           </div>
         </div>
 
@@ -136,20 +148,19 @@ function ProfileCard({ onNavigate }) {
 
         {/* Bio + stats — right of divider */}
         <div style={{ flex: 1, paddingTop: 2 }}>
-          <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
-            Trader & educator — 6+ years in FX & commodities. Sharing live setups, weekly recaps & real-time analysis.{" "}
-            <span style={{ color: C.accentLight, fontWeight: 600 }}>XAUUSD · DXY · EURUSD</span>
-          </p>
+          {(profile?.showBio !== false) && <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
+            {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
+            {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
+          </p>}
 
-          {/* Mini stats row */}
-          <div style={{ display: "flex", gap: 18, marginTop: 10 }}>
-            {[["847", "Posts"], ["12.4k", "Followers"], ["98%", "Win this week"]].map(([val, lbl]) => (
-              <div key={lbl}>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, fontWeight: 800, color: C.text }}>{val}</p>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>{lbl}</p>
+          {(profile?.showStats !== false) && <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+            {(profile?.stats ?? [{value:"12.4k",label:"Followers"},{value:"147",label:"Trades"},{value:"68%",label:"Winrate"},{value:"2.8R",label:"Exp. Value"}]).map((s) => (
+              <div key={s.label}>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, fontWeight: 800, color: C.text }}>{s.value}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>{s.label}</p>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -200,14 +211,14 @@ function ProfileCard({ onNavigate }) {
           }}>
           Message
         </motion.button>
-      </div>
+      </div>}
     </motion.div>
   );
 }
 
 // ─── Section Chips ─────────────────────────────────────────────────────────────
 // Shared logic, used by both mobile and desktop chip bars
-function SectionChips({ activeSectionId, onNavigate, onHome, scrollRef }) {
+function SectionChips({ activeSectionId, onNavigate, onHome, scrollRef, onSections, onAddSection }) {
   const chipStyle = (active, color) => ({
     flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
     padding: "7px 14px", borderRadius: 99,
@@ -223,7 +234,7 @@ function SectionChips({ activeSectionId, onNavigate, onHome, scrollRef }) {
         <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: !activeSectionId ? C.accent : C.textMuted, whiteSpace: "nowrap" }}>Perfil</span>
       </motion.button>
 
-      {SECTIONS.map(s => {
+      {(onSections || SECTIONS).map(s => {
         const active = s.id === activeSectionId;
         return (
           <motion.button key={s.id} whileTap={{ scale: 0.93 }} onClick={() => onNavigate(s.id)} style={chipStyle(active, s.accentColor)}>
@@ -234,12 +245,20 @@ function SectionChips({ activeSectionId, onNavigate, onHome, scrollRef }) {
           </motion.button>
         );
       })}
+      {/* Añadir sección */}
+      {onAddSection && (
+        <motion.button whileTap={{ scale: 0.93 }} onClick={onAddSection}
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 99, border: `1px dashed ${C.border}`, background: "transparent", cursor: "pointer" }}>
+          <Plus size={11} color={C.textMuted} strokeWidth={2.5} />
+          <span style={{ fontFamily: font, fontSize: 12, fontWeight: 600, color: C.textMuted, whiteSpace: "nowrap" }}>Añadir</span>
+        </motion.button>
+      )}
     </div>
   );
 }
 
 // ─── Desktop Chip Bar with arrow controls ─────────────────────────────────────
-function DesktopSectionBar({ activeSectionId, onNavigate, onHome }) {
+function DesktopSectionBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
   const scrollRef = useRef(null);
   const [canLeft,  setCanLeft]  = useState(false);
   const [canRight, setCanRight] = useState(false);
@@ -273,14 +292,14 @@ function DesktopSectionBar({ activeSectionId, onNavigate, onHome }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <ArrowBtn dir={-1} enabled={canLeft} />
-      <SectionChips activeSectionId={activeSectionId} onNavigate={onNavigate} onHome={onHome} scrollRef={scrollRef} />
+      <SectionChips activeSectionId={activeSectionId} onNavigate={onNavigate} onHome={onHome} scrollRef={scrollRef} onSections={onSections} onAddSection={onAddSection} />
       <ArrowBtn dir={1} enabled={canRight} />
     </div>
   );
 }
 
 // ─── Desktop Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ activeSectionId, onNavigate, onHome }) {
+function Sidebar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
   return (
     <motion.aside
       initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
@@ -313,7 +332,7 @@ function Sidebar({ activeSectionId, onNavigate, onHome }) {
       <div style={{ margin: "4px 18px", borderTop: `1px solid ${C.border}` }} />
 
       <div style={{ padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
-        {SECTIONS.map(s => {
+        {(onSections || SECTIONS).map(s => {
           const active = s.id === activeSectionId;
           return (
             <motion.button key={s.id} whileHover={{ x: active ? 0 : 2 }} whileTap={{ scale: 0.97 }}
@@ -339,22 +358,31 @@ function Sidebar({ activeSectionId, onNavigate, onHome }) {
 }
 
 // ─── Mobile Top Bar ───────────────────────────────────────────────────────────
-function MobileTopBar({ activeSectionId, accent }) {
-  const activeSection = SECTIONS.find(s => s.id === activeSectionId);
+function MobileTopBar({ onHome, profileName, onAIPanel, onOpenSettings }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56, flexShrink: 0 }}>
-      <img src="/workspace_logo.png" alt="Workspace" style={{ height: 28, width: "auto", mixBlendMode: "screen", filter: "brightness(1.15) contrast(1.05)", userSelect: "none", display: "block", flexShrink: 0 }} />
-      <div style={{ flex: 1 }}>
-        <AnimatePresence mode="wait">
-          <motion.span key={activeSectionId ?? "perfil"} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={fadeTrans}
-            style={{ fontFamily: font, fontSize: 16, fontWeight: 700, color: activeSection ? (accent || C.text) : C.accentLight, letterSpacing: "-0.02em", display: "block" }}>
-            {activeSection ? activeSection.label : "Perfil"}
-          </motion.span>
-        </AnimatePresence>
+    <div style={{ display: "flex", alignItems: "center", padding: "8px 14px", gap: 10, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 50, flexShrink: 0 }}>
+      <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
+        style={{ display: "flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 6px 4px 0", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
+        <ChevronLeft size={16} strokeWidth={2.4} color={C.accentLight} />
+        <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.accentLight }}>Home</span>
+      </motion.button>
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profileName}</span>
       </div>
-      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        <IconBtn icon={Search} />
+      {/* Right icons: AI, avatar (→ settings), bell, message, search */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+        <motion.button whileTap={{ scale: 0.88 }} onClick={onAIPanel}
+          style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(124,77,255,0.15)", border: "1px solid rgba(124,77,255,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+          <Zap size={13} color="#9d71ff" />
+        </motion.button>
+        {/* Avatar → opens Settings */}
+        <motion.div whileTap={{ scale: 0.88 }} onClick={onOpenSettings}
+          style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, border: `1.5px solid ${C.accent}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
+          <span style={{ fontFamily: font, fontSize: 11, fontWeight: 800, color: C.accentLight }}>A</span>
+        </motion.div>
         <IconBtn icon={Bell} badge />
+        <IconBtn icon={MessageSquare} />
+        <IconBtn icon={Search} />
       </div>
     </div>
   );
@@ -388,6 +416,7 @@ function LatestTradesCard({ onNavigate }) {
           </motion.div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -506,7 +535,7 @@ function PerfilContent({ onNavigate }) {
       {/* ── Two-column cards row: Latest Trades + Reviews ── */}
       <div style={{ padding: "18px 18px 0", display: "flex", gap: 12 }}>
         <LatestTradesCard onNavigate={onNavigate} />
-        <ReviewsCard onVerMas={() => onNavigate("reviews")} />
+        <ReviewsCard onVerMas={() => onNavigate("rooms")} />
       </div>
 
       {/* ── Latest post from each section ── */}
@@ -525,6 +554,7 @@ function PerfilContent({ onNavigate }) {
       <div style={{ padding: "26px 18px 0" }}>
         <BadgesMuseum />
       </div>
+
     </div>
   );
 }
@@ -542,15 +572,41 @@ const ALL_REVIEWS = [
 ];
 
 function ReviewsContent({ onBack }) {
+  const [reviews, setReviews] = useState(ALL_REVIEWS.map((r, i) => ({
+    ...r, id: i, likes: Math.floor(Math.random() * 24) + 2, liked: false,
+    replies: [], showReply: false, replyText: "",
+  })));
+  const [newRating, setNewRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [newText, setNewText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggleLike = (id) => setReviews(rs => rs.map(r =>
+    r.id === id ? { ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 } : r
+  ));
+  const toggleReply = (id) => setReviews(rs => rs.map(r =>
+    r.id === id ? { ...r, showReply: !r.showReply } : r
+  ));
+  const setReplyText = (id, val) => setReviews(rs => rs.map(r =>
+    r.id === id ? { ...r, replyText: val } : r
+  ));
+  const submitReply = (id) => setReviews(rs => rs.map(r => {
+    if (r.id !== id || !r.replyText.trim()) return r;
+    return { ...r, replies: [...r.replies, { author: "Alex H.", text: r.replyText.trim(), isHost: true }], replyText: "", showReply: false };
+  }));
+  const submitReview = async () => {
+    if (!newRating || !newText.trim()) return;
+    setSubmitting(true);
+    await new Promise(res => setTimeout(res, 600));
+    setReviews(rs => [{ id: Date.now(), author: "You", stars: newRating, date: "just now", text: newText.trim(), likes: 0, liked: false, replies: [], showReply: false, replyText: "" }, ...rs]);
+    setNewRating(0); setNewText(""); setSubmitting(false);
+  };
+
   return (
     <div style={{ paddingBottom: 40 }}>
-      {/* Header */}
-      <div style={{ padding: "20px 20px 0", display: "flex", alignItems: "center", gap: 14 }}>
-        <motion.button whileTap={{ scale: 0.93 }} onClick={onBack}
-          style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: C.gold, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0 }}>
-          <ChevronLeft size={17} strokeWidth={2.2} /> Back
-        </motion.button>
-        <div style={{ flex: 1 }}>
+      {/* Header — no back button, integrated as tab */}
+      <div style={{ padding: "18px 20px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
           <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>Reviews</h2>
           <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>What members are saying</p>
         </div>
@@ -560,30 +616,89 @@ function ReviewsContent({ onBack }) {
       </div>
 
       {/* Average badge */}
-      <div style={{ margin: "16px 20px", background: C.card, border: `1px solid ${C.gold}30`, borderRadius: 16, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ margin: "14px 20px 0", background: C.card, border: `1px solid ${C.gold}30`, borderRadius: 16, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ textAlign: "center" }}>
           <p style={{ margin: 0, fontFamily: font, fontSize: 36, fontWeight: 900, color: C.goldLight, letterSpacing: "-0.03em" }}>4.9</p>
           <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>out of 5</p>
         </div>
         <div style={{ width: 1, height: 40, background: C.border }} />
         <div>
-          <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{ALL_REVIEWS.length} reviews</p>
+          <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{reviews.length} reviews</p>
           {[5,4,3].map(s => (
             <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
               <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted, width: 8 }}>{s}</span>
               <div style={{ width: 80, height: 4, borderRadius: 2, background: C.border, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: s === 5 ? "90%" : s === 4 ? "8%" : "2%", background: C.gold, borderRadius: 2 }} />
+                <div style={{ height: "100%", width: s === 5 ? "88%" : s === 4 ? "9%" : "3%", background: C.gold, borderRadius: 2 }} />
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Review list */}
-      <div style={{ padding: "0 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {ALL_REVIEWS.map((r, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+      {/* ── Write a Review form ── */}
+      <div style={{ margin: "14px 20px 0", background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "16px 18px" }}>
+        <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Write a Review</p>
+        {/* Star rating selector */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[1,2,3,4,5].map(s => (
+            <motion.button key={s} whileTap={{ scale: 0.85 }}
+              onMouseEnter={() => setHoverRating(s)} onMouseLeave={() => setHoverRating(0)}
+              onClick={() => setNewRating(s)}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
+              <Star size={26} strokeWidth={1.5}
+                color={(hoverRating || newRating) >= s ? C.gold : C.border}
+                fill={(hoverRating || newRating) >= s ? C.gold : "none"} />
+            </motion.button>
+          ))}
+          {newRating > 0 && (
+            <span style={{ fontFamily: font, fontSize: 12, color: C.goldLight, fontWeight: 600, alignSelf: "center", marginLeft: 4 }}>
+              {["", "Poor", "Fair", "Good", "Great", "Excellent"][newRating]}
+            </span>
+          )}
+        </div>
+        {/* Textarea */}
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <textarea
+            value={newText}
+            onChange={e => setNewText(e.target.value)}
+            placeholder="Share your experience with this community…"
+            rows={3}
+            style={{
+              width: "100%", boxSizing: "border-box", resize: "none",
+              background: `${C.bg}cc`, border: `1.5px solid ${newText.trim() ? C.accent + "55" : C.border}`,
+              borderRadius: 12, padding: "11px 14px", color: C.text,
+              fontFamily: font, fontSize: 13, lineHeight: 1.55,
+              outline: "none", transition: "border-color 0.2s",
+              caretColor: C.accentLight,
+            }}
+          />
+          <span style={{ position: "absolute", bottom: 8, right: 12, fontFamily: font, fontSize: 10, color: C.textDim }}>
+            {newText.length}/500
+          </span>
+        </div>
+        {/* Submit */}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={submitReview}
+          disabled={!newRating || !newText.trim() || submitting}
+          style={{
+            width: "100%", height: 40, borderRadius: 12, border: "none", cursor: (!newRating || !newText.trim()) ? "default" : "pointer",
+            fontFamily: font, fontSize: 13, fontWeight: 700,
+            background: (!newRating || !newText.trim())
+              ? C.border
+              : `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 100%)`,
+            color: (!newRating || !newText.trim()) ? C.textMuted : "#1a0f00",
+            transition: "all 0.2s",
+            boxShadow: (!newRating || !newText.trim()) ? "none" : `0 4px 16px ${C.gold}40`,
+          }}>
+          {submitting ? "Submitting…" : "Submit Review"}
+        </motion.button>
+      </div>
+
+      {/* ── Review list with likes + creator reply ── */}
+      <div style={{ padding: "14px 20px 0", display: "flex", flexDirection: "column", gap: 12 }}>
+        {reviews.map((r, i) => (
+          <motion.div key={r.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
             style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "14px 16px" }}>
+            {/* Header row */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
               <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{r.author}</p>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -593,10 +708,52 @@ function ReviewsContent({ onBack }) {
                 <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted }}>{r.date}</span>
               </div>
             </div>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>{r.text}</p>
+            {/* Review text */}
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>{r.text}</p>
+            {/* Actions: helpful + reply */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <motion.button whileTap={{ scale: 0.88 }} onClick={() => toggleLike(r.id)}
+                style={{ display: "flex", alignItems: "center", gap: 5, background: r.liked ? `${C.gold}18` : "transparent", border: `1px solid ${r.liked ? C.gold + "55" : C.border}`, borderRadius: 20, padding: "4px 10px", cursor: "pointer", transition: "all 0.18s" }}>
+                <span style={{ fontSize: 12 }}>👍</span>
+                <span style={{ fontFamily: font, fontSize: 11, fontWeight: 600, color: r.liked ? C.goldLight : C.textMuted }}>
+                  Helpful {r.likes > 0 ? `(${r.likes})` : ""}
+                </span>
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.88 }} onClick={() => toggleReply(r.id)}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 10px", cursor: "pointer" }}>
+                <span style={{ fontFamily: font, fontSize: 11, fontWeight: 600, color: C.textMuted }}>Reply</span>
+              </motion.button>
+            </div>
+            {/* Creator replies */}
+            {r.replies.map((rep, ri) => (
+              <div key={ri} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, ${C.accent}44, ${C.accent}22)`, border: `1px solid ${C.accent}40`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font, fontSize: 11, fontWeight: 800, color: C.accentLight }}>A</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text }}>{rep.author}</span>
+                    {rep.isHost && <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Creator</span>}
+                  </div>
+                  <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{rep.text}</p>
+                </div>
+              </div>
+            ))}
+            {/* Reply input */}
+            {r.showReply && (
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <input value={r.replyText} onChange={e => setReplyText(r.id, e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && submitReply(r.id)}
+                  placeholder="Add a reply…"
+                  style={{ flex: 1, background: `${C.bg}cc`, border: `1.5px solid ${C.accent}44`, borderRadius: 10, padding: "8px 12px", color: C.text, fontFamily: font, fontSize: 12, outline: "none" }} />
+                <motion.button whileTap={{ scale: 0.88 }} onClick={() => submitReply(r.id)}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: "#fff", fontFamily: font, fontSize: 12, fontWeight: 700 }}>
+                  Send
+                </motion.button>
+              </div>
+            )}
           </motion.div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -622,6 +779,7 @@ function MetricsContent() {
           </motion.div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -677,36 +835,455 @@ function CommunityChatContent({ section }) {
 
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 function RoomsContent() {
+  const [activeTab, setActiveTab] = useState("rooms"); // rooms | chat | reviews
   const rooms = [
     { id: 1, name: "Pre-Market Session", host: "Alex H.", live: true,  members: 34, scheduled: null      },
     { id: 2, name: "Trade Review — EU",  host: "Alex H.", live: true,  members: 18, scheduled: null      },
     { id: 3, name: "Q&A with Alex",      host: "Alex H.", live: false, members: 0,  scheduled: "3:00 PM" },
   ];
+  const RoomBlue = "#60a5fa";
+
+  const tabs = [
+    { id: "rooms",    label: "Live Rooms",     badge: "2 live" },
+    { id: "chat",     label: "Community Chat", badge: "12" },
+    { id: "reviews",  label: "Reviews",        badge: null },
+  ];
+
   return (
-    <div style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-      {rooms.map((r, i) => (
-        <motion.div key={r.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-          style={{ background: C.card, border: `1px solid ${r.live ? "#60a5fa40" : C.border}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-            <span style={{ fontFamily: font, fontSize: 15, fontWeight: 700, color: C.text }}>{r.name}</span>
-            {r.live
-              ? <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.red, background: `${C.red}18`, border: `1px solid ${C.red}30`, borderRadius: 6, padding: "3px 8px" }}>🔴 LIVE · {r.members}</span>
-              : <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textMuted, background: C.border, borderRadius: 6, padding: "3px 8px" }}>{r.scheduled}</span>}
-          </div>
-          <span style={{ fontFamily: font, fontSize: 12, color: C.textMuted }}>Hosted by {r.host}</span>
-        </motion.div>
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        {tabs.map(t => {
+          const active = t.id === activeTab;
+          return (
+            <motion.button key={t.id} whileTap={{ scale: 0.93 }} onClick={() => setActiveTab(t.id)}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 99, border: `1px solid ${active ? RoomBlue + "55" : C.border}`, background: active ? `${RoomBlue}14` : "transparent", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: active ? RoomBlue : C.textMuted, transition: "all 0.15s" }}>
+              {t.label}
+              {t.badge && <span style={{ fontSize: 9, fontWeight: 800, color: active ? RoomBlue : C.textMuted, background: active ? `${RoomBlue}22` : C.border, border: `1px solid ${active ? RoomBlue + "35" : "transparent"}`, borderRadius: 99, padding: "1px 5px" }}>{t.badge}</span>}
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        <AnimatePresence mode="wait">
+          {activeTab === "rooms" && (
+            <motion.div key="rooms" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }}
+              style={{ padding: "16px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", height: "100%" }}>
+              {rooms.map((r, i) => (
+                <motion.div key={r.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                  style={{ background: C.card, border: `1px solid ${r.live ? RoomBlue + "40" : C.border}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                    <span style={{ fontFamily: font, fontSize: 15, fontWeight: 700, color: C.text }}>{r.name}</span>
+                    {r.live
+                      ? <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.red, background: `${C.red}18`, border: `1px solid ${C.red}30`, borderRadius: 6, padding: "3px 8px" }}>🔴 LIVE · {r.members}</span>
+                      : <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textMuted, background: C.border, borderRadius: 6, padding: "3px 8px" }}>{r.scheduled}</span>}
+                  </div>
+                  <span style={{ fontFamily: font, fontSize: 12, color: C.textMuted }}>Hosted by {r.host}</span>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+          {activeTab === "chat" && (
+            <motion.div key="chat" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }}
+              style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+              <CommunityChatContent section={{ accentColor: RoomBlue }} />
+            </motion.div>
+          )}
+          {activeTab === "reviews" && (
+            <motion.div key="reviews" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }}
+              style={{ overflowY: "auto", height: "100%" }}>
+              <ReviewsContent onBack={() => setActiveTab("rooms")} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
     </div>
   );
 }
 
-// ─── Root App ─────────────────────────────────────────────────────────────────
-export default function App() {
+// ─── Custom Section ──────────────────────────────────────────────────────────
+function CustomSectionContent({ section }) {
+  const [posts, setPosts] = useState([]);
+  const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
+  const submit = () => {
+    if (!text.trim()) return;
+    setPosts(p => [{ id: Date.now(), text: text.trim(), author: "You", time: "just now" }, ...p]);
+    setText("");
+  };
+  const color = section.accentColor || "#7c4dff";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {posts.length === 0 && (
+          <div style={{ textAlign: "center", padding: "48px 20px" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 16, background: `${color}18`, border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+              <section.icon size={22} color={color} />
+            </div>
+            <p style={{ fontFamily: font, fontSize: 14, color: C.textMuted }}>No posts yet in {section.label}</p>
+          </div>
+        )}
+        {posts.map((p, i) => (
+          <motion.div key={p.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{p.author}</span>
+              <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{p.time}</span>
+            </div>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.textMuted, lineHeight: 1.55 }}>{p.text}</p>
+          </motion.div>
+        ))}
+      </div>
+      <div style={{ padding: "10px 16px 20px", borderTop: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(16px)", flexShrink: 0 }}>
+        <div style={{ background: C.card, border: `1.5px solid ${focused ? color + "55" : C.border}`, borderRadius: 14, padding: "0 4px 4px 14px", transition: "border-color 0.2s" }}>
+          <textarea value={text} onChange={e => setText(e.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+            placeholder={`Post in ${section.label}…`} rows={2}
+            style={{ width: "100%", boxSizing: "border-box", background: "none", border: "none", outline: "none", resize: "none", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.55, padding: "10px 0" }} />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <motion.button whileTap={{ scale: 0.88 }} onClick={submit}
+              style={{ padding: "7px 18px", borderRadius: 10, border: "none", cursor: text.trim() ? "pointer" : "default", background: text.trim() ? `linear-gradient(135deg, ${color}, ${color}cc)` : C.border, color: text.trim() ? "#fff" : C.textMuted, fontFamily: font, fontSize: 13, fontWeight: 700, transition: "all 0.2s" }}>
+              Post
+            </motion.button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Add Section Modal ────────────────────────────────────────────────────────
+const ICON_OPTIONS = [
+  { id: "hash",       icon: Hash,         label: "Channel"  },
+  { id: "star",       icon: Star,         label: "Reviews"  },
+  { id: "calendar",   icon: CalendarDays, label: "Schedule" },
+  { id: "chart",      icon: BarChart2,    label: "Stats"    },
+  { id: "users",      icon: Users,        label: "Community"},
+  { id: "message",    icon: MessageSquare,label: "Chat"     },
+  { id: "trending",   icon: TrendingUp,   label: "Signals"  },
+  { id: "megaphone",  icon: Megaphone,    label: "Announce" },
+];
+const COLOR_OPTIONS = ["#7c4dff","#22d3a0","#f59e0b","#60a5fa","#e879f9","#ff4f6a","#d4a843","#34d399"];
+
+function AddSectionModal({ onAdd, onClose }) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [iconId, setIconId] = useState("hash");
+  const [color, setColor] = useState("#7c4dff");
+
+  const selectedIcon = ICON_OPTIONS.find(o => o.id === iconId) || ICON_OPTIONS[0];
+
+  const submit = () => {
+    if (!name.trim()) return;
+    const id = `custom_${Date.now()}`;
+    onAdd({
+      id, label: name.trim(), subtitle: desc.trim() || `Custom section`,
+      icon: selectedIcon.icon, accentColor: color, glowColor: `${color}25`,
+      badge: null, isCustom: true,
+    });
+    onClose();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ scale: 0.92, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.92, opacity: 0 }}
+        style={{ width: "100%", maxWidth: 420, background: C.card, border: `1px solid ${C.border}`, borderRadius: 22, padding: "24px 22px", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>Nueva Sección</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={19} /></button>
+        </div>
+
+        {/* Preview chip */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 99, border: `1.5px solid ${color}60`, background: `${color}14` }}>
+            <selectedIcon.icon size={14} color={color} />
+            <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color }}>{name || "Mi Sección"}</span>
+          </div>
+        </div>
+
+        {/* Name */}
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre de la sección…"
+          style={{ width: "100%", boxSizing: "border-box", background: `${C.bg}cc`, border: `1.5px solid ${name ? color + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10, transition: "border-color 0.2s" }} />
+
+        {/* Description */}
+        <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descripción (opcional)…"
+          style={{ width: "100%", boxSizing: "border-box", background: `${C.bg}cc`, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 13, outline: "none", marginBottom: 16 }} />
+
+        {/* Icon selector */}
+        <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted }}>Ícono</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          {ICON_OPTIONS.map(o => {
+            const active = o.id === iconId;
+            return (
+              <motion.button key={o.id} whileTap={{ scale: 0.88 }} onClick={() => setIconId(o.id)}
+                style={{ width: 42, height: 42, borderRadius: 12, border: `1.5px solid ${active ? color + "70" : C.border}`, background: active ? `${color}18` : C.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.15s" }}>
+                <o.icon size={17} color={active ? color : C.textMuted} />
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Color selector */}
+        <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted }}>Color</p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+          {COLOR_OPTIONS.map(c => (
+            <motion.button key={c} whileTap={{ scale: 0.88 }} onClick={() => setColor(c)}
+              style={{ width: 28, height: 28, borderRadius: "50%", background: c, border: `2.5px solid ${c === color ? "#fff" : "transparent"}`, cursor: "pointer", boxShadow: c === color ? `0 0 12px ${c}80` : "none", transition: "all 0.15s" }} />
+          ))}
+        </div>
+
+        <motion.button whileTap={{ scale: 0.95 }} onClick={submit}
+          disabled={!name.trim()}
+          style={{ width: "100%", height: 44, borderRadius: 14, border: "none", cursor: name.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: name.trim() ? `linear-gradient(135deg, ${color}, ${color}bb)` : C.border, color: name.trim() ? "#fff" : C.textMuted, boxShadow: name.trim() ? `0 4px 20px ${color}44` : "none", transition: "all 0.2s" }}>
+          Crear Sección
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+
+// ─── Settings Panel ───────────────────────────────────────────────────────────
+function SettingsPanel({ onClose }) {
+  const [username,   setUsername]   = useState("Alex Herrera");
+  const [handle,     setHandle]     = useState("alexherrera.trades");
+  const [privacy,    setPrivacy]    = useState("members");
+  const [saved,      setSaved]      = useState(false);
+  const [activeTab,  setActiveTab]  = useState("account");
+
+  const tabs = [
+    { id: "account",  label: "Account"  },
+    { id: "privacy",  label: "Privacy"  },
+    { id: "security", label: "Security" },
+  ];
+
+  const save = () => {
+    setSaved(true);
+    setTimeout(() => { setSaved(false); onClose(); }, 1000);
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(16px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 380, damping: 38 }}
+        style={{ width: "100%", maxWidth: 480, background: C.surface, borderRadius: "22px 22px 0 0", border: `1px solid ${C.border}`, borderBottom: "none", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Handle */}
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "14px auto 0" }} />
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 0" }}>
+          <span style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: C.text }}>Settings</span>
+          <motion.button whileTap={{ scale: 0.88 }} onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={20} /></motion.button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, padding: "14px 20px 0" }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              style={{ padding: "7px 16px", borderRadius: 99, border: `1px solid ${activeTab === t.id ? C.accent + "55" : C.border}`, background: activeTab === t.id ? C.accent + "18" : "transparent", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: activeTab === t.id ? C.accentLight : C.textMuted, transition: "all 0.15s" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+
+          {activeTab === "account" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Avatar edit */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{ position: "relative" }}>
+                  <div style={{ width: 72, height: 72, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, border: `3px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontFamily: font, fontSize: 26, fontWeight: 800, color: C.accentLight }}>A</span>
+                  </div>
+                  <motion.div whileTap={{ scale: 0.88 }}
+                    style={{ position: "absolute", bottom: 0, right: 0, width: 26, height: 26, borderRadius: "50%", background: C.accent, border: `2px solid ${C.surface}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 2px 8px ${C.accent}60` }}>
+                    <Pencil size={12} color="#fff" strokeWidth={2.5} />
+                  </motion.div>
+                </div>
+                <span style={{ fontFamily: font, fontSize: 12, color: C.accentLight, fontWeight: 600, cursor: "pointer" }}>Change photo</span>
+              </div>
+
+              {[
+                { label: "Display name", value: username, set: setUsername, placeholder: "Your name" },
+                { label: "Username", value: handle, set: setHandle, placeholder: "@handle", prefix: "@" },
+              ].map(f => (
+                <div key={f.label}>
+                  <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{f.label}</p>
+                  <input value={f.value} onChange={e => f.set(e.target.value)} placeholder={f.placeholder}
+                    style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, outline: "none", transition: "border-color 0.2s" }}
+                    onFocus={e => e.target.style.borderColor = C.accent + "55"}
+                    onBlur={e => e.target.style.borderColor = C.border} />
+                </div>
+              ))}
+
+              {/* Switch account */}
+              <div style={{ marginTop: 4 }}>
+                <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Accounts</p>
+                {["Alex Herrera", "Trading Alt"].map((acc, i) => (
+                  <motion.div key={acc} whileTap={{ scale: 0.97 }}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 14, background: i === 0 ? `${C.accent}12` : "transparent", border: `1px solid ${i === 0 ? C.accent + "30" : C.border}`, marginBottom: 8, cursor: "pointer" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: i === 0 ? `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)` : C.card, border: `2px solid ${i === 0 ? C.accent + "44" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <span style={{ fontFamily: font, fontSize: 13, fontWeight: 800, color: C.accentLight }}>{acc[0]}</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{acc}</p>
+                      {i === 0 && <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.accentLight }}>Active</p>}
+                    </div>
+                    {i === 0 && <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.green }} />}
+                  </motion.div>
+                ))}
+                <motion.button whileTap={{ scale: 0.95 }}
+                  style={{ width: "100%", padding: "10px", borderRadius: 14, border: `1px dashed ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 600, color: C.textMuted }}>
+                  + Add account
+                </motion.button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "privacy" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Default post visibility</p>
+              {["public", "members", "private"].map(p => (
+                <motion.div key={p} whileTap={{ scale: 0.97 }} onClick={() => setPrivacy(p)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 14, background: privacy === p ? `${C.accent}12` : C.card, border: `1px solid ${privacy === p ? C.accent + "35" : C.border}`, cursor: "pointer" }}>
+                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: privacy === p ? C.accentLight : C.text, textTransform: "capitalize" }}>{p}</span>
+                  {privacy === p && <div style={{ width: 18, height: 18, borderRadius: "50%", background: C.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, color: "#fff" }}>✓</span></div>}
+                </motion.div>
+              ))}
+              <div style={{ marginTop: 8, padding: "14px 16px", borderRadius: 14, background: C.card, border: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 13, fontWeight: 600, color: C.text }}>Allow DMs</p>
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>Members can message you</p>
+                  </div>
+                  <div style={{ width: 42, height: 24, borderRadius: 12, background: C.green, cursor: "pointer", position: "relative" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, right: 3, boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "security" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { label: "Change password",       sub: "Update your login password"      },
+                { label: "Two-factor auth",        sub: "Add an extra layer of security"  },
+                { label: "Active sessions",        sub: "Manage where you're logged in"   },
+                { label: "Download my data",       sub: "Export your account data"        },
+              ].map(item => (
+                <motion.div key={item.label} whileTap={{ scale: 0.97 }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderRadius: 14, background: C.card, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+                  <div>
+                    <p style={{ margin: "0 0 2px", fontFamily: font, fontSize: 13, fontWeight: 600, color: C.text }}>{item.label}</p>
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>{item.sub}</p>
+                  </div>
+                  <ChevronRight size={16} color={C.textMuted} />
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div style={{ padding: "12px 20px 28px", borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+          {activeTab === "account" && (
+            <motion.button whileTap={{ scale: 0.95 }} onClick={save}
+              style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 800, background: saved ? `linear-gradient(135deg, ${C.green}, #0ea876)` : `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: saved ? "#000" : "#fff", transition: "all 0.2s", boxShadow: `0 4px 20px ${C.accent}44` }}>
+              {saved ? "Saved ✓" : "Save Changes"}
+            </motion.button>
+          )}
+          <motion.button whileTap={{ scale: 0.95 }}
+            style={{ width: "100%", height: 44, borderRadius: 14, border: `1px solid ${C.red}30`, background: `${C.red}10`, cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 700, color: C.red }}>
+            Log Out
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Root Shell ───────────────────────────────────────────────────────────────
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+import React from "react";
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ background: "#08080e", color: "#ff4f6a", fontFamily: "monospace", padding: 24, height: "100vh" }}>
+          <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Render Error (check console):</p>
+          <pre style={{ fontSize: 12, whiteSpace: "pre-wrap", color: "#eaeaf5" }}>{this.state.error.message}</pre>
+          <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", color: "#6a6a82", marginTop: 8 }}>{this.state.error.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function RootShell() {
+  const [showHome,     setShowHome]     = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+
+  return (
+    <div style={{ width: "100vw", height: "100vh", background: "#08080e" }}>
+      {showHome ? (
+        <HomeFeed onEnterProfile={() => setShowHome(false)} />
+      ) : (
+        <ErrorBoundary>
+          <App
+            onGoHome={() => setShowHome(true)}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        </ErrorBoundary>
+      )}
+      <AnimatePresence>
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Workspace App ────────────────────────────────────────────────────────────
+function App({ onGoHome, onOpenSettings }) {
   const [activeSectionId, setActiveSectionId] = useState(null); // null = Perfil
   const [direction,       setDirection]       = useState(1);
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
-  const isDesktop                             = useIsDesktop();
+  const [showAddSection,  setShowAddSection]  = useState(false);
+  const [showAIPanel,     setShowAIPanel]     = useState(false);
+
+  // ── Central profile config — AI modifies this, render engine reads it ──────
+  const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
+
+  const applyConfig = useCallback((newConfig) => {
+    setProfileConfig(newConfig);
+  }, []);
+
+  // Derive runtime data from profileConfig
+  const allSections   = useMemo(
+    () => profileConfig.sections.filter(s => s.visible).sort((a,b) => a.order - b.order).map(resolveSection),
+    [profileConfig.sections]
+  );
+  const visibleWidgets = useMemo(
+    () => profileConfig.feedWidgets.filter(w => w.visible).sort((a,b) => a.order - b.order),
+    [profileConfig.feedWidgets]
+  );
+
+  const isDesktop = useIsDesktop();
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -735,26 +1312,27 @@ export default function App() {
     setActiveSectionId(null);
   }, [activeSectionId]);
 
-  const activeSection = SECTIONS.find(s => s.id === activeSectionId) || null;
+  const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
 
   function renderContent() {
-    if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} />;
+    if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} />;
     if (activeSectionId === "planning")      return <Planning      section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "recaps")        return <Recaps        section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
-    if (activeSectionId === "community")     return <CommunityChatContent section={activeSection} />;
-    if (activeSectionId === "reviews")       return <ReviewsContent onBack={goHome} />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
+    const customSec = allSections.find(s => s.id === activeSectionId && !["planning","recaps","announcements","metrics","rooms"].includes(activeSectionId));
+    if (customSec) return <CustomSectionContent section={customSec} />;
     return null;
   }
 
   // ── DESKTOP ──────────────────────────────────────────────────────────────────
   if (isDesktop) {
     return (
+      <ThemeProvider themeConfig={profileConfig.theme}>
       <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", overflow: "hidden" }}>
-        <Sidebar activeSectionId={activeSectionId} onNavigate={navigate} onHome={goHome} />
+        <Sidebar activeSectionId={activeSectionId} onNavigate={navigate} onHome={goHome} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
@@ -762,6 +1340,12 @@ export default function App() {
           <div style={{ flexShrink: 0, zIndex: 30, background: `${C.surface}f4`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "10px 20px", display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ flex: 1, minWidth: 0 }} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              {/* AI Studio button */}
+              <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowAIPanel(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 10, border: `1px solid ${showAIPanel ? C.accent + "55" : C.border}`, background: showAIPanel ? `${C.accent}18` : C.card, cursor: "pointer", transition: "all 0.15s" }}>
+                <Zap size={14} color={showAIPanel ? C.accentLight : C.textMuted} />
+                <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: showAIPanel ? C.accentLight : C.textMuted }}>AI Studio</span>
+              </motion.button>
               <IconBtn icon={MessageSquare} />
               <IconBtn icon={Search} />
               <IconBtn icon={Bell} badge />
@@ -778,7 +1362,7 @@ export default function App() {
           <AnimatePresence>
             {!activeSectionId && (
               <motion.div key="profile_desktop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fadeTrans} style={{ flexShrink: 0 }}>
-                <ProfileCard onNavigate={navigate} />
+                <ProfileCard onNavigate={navigate} profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -797,35 +1381,99 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showAIPanel && (
+          <AIPromptPanel
+            currentConfig={profileConfig}
+            onApply={applyConfig}
+            onClose={() => setShowAIPanel(false)}
+          />
+        )}
+      </AnimatePresence>
+      </ThemeProvider>
     );
   }
 
-  // ── MOBILE ───────────────────────────────────────────────────────────────────
+  // ── MOBILE ── Tabs integradas: perfil fijo arriba, feed cambia por chip/swipe
+  const MOBILE_TABS = [null, ...allSections.map(s => s.id)]; // null = Perfil/home feed
+  const mobileTabIdx = MOBILE_TABS.indexOf(activeSectionId);
+
+  // Swipe horizontal — deliberate (Twitter/Whop style): vertical always wins
+  const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
+  const handleTouchStart = (e) => {
+    swipeState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
+  };
+  const handleTouchMove = (e) => {
+    const s = swipeState.current;
+    if (s.locked) return;
+    const dx = Math.abs(e.touches[0].clientX - s.x);
+    const dy = Math.abs(e.touches[0].clientY - s.y);
+    // Lock direction once we have 8px of movement
+    if (dx > 8 || dy > 8) {
+      s.locked = dx > dy * 1.5 ? "h" : "v"; // horizontal only if clearly dominant
+    }
+  };
+  const handleTouchEnd = (e) => {
+    const s = swipeState.current;
+    if (s.locked !== "h") return; // vertical scroll or undecided → ignore
+    const dx = e.changedTouches[0].clientX - s.x;
+    const dy = Math.abs(e.changedTouches[0].clientY - s.y);
+    swipeState.current = { x: 0, y: 0, locked: null };
+    // Require strong horizontal swipe: min 72px, ratio 2.5:1 over vertical
+    if (Math.abs(dx) < 72 || Math.abs(dx) < dy * 2.5) return;
+    if (dx < 0 && mobileTabIdx < MOBILE_TABS.length - 1) {
+      setDirection(1);
+      setActiveSectionId(MOBILE_TABS[mobileTabIdx + 1]);
+    } else if (dx > 0 && mobileTabIdx > 0) {
+      setDirection(-1);
+      setActiveSectionId(MOBILE_TABS[mobileTabIdx - 1]);
+    }
+  };
+
+  // Render del feed móvil según sección activa — sin navegar a página nueva
+  function renderMobileFeed() {
+    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} />;
+    if (activeSectionId === "planning")      return <Planning      section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
+    if (activeSectionId === "recaps")        return <Recaps        section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
+    if (activeSectionId === "metrics")       return <MetricsContent />;
+    if (activeSectionId === "rooms")         return <RoomsContent />;
+    return null;
+  }
+
   return (
+    <ThemeProvider themeConfig={profileConfig.theme}>
     <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", justifyContent: "center" }}>
       <div style={{ width: "100%", maxWidth: 430, height: "100vh", background: C.surface, position: "relative", overflow: "hidden", boxShadow: "0 0 80px rgba(0,0,0,0.7)", display: "flex", flexDirection: "column" }}>
 
         {/* Ambient glow */}
         <div style={{ position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)", width: 300, height: 120, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        {/* Top bar */}
-        <MobileTopBar activeSectionId={activeSectionId} accent={accentColor} />
+        {/* ── TOP BAR: ← Home + nombre perfil (fija siempre) ── */}
+        <MobileTopBar onHome={goHome} profileName={profileConfig.identity.name} onAIPanel={() => setShowAIPanel(v => !v)} onOpenSettings={onOpenSettings} />
 
-        {/* Profile card — visible only on Perfil, collapses on section switch */}
-        <AnimatePresence>
-          {!activeSectionId && (
-            <motion.div key="profile_card"
-              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              style={{ flexShrink: 0, overflow: "hidden", zIndex: 5 }}>
-              <ProfileCard onNavigate={navigate} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Chip strip — always visible below profile (or below topbar when in section) */}
-        <div style={{ flexShrink: 0, padding: "10px 18px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(16px)", zIndex: 20 }}>
-          <SectionChips activeSectionId={activeSectionId} onNavigate={navigate} onHome={goHome} />
+        {/* ── STICKY BAR: Follow/Subscribe/Message + chips — always visible below topbar ── */}
+        <div style={{ flexShrink: 0, zIndex: 20, background: `${C.surface}fa`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
+          {/* Action buttons row */}
+          <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
+            <motion.button whileTap={{ scale: 0.95 }}
+              style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`, color: "#fff", boxShadow: `0 4px 18px ${C.accent}50` }}>
+              Follow
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }}
+              style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`, border: "none", color: "#1a0f00", boxShadow: `0 4px 20px ${C.gold}45` }}>
+              Subscribe
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }}
+              style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40` }}>
+              Message
+            </motion.button>
+          </div>
+          {/* Chips */}
+          <div style={{ padding: "4px 14px 8px" }}>
+            <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
+          </div>
         </div>
 
         {/* Role toggle dev tool */}
@@ -836,18 +1484,58 @@ export default function App() {
           </button>
         </div>
 
-        {/* Main animated content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}>
+        {/* Add Section Modal */}
+        <AnimatePresence>
+          {showAddSection && (
+            <AddSectionModal
+              onAdd={(sec) => {
+                const newSec = {
+                  id: sec.id, label: sec.label, subtitle: sec.subtitle,
+                  iconId: ICON_REG_OPTIONS.find(o => o.id === sec.iconId)?.id ?? "Hash",
+                  accentColor: sec.accentColor, badge: null,
+                  visible: true, order: allSections.length + 1, isBuiltIn: false,
+                  icon: sec.icon, // runtime only
+                };
+                setProfileConfig(c => ({
+                  ...c,
+                  sections: [...c.sections, { ...newSec }],
+                }));
+              }}
+              onClose={() => setShowAddSection(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ── FEED: profile card scrolls away inside here, chips+buttons stay above ── */}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
+          onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
               initial="enter" animate="center" exit="exit" transition={springTrans}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-              {renderContent()}
+              {/* Profile header scrolls away inside the feed */}
+              {!activeSectionId && (
+                <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}20` }}>
+                  <ProfileCard onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} hideButtons profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
+                </div>
+              )}
+              {renderMobileFeed()}
             </motion.div>
           </AnimatePresence>
         </div>
 
       </div>
+
+      <AnimatePresence>
+        {showAIPanel && (
+          <AIPromptPanel
+            currentConfig={profileConfig}
+            onApply={applyConfig}
+            onClose={() => setShowAIPanel(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
+    </ThemeProvider>
   );
 }

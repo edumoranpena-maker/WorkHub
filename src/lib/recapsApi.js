@@ -315,3 +315,36 @@ export async function deleteRecapThread(threadId) {
   if (error) console.error("[recapsApi] deleteRecapThread:", error.message);
   return !error;
 }
+
+/**
+ * Update content of a recap thread.
+ */
+export async function updateRecapThread(threadId, { title, content, visibility }) {
+  const { error } = await supabase
+    .from("recap_threads")
+    .update({ title: title ?? null, content, visibility, updated_at: new Date().toISOString() })
+    .eq("id", threadId);
+  if (error) console.error("[recapsApi] updateRecapThread:", error.message);
+  return !error;
+}
+
+/**
+ * Update content of a thread update (sub-post).
+ */
+export async function updateThreadUpdate(updateId, { content }) {
+  const { error } = await supabase
+    .from("thread_updates")
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq("id", updateId);
+  if (error) console.error("[recapsApi] updateThreadUpdate:", error.message);
+  return !error;
+}
+
+/**
+ * Delete a thread update.
+ */
+export async function deleteThreadUpdate(updateId) {
+  const { error } = await supabase.from("thread_updates").delete().eq("id", updateId);
+  if (error) console.error("[recapsApi] deleteThreadUpdate:", error.message);
+  return !error;
+}

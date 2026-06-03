@@ -5,7 +5,7 @@ import {
   Mic, MicOff, Send, Play, Pause, Square, Globe, Users, Lock,
   CalendarDays, Filter, Check, ChevronDown, ChevronRight,
   Bookmark, Share2, Clock, MoreHorizontal, FileText, Megaphone, Hash, Plus,
-  MessageSquare, Loader,
+  MessageSquare, Loader, Layers, FolderPlus, ArrowUpRight, Edit3, Trash2,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -16,6 +16,9 @@ import {
   addThreadComment,
   updateThreadStatus,
   deleteRecapThread,
+  updateRecapThread,
+  updateThreadUpdate,
+  deleteThreadUpdate,
   fetchThreadComments,
 } from "../lib/recapsApi.js";
 import { uploadFile, storagePath } from "../lib/supabase.js";
@@ -660,6 +663,140 @@ function UpdateComposer({ onSubmit }) {
   );
 }
 
+
+// ─── SubtemaComposer ──────────────────────────────────────────────────────────
+function SubtemaComposer({ onSubmit, onClose }) {
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [media, setMedia] = useState(null); // { type, url, name }
+  const fileRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = URL.createObjectURL(file);
+      const type = file.type.startsWith("video") ? "video" : file.type.startsWith("audio") ? "audio" : "image";
+      setMedia({ type, url, name: file.name });
+    } finally { setUploading(false); }
+  };
+
+  const submit = () => {
+    if (!title.trim()) return;
+    onSubmit({ title: title.trim(), description: desc.trim(), media });
+    onClose();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
+        style={{ width: "100%", maxWidth: 560, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.teal}30`, borderBottom: "none", padding: "20px 20px 32px" }}>
+        {/* Handle */}
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.teal}20`, border: `1px solid ${C.teal}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Layers size={15} color={C.teal} />
+            </div>
+            <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Crear Subtema</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
+        </div>
+        {/* Title */}
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del subtema…"
+          style={{ width: "100%", boxSizing: "border-box", background: `${C.bg}cc`, border: `1.5px solid ${title ? C.teal + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10, transition: "border-color 0.2s" }} />
+        {/* Description */}
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descripción (opcional)…" rows={3}
+          style={{ width: "100%", boxSizing: "border-box", resize: "none", background: `${C.bg}cc`, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 13, outline: "none", marginBottom: 12, lineHeight: 1.55, transition: "border-color 0.2s" }} />
+        {/* Media upload */}
+        <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" style={{ display: "none" }} onChange={handleFile} />
+        {media ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${C.teal}10`, border: `1px solid ${C.teal}30`, borderRadius: 10, padding: "8px 12px", marginBottom: 12 }}>
+            <span style={{ fontFamily: font, fontSize: 12, color: C.teal, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{media.name}</span>
+            <button onClick={() => setMedia(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={13} /></button>
+          </div>
+        ) : (
+          <motion.button whileTap={{ scale: 0.93 }} onClick={() => fileRef.current?.click()}
+            style={{ display: "flex", alignItems: "center", gap: 7, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+            <Image size={14} /> {uploading ? "Uploading…" : "Adjuntar imagen / video / audio"}
+          </motion.button>
+        )}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={submit}
+          disabled={!title.trim()}
+          style={{ width: "100%", height: 44, borderRadius: 14, border: "none", cursor: title.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: title.trim() ? `linear-gradient(135deg, ${C.teal}, #0ea876)` : C.border, color: title.trim() ? "#000" : C.textMuted, boxShadow: title.trim() ? `0 4px 20px ${C.teal}44` : "none", transition: "all 0.2s" }}>
+          Crear Subtema
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── SubtemaCard (inside ThreadView) ─────────────────────────────────────────
+function SubtemaCard({ subtema, onClick }) {
+  return (
+    <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={onClick}
+      style={{ background: C.card, border: `1px solid ${C.teal}28`, borderRadius: 14, padding: "12px 14px", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <div style={{ width: 32, height: 32, borderRadius: 10, background: `${C.teal}18`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Layers size={15} color={C.teal} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{subtema.title}</p>
+        {subtema.description && <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 12, color: C.textMuted, lineHeight: 1.4 }}>{subtema.description}</p>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {subtema.media && <span style={{ fontFamily: font, fontSize: 10, color: C.teal, background: `${C.teal}12`, border: `1px solid ${C.teal}25`, borderRadius: 6, padding: "2px 7px" }}>📎 {subtema.media.type}</span>}
+          <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{subtema.updates?.length || 0} updates</span>
+        </div>
+      </div>
+      <ArrowUpRight size={14} color={C.teal} style={{ flexShrink: 0, marginTop: 2 }} />
+    </motion.div>
+  );
+}
+
+
+// ─── Edit Thread Modal ────────────────────────────────────────────────────────
+function EditThreadModal({ thread, onSave, onClose }) {
+  const [title,   setTitle]   = useState(thread.title ?? "");
+  const [content, setContent] = useState(thread.content ?? "");
+  const [saving,  setSaving]  = useState(false);
+
+  const save = async () => {
+    if (!content.trim()) return;
+    setSaving(true);
+    await onSave({ title, content });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ scale: 0.93, opacity: 0, y: 16 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.93, opacity: 0 }}
+        style={{ width: "100%", maxWidth: 520, background: C.card, border: `1px solid ${C.teal}30`, borderRadius: 22, padding: "22px 22px 20px", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Edit Thread</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
+        </div>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title (optional)"
+          style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10 }} />
+        <textarea value={content} onChange={e => setContent(e.target.value)} rows={5}
+          style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: C.surface, border: `1.5px solid ${content.trim() ? C.teal + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 16, transition: "border-color 0.2s" }} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 13, fontWeight: 600 }}>Cancel</button>
+          <motion.button whileTap={{ scale: 0.95 }} onClick={save} disabled={!content.trim() || saving}
+            style={{ padding: "9px 20px", borderRadius: 12, border: "none", cursor: content.trim() && !saving ? "pointer" : "default", background: content.trim() ? `linear-gradient(135deg, ${C.teal}, #0ea876)` : C.border, color: content.trim() ? "#000" : C.textMuted, fontFamily: font, fontSize: 13, fontWeight: 700, transition: "all 0.2s" }}>
+            {saving ? "Saving…" : "Save Changes"}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── ThreadCard (feed item) ───────────────────────────────────────────────────
 function ThreadCard({ thread, index, onClick }) {
   const [hov, setHov] = useState(false);
@@ -763,7 +900,7 @@ function ThreadCard({ thread, index, onClick }) {
 }
 
 // ─── UpdateBubble ─────────────────────────────────────────────────────────────
-function UpdateBubble({ update, index }) {
+function UpdateBubble({ update, index, isHost, onEdit, onDelete }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
   const toggleLike = async () => {
@@ -999,6 +1136,10 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
   const [direction, setDirection] = useState(1);
   const feedScrollRef = useRef(0);
   const feedContainerRef = useRef(null);
+  // FAB state — for new thread creation
+  const [fabOpen, setFabOpen] = useState(false);
+  const [showUpdateComposer, setShowUpdateComposer] = useState(false);
+  const [showSubtemaComposer, setShowSubtemaComposer] = useState(false);
 
   // ── Load threads from Supabase ──────────────────────────────────────────
   useEffect(() => {
@@ -1037,6 +1178,47 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
     setThreads(prev => prev.map(t => t.id === threadId ? { ...t, status: newStatus } : t));
     if (openThread && openThread.id === threadId) setOpenThread(t => t ? { ...t, status: newStatus } : t);
     await updateThreadStatus(threadId, newStatus);
+  };
+
+  const handleEditThread = async (threadId, data) => {
+    setThreads(prev => prev.map(t => t.id === threadId ? { ...t, ...data } : t));
+    if (openThread?.id === threadId) setOpenThread(t => t ? { ...t, ...data } : t);
+    await updateRecapThread(threadId, data);
+  };
+
+  const handleDeleteThread = async (threadId) => {
+    setThreads(prev => prev.filter(t => t.id !== threadId));
+    if (openThread?.id === threadId) setOpenThread(null);
+    await deleteRecapThread(threadId);
+  };
+
+  const handleCreateThread = async (data) => {
+    const newThread = {
+      id: `t${Date.now()}`, planningPostId: null,
+      title: data.title || "New Update",
+      content: data.content || "",
+      hashtags: [], status: "active", visibility: "members",
+      author: "Alex H.", timestamp: new Date(),
+      likes: 0, liked: false, commentCount: 0, newUpdates: 0,
+      media: [], updates: [], subtemas: [],
+    };
+    setThreads(prev => [newThread, ...prev]);
+    try { await createRecapThread(newThread); } catch {}
+  };
+
+  const handleCreateSubtema = (subtemaData) => {
+    // Subtemas are created inside a ThreadView — handled there
+    // This is for top-level subtema creation (rare, but supported)
+    const newThread = {
+      id: `t${Date.now()}`, planningPostId: null,
+      title: subtemaData.title, content: subtemaData.description || "",
+      hashtags: [], status: "active", visibility: "members",
+      isSubtema: true,
+      author: "Alex H.", timestamp: new Date(),
+      likes: 0, liked: false, commentCount: 0, newUpdates: 0,
+      media: subtemaData.media ? [subtemaData.media] : [], updates: [], subtemas: [],
+    };
+    setThreads(prev => [newThread, ...prev]);
   };
 
   // Restore scroll on back
@@ -1225,6 +1407,83 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
       <AnimatePresence>
         {showCalendar && <CalendarPicker value={filterDate} onChange={setFilterDate} onClose={() => setShowCalendar(false)} />}
       </AnimatePresence>
+
+      {/* ── FAB: circular action button (like Planning) ── */}
+      {isHost && !openThread && (
+        <>
+          {/* Backdrop when speed-dial open */}
+          <AnimatePresence>
+            {fabOpen && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setFabOpen(false)}
+                style={{ position: "absolute", inset: 0, zIndex: 48, background: "rgba(8,8,14,0.5)", backdropFilter: "blur(4px)" }} />
+            )}
+          </AnimatePresence>
+
+          {/* Speed-dial options */}
+          <AnimatePresence>
+            {fabOpen && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+                style={{ position: "absolute", bottom: 96, right: 22, zIndex: 50, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
+                {[
+                  { label: "Crear Subtema", icon: Layers, color: C.teal, action: () => { setFabOpen(false); setShowSubtemaComposer(true); } },
+                  { label: "Añadir Update", icon: FolderPlus, color: C.green, action: () => { setFabOpen(false); setShowUpdateComposer(true); } },
+                ].map((opt, i) => (
+                  <motion.div key={opt.label} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "6px 12px", whiteSpace: "nowrap", boxShadow: "0 2px 12px rgba(0,0,0,0.3)" }}>{opt.label}</span>
+                    <motion.button whileTap={{ scale: 0.88 }} onClick={opt.action}
+                      style={{ width: 44, height: 44, borderRadius: "50%", background: `${opt.color}22`, border: `1.5px solid ${opt.color}55`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                      <opt.icon size={18} color={opt.color} />
+                    </motion.button>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Main FAB */}
+          <motion.button
+            key="recaps-fab"
+            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
+            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }}
+            onClick={() => setFabOpen(o => !o)}
+            style={{ position: "absolute", bottom: 28, right: 22, width: 58, height: 58, borderRadius: "50%", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.teal}, #0ea876)`, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 28px ${C.teal}70, 0 0 0 1px ${C.teal}40`, zIndex: 50, transition: "background 0.2s" }}>
+            <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
+              <Plus size={28} color="#fff" strokeWidth={2.5} />
+            </motion.div>
+          </motion.button>
+        </>
+      )}
+
+      {/* Update Composer sheet */}
+      <AnimatePresence>
+        {showUpdateComposer && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "absolute", inset: 0, zIndex: 60, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            onClick={e => e.target === e.currentTarget && setShowUpdateComposer(false)}>
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
+              style={{ width: "100%", maxWidth: 560, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.green}30`, borderBottom: "none", padding: "20px 20px 32px" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.green}20`, border: `1px solid ${C.green}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <FolderPlus size={15} color={C.green} />
+                  </div>
+                  <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Añadir Update</span>
+                </div>
+                <button onClick={() => setShowUpdateComposer(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
+              </div>
+              <UpdateComposer onSubmit={(data) => { handleCreateThread({ title: data.content?.slice(0, 60) || "Update", content: data.content || "" }); setShowUpdateComposer(false); }} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Subtema Composer */}
+      <AnimatePresence>
+        {showSubtemaComposer && <SubtemaComposer onSubmit={handleCreateSubtema} onClose={() => setShowSubtemaComposer(false)} />}
+      </AnimatePresence>
     </div>
   );
 
@@ -1253,7 +1512,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
             </span>
           </div>
 
-          <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
             <FeedPanel fullHeight />
           </div>
         </div>

@@ -248,3 +248,27 @@ export async function updatePostRR(postId, { floatingRR, realizedRR }) {
   await supabase.from("planning_posts").update({ floating_rr: floatingRR ?? null, realized_rr: realizedRR ?? null, updated_at: new Date().toISOString() }).eq("id", postId);
   await supabase.from("rr_snapshots").insert({ post_id: postId, floating_rr: floatingRR ?? 0, realized_rr: realizedRR ?? null });
 }
+
+/**
+ * Update content/title/visibility of a planning post.
+ */
+export async function updatePlanningPost(postId, { title, content, visibility }) {
+  const { error } = await supabase
+    .from("planning_posts")
+    .update({ title: title ?? null, content, visibility, updated_at: new Date().toISOString() })
+    .eq("id", postId);
+  if (error) console.error("[planningApi] updatePlanningPost:", error.message);
+  return !error;
+}
+
+/**
+ * Toggle pin state of a planning post.
+ */
+export async function togglePinPost(postId, pinned) {
+  const { error } = await supabase
+    .from("planning_posts")
+    .update({ pinned, updated_at: new Date().toISOString() })
+    .eq("id", postId);
+  if (error) console.error("[planningApi] togglePinPost:", error.message);
+  return !error;
+}

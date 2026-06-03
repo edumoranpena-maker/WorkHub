@@ -10,11 +10,13 @@ import {
 import {
   fetchPlanningPosts,
   createPlanningPost,
+  updatePlanningPost,
   updatePostStatus,
   deletePlanningPost,
   togglePostLike,
   fetchPostComments,
   addPostComment,
+  togglePinPost,
 } from "../lib/planningApi.js";
 import { uploadFile, storagePath } from "../lib/supabase.js";
 
@@ -45,6 +47,65 @@ function useIsDesktop() {
     return () => window.removeEventListener("resize", fn);
   }, []);
   return isDesktop;
+}
+
+
+// ─── Edit Post Modal ──────────────────────────────────────────────────────────
+function EditPostModal({ post, onSave, onClose }) {
+  const [title,   setTitle]   = useState(post.title ?? "");
+  const [content, setContent] = useState(post.content ?? "");
+  const [privacy, setPrivacy] = useState(post.visibility ?? "members");
+  const [saving,  setSaving]  = useState(false);
+
+  const PRIV = [
+    { id: "public",  label: "Public",  icon: Globe  },
+    { id: "members", label: "Members", icon: Users  },
+    { id: "private", label: "Private", icon: Lock   },
+  ];
+
+  const save = async () => {
+    if (!content.trim()) return;
+    setSaving(true);
+    await onSave({ title, content, visibility: privacy });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ scale: 0.93, opacity: 0, y: 16 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.93, opacity: 0 }}
+        style={{ width: "100%", maxWidth: 520, background: C.card, border: `1px solid ${C.border}`, borderRadius: 22, padding: "22px 22px 20px", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Edit Post</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
+        </div>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title (optional)"
+          style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "10px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10 }} />
+        <textarea value={content} onChange={e => setContent(e.target.value)} rows={5}
+          style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: C.surface, border: `1.5px solid ${content.trim() ? C.accent + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 12, transition: "border-color 0.2s" }} />
+        <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+          {PRIV.map(p => {
+            const active = privacy === p.id;
+            return (
+              <button key={p.id} onClick={() => setPrivacy(p.id)}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 99, border: `1px solid ${active ? C.accent + "55" : C.border}`, background: active ? C.accent + "18" : "transparent", cursor: "pointer", color: active ? C.accentLight : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600 }}>
+                <p.icon size={12} />{p.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 13, fontWeight: 600 }}>Cancel</button>
+          <motion.button whileTap={{ scale: 0.95 }} onClick={save} disabled={!content.trim() || saving}
+            style={{ padding: "9px 20px", borderRadius: 12, border: "none", cursor: content.trim() && !saving ? "pointer" : "default", background: content.trim() ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: content.trim() ? "#fff" : C.textMuted, fontFamily: font, fontSize: 13, fontWeight: 700, transition: "all 0.2s" }}>
+            {saving ? "Saving…" : "Save Changes"}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
 }
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
@@ -940,9 +1001,9 @@ function PlanningPost({ post, index, isHost, isDesktop, onStatusChange, onDelete
         <motion.div initial={{ opacity: 0, scale: 0.9, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }}
           style={{ position: "absolute", right: 0, top: "100%", zIndex: 50, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 6, minWidth: 140, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
           {[
-            { icon: Edit3, label: "Edit post", color: C.text },
-            { icon: Pin, label: "Pin post", color: C.text },
-            { icon: Trash2, label: "Delete", color: C.red, action: handleDeleteClick },
+            { icon: Edit3, label: "Edit post",  color: C.text,    action: () => { setShowMenu(false); setShowEditModal(true); } },
+            { icon: Pin,   label: localPinned ? "Unpin post" : "Pin post", color: C.text, action: () => { setShowMenu(false); const next = !localPinned; setLocalPinned(next); onPin && onPin(post.id, next); } },
+            { icon: Trash2, label: "Delete",   color: C.red,     action: handleDeleteClick },
           ].map(item => (
             <button key={item.label} onClick={item.action || (() => setShowMenu(false))}
               style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer", color: item.color, fontFamily: font, fontSize: 13, fontWeight: 500 }}>
@@ -964,10 +1025,13 @@ function PlanningPost({ post, index, isHost, isDesktop, onStatusChange, onDelete
           {showDeleteConfirm && <DeleteConfirm onConfirm={handleDeleteConfirm} onCancel={() => setShowDeleteConfirm(false)} />}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {showEditModal && <EditPostModal post={post} onSave={(data) => onEdit && onEdit(post.id, data)} onClose={() => setShowEditModal(false)} />}
+        </AnimatePresence>
         <motion.article
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.04 + index * 0.05, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          style={{ display: "flex", gap: 0, background: C.card, border: `1px solid ${post.pinned ? C.accent + "35" : C.border}`, borderRadius: 20, overflow: "hidden", width: "100%", boxShadow: post.pinned ? `0 0 0 1px ${C.accent}18, 0 4px 24px rgba(124,77,255,0.1)` : "none" }}>
+          style={{ display: "flex", gap: 0, background: C.card, border: `1px solid ${localPinned ? C.accent + "35" : C.border}`, borderRadius: 20, overflow: "hidden", width: "100%", boxShadow: localPinned ? `0 0 0 1px ${C.accent}18, 0 4px 24px rgba(124,77,255,0.1)` : "none" }}>
 
           {/* Main */}
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1205,7 +1269,7 @@ function Sidebar({ onBack, onNavigate }) {
 }
 
 // ─── Planning (default export) ────────────────────────────────────────────────
-export default function Planning({ section, onBack, isHost, onNavigate }) {
+export default function Planning({ section, onBack, isHost, onNavigate, mobileTab }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loading, setLoading] = useState(true);
@@ -1232,6 +1296,16 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
   const handleDelete = async (id) => {
     setPosts(p => p.filter(post => post.id !== id));
     await deletePlanningPost(id);
+  };
+
+  const handleEdit = async (id, data) => {
+    setPosts(p => p.map(post => post.id === id ? { ...post, ...data, visibility: data.visibility } : post));
+    await updatePlanningPost(id, data);
+  };
+
+  const handlePin = async (id, pinned) => {
+    setPosts(p => p.map(post => post.id === id ? { ...post, pinned } : post));
+    await togglePinPost(id, pinned);
   };
 
   const handleNewPost = async ({ title, content, privacy, audio, media = [] }) => {
@@ -1321,7 +1395,7 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
             <AnimatePresence>
               {!loading && filtered.map((post, i) => (
                 <PlanningPost key={post.id} post={post} index={i} isHost={isHost} isDesktop
-                  onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} />
+                  onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} onEdit={handleEdit} onPin={handlePin} />
               ))}
             </AnimatePresence>
             {!loading && filtered.length === 0 && (
@@ -1340,19 +1414,21 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
   // ── MOBILE ────────────────────────────────────────────────────────────────
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.bg, position: "relative", overflow: "hidden" }}>
-      {/* Top bar */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-        style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, flexShrink: 0 }}>
-        <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: C.accentLight, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-          <ChevronLeft size={19} strokeWidth={2.2} /> Back
-        </button>
-        <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", textAlign: "center" }}>
-          {section.label}
-        </span>
-        <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px", flexShrink: 0 }}>
-          {isHost ? "Host" : "Member"}
-        </span>
-      </motion.div>
+      {/* Top bar — hidden when used as tab inside mobile profile */}
+      {!mobileTab && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, flexShrink: 0 }}>
+          <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: C.accentLight, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+            <ChevronLeft size={19} strokeWidth={2.2} /> Back
+          </button>
+          <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", textAlign: "center" }}>
+            {section.label}
+          </span>
+          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px", flexShrink: 0 }}>
+            {isHost ? "Host" : "Member"}
+          </span>
+        </motion.div>
+      )}
 
       {/* Filter tabs */}
       <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -1370,7 +1446,7 @@ export default function Planning({ section, onBack, isHost, onNavigate }) {
         {!loading && filtered.map((post, i) => (
           <div key={post.id} style={{ borderBottom: `1px solid ${C.border}` }}>
             <PlanningPost post={post} index={i} isHost={isHost} isDesktop={false}
-              onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} />
+              onStatusChange={handleStatusChange} onDelete={handleDelete} onViewUpdate={handleViewUpdate} onEdit={handleEdit} onPin={handlePin} />
           </div>
         ))}
         {!loading && filtered.length === 0 && (
