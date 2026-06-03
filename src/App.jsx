@@ -132,13 +132,21 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
                 <span style={{ fontSize: 8, color: "#fff" }}>✓</span>
               </div>
             </div>
+<<<<<<< HEAD
             <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@alexherrera.trades"}</p>
+=======
+            <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>@alexherrera.trades</p>
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
             {/* Rating */}
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5 }}>
               <div style={{ display: "flex", gap: 1 }}>
                 {[...Array(5)].map((_, i) => <Star key={i} size={9} color={C.gold} fill={C.gold} />)}
               </div>
+<<<<<<< HEAD
               {(profile?.showRating !== false) && <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.goldLight }}>{profile?.rating ?? 4.9}</span>}
+=======
+              <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.goldLight }}>4.9</span>
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
             </div>
           </div>
         </div>
@@ -153,11 +161,20 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
             {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
           </p>}
 
+<<<<<<< HEAD
           {(profile?.showStats !== false) && <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
             {(profile?.stats ?? [{value:"12.4k",label:"Followers"},{value:"147",label:"Trades"},{value:"68%",label:"Winrate"},{value:"2.8R",label:"Exp. Value"}]).map((s) => (
               <div key={s.label}>
                 <p style={{ margin: 0, fontFamily: font, fontSize: 14, fontWeight: 800, color: C.text }}>{s.value}</p>
                 <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>{s.label}</p>
+=======
+          {/* Mini stats row — Followers · Trades · Winrate · Exp. Value */}
+          <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+            {[["12.4k", "Followers"], ["147", "Trades"], ["68%", "Winrate"], ["2.8R", "Exp. Value"]].map(([val, lbl]) => (
+              <div key={lbl}>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, fontWeight: 800, color: C.text }}>{val}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>{lbl}</p>
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
               </div>
             ))}
           </div>}
@@ -358,11 +375,19 @@ function Sidebar({ activeSectionId, onNavigate, onHome, onSections, onAddSection
 }
 
 // ─── Mobile Top Bar ───────────────────────────────────────────────────────────
+<<<<<<< HEAD
 function MobileTopBar({ onHome, profileName, onAIPanel, onOpenSettings }) {
   return (
     <div style={{ display: "flex", alignItems: "center", padding: "8px 14px", gap: 10, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 50, flexShrink: 0 }}>
       <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
         style={{ display: "flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 6px 4px 0", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
+=======
+function MobileTopBar({ onHome, profileName }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 10, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 52, flexShrink: 0 }}>
+      <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
+        style={{ display: "flex", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "4px 8px 4px 2px", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
         <ChevronLeft size={16} strokeWidth={2.4} color={C.accentLight} />
         <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.accentLight }}>Home</span>
       </motion.button>
@@ -1396,6 +1421,7 @@ function App({ onGoHome, onOpenSettings }) {
   }
 
   // ── MOBILE ── Tabs integradas: perfil fijo arriba, feed cambia por chip/swipe
+<<<<<<< HEAD
   const MOBILE_TABS = [null, ...allSections.map(s => s.id)]; // null = Perfil/home feed
   const mobileTabIdx = MOBILE_TABS.indexOf(activeSectionId);
 
@@ -1426,6 +1452,25 @@ function App({ onGoHome, onOpenSettings }) {
       setDirection(1);
       setActiveSectionId(MOBILE_TABS[mobileTabIdx + 1]);
     } else if (dx > 0 && mobileTabIdx > 0) {
+=======
+  const MOBILE_TABS = [null, ...SECTIONS.map(s => s.id)]; // null = Perfil/home feed
+  const mobileTabIdx = MOBILE_TABS.indexOf(activeSectionId);
+
+  // Swipe horizontal — solo afecta al feed
+  const swipeStart = useRef(null);
+  const handleTouchStart = (e) => { swipeStart.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e) => {
+    if (swipeStart.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeStart.current;
+    swipeStart.current = null;
+    if (Math.abs(dx) < 40) return; // umbral mínimo
+    if (dx < 0 && mobileTabIdx < MOBILE_TABS.length - 1) {
+      // swipe izq→der : siguiente sección
+      setDirection(1);
+      setActiveSectionId(MOBILE_TABS[mobileTabIdx + 1]);
+    } else if (dx > 0 && mobileTabIdx > 0) {
+      // swipe der→izq : sección anterior
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
       setDirection(-1);
       setActiveSectionId(MOBILE_TABS[mobileTabIdx - 1]);
     }
@@ -1433,11 +1478,20 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Render del feed móvil según sección activa — sin navegar a página nueva
   function renderMobileFeed() {
+<<<<<<< HEAD
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} />;
+=======
+    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} />;
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
     if (activeSectionId === "planning")      return <Planning      section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
     if (activeSectionId === "recaps")        return <Recaps        section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
+<<<<<<< HEAD
+=======
+    if (activeSectionId === "community")     return <CommunityChatContent section={activeSection} />;
+    if (activeSectionId === "reviews")       return <ReviewsContent onBack={goHome} />;
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
     if (activeSectionId === "rooms")         return <RoomsContent />;
     return null;
   }
@@ -1451,6 +1505,7 @@ function App({ onGoHome, onOpenSettings }) {
         <div style={{ position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)", width: 300, height: 120, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
         {/* ── TOP BAR: ← Home + nombre perfil (fija siempre) ── */}
+<<<<<<< HEAD
         <MobileTopBar onHome={goHome} profileName={profileConfig.identity.name} onAIPanel={() => setShowAIPanel(v => !v)} onOpenSettings={onOpenSettings} />
 
         {/* ── STICKY BAR: Follow/Subscribe/Message + chips — always visible below topbar ── */}
@@ -1474,6 +1529,18 @@ function App({ onGoHome, onOpenSettings }) {
           <div style={{ padding: "4px 14px 8px" }}>
             <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
           </div>
+=======
+        <MobileTopBar onHome={goHome} profileName="Alex Herrera" />
+
+        {/* ── PERFIL SUPERIOR: foto, nombre, stats, botones (sticky, se oculta al scroll) ── */}
+        <div style={{ flexShrink: 0, zIndex: 10, background: C.surface }}>
+          <ProfileCard onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} />
+        </div>
+
+        {/* ── CHIPS STICKY: siempre visibles sobre el feed ── */}
+        <div style={{ flexShrink: 0, padding: "8px 14px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}f8`, backdropFilter: "blur(16px)", zIndex: 20, position: "sticky", top: 52 }}>
+          <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} />
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
         </div>
 
         {/* Role toggle dev tool */}
@@ -1484,6 +1551,7 @@ function App({ onGoHome, onOpenSettings }) {
           </button>
         </div>
 
+<<<<<<< HEAD
         {/* Add Section Modal */}
         <AnimatePresence>
           {showAddSection && (
@@ -1509,16 +1577,24 @@ function App({ onGoHome, onOpenSettings }) {
         {/* ── FEED: profile card scrolls away inside here, chips+buttons stay above ── */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
           onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+=======
+        {/* ── FEED: solo esta zona cambia con chip/swipe ── */}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
+          onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
               initial="enter" animate="center" exit="exit" transition={springTrans}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
+<<<<<<< HEAD
               {/* Profile header scrolls away inside the feed */}
               {!activeSectionId && (
                 <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}20` }}>
                   <ProfileCard onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} hideButtons profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
                 </div>
               )}
+=======
+>>>>>>> 177ec30fcb6ef272b4e54fe703ef579a6529e380
               {renderMobileFeed()}
             </motion.div>
           </AnimatePresence>
