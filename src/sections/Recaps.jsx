@@ -1265,8 +1265,7 @@ export default function Recaps({ section, onBack, isHost, onNavigate, openThread
   const isDesktop = useIsDesktop();
 
   // ── Core feed panel (used in both mobile and desktop) ──────────────────────
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const FeedPanel = useCallback(({ fullHeight }) => (
+  const FeedPanel = ({ fullHeight }) => (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: fullHeight ? "100%" : "100%", overflow: "hidden" }}>
       <AnimatePresence mode="popLayout" custom={direction}>
         {!openThread ? (
