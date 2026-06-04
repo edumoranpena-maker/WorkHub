@@ -162,7 +162,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
       </div>
 
       {/* ── Action buttons ── */}
-      <div style={{ display: "flex", gap: 9, marginTop: 18, paddingBottom: 18 }}>
+      {!hideButtons && <div style={{ display: "flex", gap: 9, marginTop: 18, paddingBottom: 18 }}>
 
         {/* Follow — platform purple */}
         <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed(f => !f)}
