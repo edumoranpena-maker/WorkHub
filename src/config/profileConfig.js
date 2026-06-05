@@ -79,9 +79,9 @@ export const DEFAULT_PROFILE_CONFIG = {
     },
     {
       id:           "recaps",
-      label:        "Updates",
+      label:        "Post",
       iconId:       "FileText",
-      subtitle:     "Weekly summaries & progress",
+      subtitle:     "Posts & threads",
       accentColor:  "#22d3a0",
       badge:        "1 new",
       visible:      true,
