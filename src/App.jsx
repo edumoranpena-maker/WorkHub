@@ -38,7 +38,9 @@ function resolveSection(configSection) {
 
 // Legacy SECTIONS constant for backward compat with non-config code
 // (replaced at runtime by profileConfig.sections)
-const SECTIONS = DEFAULT_PROFILE_CONFIG.sections.map(resolveSection);
+const SECTIONS = DEFAULT_PROFILE_CONFIG.sections
+  .filter(s => s.id !== "planning")
+  .map(resolveSection);
 
 // Latest post previews per section (for Perfil feed)
 const PREVIEW_POSTS = {
@@ -81,10 +83,10 @@ function IconBtn({ icon: Icon, badge, onClick }) {
 }
 
 // ─── Premium Profile Card ─────────────────────────────────────────────────────
-function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
-  const [followed,   setFollowed]   = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
-
+// State (followed/subscribed) is owned by App so it survives section changes.
+// ProfileCard is purely presentational for those toggles.
+function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
+                       followed, onToggleFollow, subscribed, onToggleSubscribe }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -165,7 +167,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
       {!hideButtons && <div style={{ display: "flex", gap: 9, marginTop: 18, paddingBottom: 18 }}>
 
         {/* Follow — platform purple */}
-        <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed(f => !f)}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleFollow}
           style={{
             flex: 1, height: 34, borderRadius: 22, cursor: "pointer",
             fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em",
@@ -179,7 +181,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar }) {
         </motion.button>
 
         {/* Subscribe — gold exclusive */}
-        <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSubscribed(s => !s)}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleSubscribe}
           style={{
             flex: 1, height: 34, borderRadius: 22, cursor: "pointer",
             fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em",
@@ -1257,6 +1259,9 @@ function App({ onGoHome, onOpenSettings }) {
   const [openThreadId,    setOpenThreadId]    = useState(null);
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [showAIPanel,     setShowAIPanel]     = useState(false);
+  // ── Persistent button state — survives section changes ──────────────────────
+  const [followed,        setFollowed]        = useState(false);
+  const [subscribed,      setSubscribed]      = useState(false);
 
   // ── Central profile config — AI modifies this, render engine reads it ──────
   const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
@@ -1267,7 +1272,10 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Derive runtime data from profileConfig
   const allSections   = useMemo(
-    () => profileConfig.sections.filter(s => s.visible).sort((a,b) => a.order - b.order).map(resolveSection),
+    () => profileConfig.sections
+      .filter(s => s.visible && s.id !== "planning")
+      .sort((a,b) => a.order - b.order)
+      .map(resolveSection),
     [profileConfig.sections]
   );
   const visibleWidgets = useMemo(
@@ -1354,7 +1362,15 @@ function App({ onGoHome, onOpenSettings }) {
           <AnimatePresence>
             {!activeSectionId && (
               <motion.div key="profile_desktop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fadeTrans} style={{ flexShrink: 0 }}>
-                <ProfileCard onNavigate={navigate} profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
+                <ProfileCard
+                  onNavigate={navigate}
+                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                  onEditAvatar={onOpenSettings}
+                  followed={followed}
+                  onToggleFollow={() => setFollowed(f => !f)}
+                  subscribed={subscribed}
+                  onToggleSubscribe={() => setSubscribed(s => !s)}
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1477,42 +1493,79 @@ function App({ onGoHome, onOpenSettings }) {
           )}
         </AnimatePresence>
 
-        {/* ── FEED: profile card scrolls away, buttons+chips sticky at scroll top ── */}
+        {/* ── PERSISTENT PROFILE HEADER — never unmounts on section change ── */}
+        <div style={{ flexShrink: 0, zIndex: 10, position: "relative" }}>
+          {/* Profile card — only visible on Perfil (home) tab */}
+          <AnimatePresence initial={false}>
+            {!activeSectionId && (
+              <motion.div
+                key="profile-card-wrapper"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+                style={{ overflow: "hidden", background: C.surface }}>
+                <ProfileCard
+                  onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                  onEditAvatar={onOpenSettings}
+                  followed={followed}
+                  onToggleFollow={() => setFollowed(f => !f)}
+                  subscribed={subscribed}
+                  onToggleSubscribe={() => setSubscribed(s => !s)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Sticky bar: action buttons + chips — ALWAYS rendered, never unmounts */}
+          <div style={{ background: `${C.surface}fc`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
+              {/* Follow */}
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed(f => !f)}
+                style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
+                  background: followed ? "transparent" : `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`,
+                  border: followed ? `1.5px solid ${C.accent}` : "none",
+                  color: followed ? C.accent : "#fff",
+                  boxShadow: followed ? "none" : `0 4px 18px ${C.accent}50`,
+                  transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
+                {followed ? "Following" : "Follow"}
+              </motion.button>
+              {/* Subscribe */}
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSubscribed(s => !s)}
+                style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
+                  background: subscribed ? "transparent" : `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`,
+                  border: subscribed ? `1.5px solid ${C.gold}` : "none",
+                  color: subscribed ? C.gold : "#1a0f00",
+                  boxShadow: subscribed ? "none" : `0 4px 20px ${C.gold}45`,
+                  transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
+                {subscribed ? "Subscribed" : "Subscribe"}
+              </motion.button>
+              {/* Message */}
+              <motion.button whileTap={{ scale: 0.95 }}
+                style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                Message
+              </motion.button>
+            </div>
+            <div style={{ padding: "4px 14px 8px" }}>
+              <SectionChips
+                activeSectionId={activeSectionId}
+                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+                onSections={allSections}
+                onAddSection={() => setShowAddSection(true)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── FEED AREA — only content slides on section change ── */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
           onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
               initial="enter" animate="center" exit="exit" transition={springTrans}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-
-              {/* Profile card — scrolls away naturally */}
-              {!activeSectionId && (
-                <div style={{ background: C.surface }}>
-                  <ProfileCard onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} hideButtons profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }} onEditAvatar={onOpenSettings} />
-                </div>
-              )}
-
-              {/* Sticky bar: buttons + chips — sticks right below topbar as profile scrolls away */}
-              <div style={{ position: "sticky", top: 0, zIndex: 20, background: `${C.surface}fc`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`, color: "#fff", boxShadow: `0 4px 18px ${C.accent}50` }}>
-                    Follow
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`, color: "#1a0f00", boxShadow: `0 4px 20px ${C.gold}45` }}>
-                    Subscribe
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40` }}>
-                    Message
-                  </motion.button>
-                </div>
-                <div style={{ padding: "4px 14px 8px" }}>
-                  <SectionChips activeSectionId={activeSectionId} onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }} onHome={() => { setDirection(-1); setActiveSectionId(null); }} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
-                </div>
-              </div>
-
               {renderMobileFeed()}
             </motion.div>
           </AnimatePresence>
