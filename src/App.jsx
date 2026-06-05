@@ -1409,6 +1409,31 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Swipe horizontal — deliberate (Twitter/Whop style): vertical always wins
   const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
+
+  // Profile card hide-on-scroll: track translateY of header (0 = visible, -headerH = hidden)
+  const headerRef       = useRef(null);
+  const headerOffsetRef = useRef(0);   // current translateY (-headerHeight … 0)
+  const lastScrollY     = useRef(0);
+
+  const handleFeedScroll = useCallback((e) => {
+    const el = e.currentTarget;
+    const scrollTop  = el.scrollTop;
+    const delta      = scrollTop - lastScrollY.current;
+    lastScrollY.current = scrollTop;
+
+    if (!headerRef.current) return;
+    const headerH = headerRef.current.offsetHeight;
+    let next = headerOffsetRef.current - delta;
+    next = Math.min(0, Math.max(-headerH, next));
+    headerOffsetRef.current = next;
+    headerRef.current.style.transform = `translateY(${next}px)`;
+    // Also shift the sticky chips so they stay right below topbar
+    if (chipsRef.current) {
+      const clamped = Math.min(0, next + headerH); // 0 when header fully visible
+      chipsRef.current.style.transform = `translateY(${Math.min(0, next)}px)`;
+    }
+  }, []);
+  const chipsRef = useRef(null);
   const handleTouchStart = (e) => {
     swipeState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
@@ -1458,10 +1483,10 @@ function App({ onGoHome, onOpenSettings }) {
         {/* Ambient glow */}
         <div style={{ position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)", width: 300, height: 120, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        {/* ── TOP BAR: ← Home + nombre perfil (fija siempre) ── */}
-        <MobileTopBar onHome={goHome} profileName={profileConfig.identity.name} onAIPanel={() => setShowAIPanel(v => !v)} onOpenSettings={onOpenSettings} />
-
-
+        {/* ── TOP BAR — always fixed at top, z=30 ── */}
+        <div style={{ flexShrink: 0, zIndex: 30, position: "relative" }}>
+          <MobileTopBar onHome={goHome} profileName={profileConfig.identity.name} onAIPanel={() => setShowAIPanel(v => !v)} onOpenSettings={onOpenSettings} />
+        </div>
 
         {/* Role toggle dev tool */}
         <div style={{ position: "fixed", bottom: 20, right: 16, zIndex: 9998, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 4px 4px 10px", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}>
@@ -1481,92 +1506,124 @@ function App({ onGoHome, onOpenSettings }) {
                   iconId: ICON_REG_OPTIONS.find(o => o.id === sec.iconId)?.id ?? "Hash",
                   accentColor: sec.accentColor, badge: null,
                   visible: true, order: allSections.length + 1, isBuiltIn: false,
-                  icon: sec.icon, // runtime only
+                  icon: sec.icon,
                 };
-                setProfileConfig(c => ({
-                  ...c,
-                  sections: [...c.sections, { ...newSec }],
-                }));
+                setProfileConfig(c => ({ ...c, sections: [...c.sections, { ...newSec }] }));
               }}
               onClose={() => setShowAddSection(false)}
             />
           )}
         </AnimatePresence>
 
-        {/* ── PERSISTENT PROFILE HEADER — never unmounts on section change ── */}
-        <div style={{ flexShrink: 0, zIndex: 10, position: "relative" }}>
-          {/* Profile card — only visible on Perfil (home) tab */}
-          <AnimatePresence initial={false}>
-            {!activeSectionId && (
-              <motion.div
-                key="profile-card-wrapper"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.22, ease: "easeInOut" }}
-                style={{ overflow: "hidden", background: C.surface }}>
-                <ProfileCard
-                  onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-                  onEditAvatar={onOpenSettings}
-                  followed={followed}
-                  onToggleFollow={() => setFollowed(f => !f)}
-                  subscribed={subscribed}
-                  onToggleSubscribe={() => setSubscribed(s => !s)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Sticky bar: action buttons + chips — ALWAYS rendered, never unmounts */}
-          <div style={{ background: `${C.surface}fc`, backdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
-              {/* Follow */}
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed(f => !f)}
-                style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
-                  background: followed ? "transparent" : `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`,
-                  border: followed ? `1.5px solid ${C.accent}` : "none",
-                  color: followed ? C.accent : "#fff",
-                  boxShadow: followed ? "none" : `0 4px 18px ${C.accent}50`,
-                  transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-                {followed ? "Following" : "Follow"}
-              </motion.button>
-              {/* Subscribe */}
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSubscribed(s => !s)}
-                style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
-                  background: subscribed ? "transparent" : `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`,
-                  border: subscribed ? `1.5px solid ${C.gold}` : "none",
-                  color: subscribed ? C.gold : "#1a0f00",
-                  boxShadow: subscribed ? "none" : `0 4px 20px ${C.gold}45`,
-                  transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-                {subscribed ? "Subscribed" : "Subscribe"}
-              </motion.button>
-              {/* Message */}
-              <motion.button whileTap={{ scale: 0.95 }}
-                style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                Message
-              </motion.button>
-            </div>
-            <div style={{ padding: "4px 14px 8px" }}>
-              <SectionChips
-                activeSectionId={activeSectionId}
-                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
-                onSections={allSections}
-                onAddSection={() => setShowAddSection(true)}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── FEED AREA — only content slides on section change ── */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
-          onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+        {/*
+          ── SCROLL CONTAINER ──────────────────────────────────────────────────
+          Everything below the topbar lives inside one scrollable area.
+          The ProfileCard + buttons + chips float at the top and slide out
+          via transform (not unmount) as the user scrolls down.
+          The chips become sticky so they snap to the topbar edge.
+        */}
+        <div
+          style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/*
+            The swipe container: holds the current feed.
+            We use translateX on a wide strip for the peek-during-swipe effect.
+          */}
           <AnimatePresence mode="sync" custom={direction}>
-            <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
-              initial="enter" animate="center" exit="exit" transition={springTrans}
-              style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-              {renderMobileFeed()}
+            <motion.div
+              key={activeSectionId ?? "perfil"}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={springTrans}
+              style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+            >
+              {/*
+                ── COLLAPSIBLE HEADER (Profile Card + Buttons + Chips) ──────
+                Lives inside the scroll area.
+                ProfileCard scrolls away. Buttons + Chips become sticky.
+                Both are always mounted — no unmount/remount on section change.
+              */}
+              <div
+                ref={headerRef}
+                style={{ flexShrink: 0, zIndex: 20, willChange: "transform", transition: "transform 0.08s linear" }}
+              >
+                {/* Profile Card — always rendered, all sections */}
+                <div style={{ background: C.surface }}>
+                  <ProfileCard
+                    onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+                    profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                    onEditAvatar={onOpenSettings}
+                    followed={followed}
+                    onToggleFollow={() => setFollowed(f => !f)}
+                    subscribed={subscribed}
+                    onToggleSubscribe={() => setSubscribed(s => !s)}
+                  />
+                </div>
+
+                {/* Action buttons + Chips — sticky: stays visible when header slides out */}
+                <div
+                  ref={chipsRef}
+                  style={{
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 25,
+                    background: `${C.surface}fc`,
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    borderBottom: `1px solid ${C.border}`,
+                  }}
+                >
+                  <div style={{ padding: "8px 14px 6px", display: "flex", gap: 8 }}>
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed(f => !f)}
+                      style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
+                        background: followed ? "transparent" : `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`,
+                        border: followed ? `1.5px solid ${C.accent}` : "none",
+                        color: followed ? C.accent : "#fff",
+                        boxShadow: followed ? "none" : `0 4px 18px ${C.accent}50`,
+                        transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
+                      {followed ? "Following" : "Follow"}
+                    </motion.button>
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSubscribed(s => !s)}
+                      style={{ flex: 1, height: 34, borderRadius: 22, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700,
+                        background: subscribed ? "transparent" : `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`,
+                        border: subscribed ? `1.5px solid ${C.gold}` : "none",
+                        color: subscribed ? C.gold : "#1a0f00",
+                        boxShadow: subscribed ? "none" : `0 4px 20px ${C.gold}45`,
+                        transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
+                      {subscribed ? "Subscribed" : "Subscribe"}
+                    </motion.button>
+                    <motion.button whileTap={{ scale: 0.95 }}
+                      style={{ flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`, color: "#fff", boxShadow: `0 4px 16px ${C.blue}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      Message
+                    </motion.button>
+                  </div>
+                  <div style={{ padding: "4px 14px 8px" }}>
+                    <SectionChips
+                      activeSectionId={activeSectionId}
+                      onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                      onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+                      onSections={allSections}
+                      onAddSection={() => setShowAddSection(true)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── FEED — scrollable area below header ── */}
+              <div
+                style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}
+                onScroll={handleFeedScroll}
+              >
+                {renderMobileFeed()}
+                <div style={{ height: 32 }} />
+              </div>
+
             </motion.div>
           </AnimatePresence>
         </div>
