@@ -521,9 +521,9 @@ function BadgesMuseum() {
 }
 
 // ─── Perfil Content (replaces old OverviewContent) ───────────────────────────
-function PerfilContent({ onNavigate }) {
+function PerfilContent({ onNavigate, visibleWidgets, sections, isHost, onCreatePost }) {
   // Sections to show preview cards for (skip metrics — no PREVIEW_POSTS for it)
-  const feedSections = sections.filter(s => PREVIEW_POSTS[s.id]);
+  const feedSections = (sections || SECTIONS).filter(s => PREVIEW_POSTS[s.id]);
 
   return (
     <div style={{ paddingBottom: 40 }}>
