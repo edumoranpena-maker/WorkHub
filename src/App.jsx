@@ -1307,11 +1307,16 @@ function App({ onGoHome, onOpenSettings }) {
   }, []);
 
   const goHome = useCallback(() => {
-    if (!activeSectionId) return;
-    setOpenThreadId(null);
-    setDirection(-1);
-    setActiveSectionId(null);
-  }, [activeSectionId]);
+    // If we're in a section, first go to Perfil tab
+    if (activeSectionId) {
+      setOpenThreadId(null);
+      setDirection(-1);
+      setActiveSectionId(null);
+      return;
+    }
+    // If already on Perfil tab, go back to HomeFeed
+    if (onGoHome) onGoHome();
+  }, [activeSectionId, onGoHome]);
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
@@ -1490,29 +1495,14 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
 
         {/*
-          ── CHIPS — sticky below topbar, always visible, never flickers ──────
-          Lives OUTSIDE the scroll container so it never moves.
-          When ProfileCard scrolls out of view inside the unified scroll,
-          these chips are already here — no jump, no flicker.
-        */}
-        <div style={{ flexShrink: 0, zIndex: 25, background: `${C.surface}fd`, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ padding: "6px 14px 8px" }}>
-            <SectionChips
-              activeSectionId={activeSectionId}
-              onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-              onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
-              onSections={allSections}
-              onAddSection={() => setShowAddSection(true)}
-            />
-          </div>
-        </div>
-
-        {/*
           ── UNIFIED SCROLL CONTAINER (Instagram-style) ───────────────────────
-          ProfileCard is the FIRST child in the scroll flow.
-          It naturally disappears as you scroll — no JS translateY, no flicker.
-          Feed content follows immediately after.
-          Swipe left/right changes the section (only feed area, not header).
+          Structure inside the scroll (top to bottom):
+            1. ProfileCard        — scrolls away naturally
+            2. Chips (sticky)     — travels with ProfileCard, then sticks to top
+            3. Feed content       — fills the rest, scrolls freely after chips stick
+
+          No JS translateY. No separate scroll contexts. No flickering.
+          Chips stick exactly when ProfileCard disappears — identical to Instagram.
         */}
         <div
           style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
@@ -1520,7 +1510,6 @@ function App({ onGoHome, onOpenSettings }) {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* AnimatePresence wraps only the scrollable area so swipe works */}
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div
               key={activeSectionId ?? "perfil"}
@@ -1533,7 +1522,7 @@ function App({ onGoHome, onOpenSettings }) {
               ref={unifiedScrollRef}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", background: C.surface }}
             >
-              {/* ProfileCard sits at the top of the scroll flow — scrolls away naturally */}
+              {/* 1. ProfileCard — first in flow, scrolls away */}
               <ProfileCard
                 onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
                 profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
@@ -1544,12 +1533,33 @@ function App({ onGoHome, onOpenSettings }) {
                 onToggleSubscribe={() => setSubscribed(s => !s)}
               />
 
-              {/* Feed content — immediately below ProfileCard in the same scroll */}
-              <div style={{ minHeight: "calc(100% + 1px)", background: C.bg }}>
-                {renderMobileFeed()}
+              {/* 2. Chips — sticky: travels up with card, pins at top of scroll container */}
+              <div style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 25,
+                background: `${C.surface}fd`,
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                borderBottom: `1px solid ${C.border}`,
+              }}>
+                <div style={{ padding: "6px 14px 8px" }}>
+                  <SectionChips
+                    activeSectionId={activeSectionId}
+                    onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                    onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
+                    onSections={allSections}
+                    onAddSection={() => setShowAddSection(true)}
+                  />
+                </div>
               </div>
 
-              <div style={{ height: 40 }} />
+              {/* 3. Feed content — fills remaining space, scrolls freely */}
+              <div style={{ background: C.bg, minHeight: "100%" }}>
+                {renderMobileFeed()}
+                <div style={{ height: 40 }} />
+              </div>
+
             </motion.div>
           </AnimatePresence>
         </div>
