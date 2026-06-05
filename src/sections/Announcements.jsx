@@ -999,7 +999,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, scrollProps }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1057,7 +1057,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
   // ── Feed panel (shared between mobile and desktop) ─────────────────────────
   const FeedPanel = () => (
-    <div style={{ flex: 1, overflowY: "auto", padding: "0 0 40px" }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "0 0 40px" }} {...(scrollProps || {})}>
       {/* News / Stories bar */}
       <div style={{ padding: "0 16px 4px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 4 }}>
