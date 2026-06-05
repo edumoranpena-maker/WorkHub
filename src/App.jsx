@@ -6,7 +6,7 @@ import {
   Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil,
 } from "lucide-react";
 import HomeFeed      from "./HomeFeed.jsx";
-import Recaps        from "./sections/Recaps";
+import Post          from "./sections/Post";
 import Announcements from "./sections/Announcements";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
@@ -523,7 +523,7 @@ function BadgesMuseum() {
 // ─── Perfil Content (replaces old OverviewContent) ───────────────────────────
 function PerfilContent({ onNavigate }) {
   // Sections to show preview cards for (skip metrics — no PREVIEW_POSTS for it)
-  const feedSections = SECTIONS.filter(s => PREVIEW_POSTS[s.id]);
+  const feedSections = sections.filter(s => PREVIEW_POSTS[s.id]);
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -1319,7 +1319,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderContent() {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
-    if (activeSectionId === "recaps")        return <Recaps        section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onNewPost={() => { navigateTo("recaps"); }} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1411,32 +1411,25 @@ function App({ onGoHome, onOpenSettings }) {
   // Swipe horizontal — deliberate (Twitter/Whop style): vertical always wins
   const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
 
-  // Profile card hide-on-scroll: track translateY of header (0 = visible, -headerH = hidden)
-  const headerRef       = useRef(null);
-  const headerOffsetRef = useRef(0);   // current translateY (-headerHeight … 0)
-  const lastScrollY     = useRef(0);
+  // ── UNIFIED SCROLL (Instagram-style) ────────────────────────────────────────
+  // Single scroll container holds ProfileCard + Chips + Feed as one document.
+  // ProfileCard disappears naturally as part of the flow — no JS translateY needed.
+  // Chips are position:sticky so they lock below the topbar automatically.
+  // No flickering because there's only ONE scroll context.
+  const unifiedScrollRef = useRef(null);
+  const savedScrollTop   = useRef({});   // persist scroll position per section
 
-  const handleFeedScroll = useCallback((e) => {
-    if (!headerRef.current) return;
-    const el      = e.currentTarget;
-    const delta   = el.scrollTop - lastScrollY.current;
-    lastScrollY.current = el.scrollTop;
-
-    // Only the ProfileCard portion should slide away.
-    // Chips are sticky so they stay via CSS — no JS needed for them.
-    // headerRef contains: ProfileCard (slides) + chips (sticky).
-    // We translate the whole headerRef up, chips CSS sticky handles the rest.
-    const profileCardH = headerRef.current.querySelector("[data-profile-card]")?.offsetHeight ?? 180;
-    let next = headerOffsetRef.current - delta;
-    next = Math.min(0, Math.max(-profileCardH, next));
-    headerOffsetRef.current = next;
-    headerRef.current.style.transform = `translateY(${next}px)`;
-    // Compensate: push feed container up by same amount so no gap appears
-    if (headerRef.current.parentElement) {
-      const feedEl = headerRef.current.nextElementSibling;
-      if (feedEl) feedEl.style.marginTop = `${next}px`;
+  // When section changes, restore saved scroll position
+  const onSectionChange = useCallback((id) => {
+    // Save current scroll
+    if (unifiedScrollRef.current) {
+      savedScrollTop.current[activeSectionId ?? "perfil"] = unifiedScrollRef.current.scrollTop;
     }
-  }, []);
+  }, [activeSectionId]);
+
+  // scrollProps is kept for passing to child sections that have own scroll containers
+  // For sections that DON'T have their own scroll (Perfil), the unified container handles it
+  const handleFeedScroll = useCallback(() => {}, []); // no-op: unified scroll handles everything
   const handleTouchStart = (e) => {
     swipeState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
@@ -1469,12 +1462,12 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Render del feed móvil según sección activa — sin navegar a página nueva
   function renderMobileFeed() {
-    const scrollProps = { onScroll: handleFeedScroll };
-    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} scrollProps={scrollProps} />;
-    if (activeSectionId === "recaps")        return <Recaps        section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab onNewPost={() => { navigateTo("recaps"); }} scrollProps={scrollProps} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab scrollProps={scrollProps} />;
-    if (activeSectionId === "metrics")       return <MetricsContent scrollProps={scrollProps} />;
-    if (activeSectionId === "rooms")         return <RoomsContent scrollProps={scrollProps} />;
+    // No scrollProps — unified scroll container handles scrolling for all sections
+    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab />;
+    if (activeSectionId === "metrics")       return <MetricsContent />;
+    if (activeSectionId === "rooms")         return <RoomsContent />;
     return null;
   }
 
@@ -1486,7 +1479,7 @@ function App({ onGoHome, onOpenSettings }) {
         {/* Ambient glow */}
         <div style={{ position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)", width: 300, height: 120, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
 
-        {/* ── TOPBAR — fixed, always on top ── */}
+        {/* ── TOPBAR — always fixed above everything ── */}
         <div style={{ flexShrink: 0, zIndex: 30 }}>
           <MobileTopBar
             onHome={goHome}
@@ -1497,46 +1490,37 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
 
         {/*
-          ── COLLAPSIBLE ZONE ─────────────────────────────────────────────────
-          ProfileCard + Chips live here. This whole div slides up via translateY
-          as the user scrolls down. The chips become sticky so they pin below
-          the topbar when the profile card is fully hidden.
-          This zone is OUTSIDE the feed scroll — it's translated via JS imperatively.
+          ── CHIPS — sticky below topbar, always visible, never flickers ──────
+          Lives OUTSIDE the scroll container so it never moves.
+          When ProfileCard scrolls out of view inside the unified scroll,
+          these chips are already here — no jump, no flicker.
         */}
-        <div ref={headerRef} style={{ flexShrink: 0, zIndex: 20, willChange: "transform" }}>
-
-          {/* Profile Card — always rendered regardless of active section */}
-          <ProfileCard
-            onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-            profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-            onEditAvatar={onOpenSettings}
-            followed={followed}
-            onToggleFollow={() => setFollowed(f => !f)}
-            subscribed={subscribed}
-            onToggleSubscribe={() => setSubscribed(s => !s)}
-          />
-
-          {/* Chips — sticky so they stay visible when card scrolls away */}
-          <div style={{ position: "sticky", top: 0, zIndex: 25, background: `${C.surface}fd`, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ padding: "6px 14px 8px" }}>
-              <SectionChips
-                activeSectionId={activeSectionId}
-                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
-                onSections={allSections}
-                onAddSection={() => setShowAddSection(true)}
-              />
-            </div>
+        <div style={{ flexShrink: 0, zIndex: 25, background: `${C.surface}fd`, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ padding: "6px 14px 8px" }}>
+            <SectionChips
+              activeSectionId={activeSectionId}
+              onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+              onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
+              onSections={allSections}
+              onAddSection={() => setShowAddSection(true)}
+            />
           </div>
         </div>
 
-        {/* ── FEED — swipeable, scrollable ── */}
+        {/*
+          ── UNIFIED SCROLL CONTAINER (Instagram-style) ───────────────────────
+          ProfileCard is the FIRST child in the scroll flow.
+          It naturally disappears as you scroll — no JS translateY, no flicker.
+          Feed content follows immediately after.
+          Swipe left/right changes the section (only feed area, not header).
+        */}
         <div
-          style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1, background: C.bg }}
+          style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
+          {/* AnimatePresence wraps only the scrollable area so swipe works */}
           <AnimatePresence mode="sync" custom={direction}>
             <motion.div
               key={activeSectionId ?? "perfil"}
@@ -1546,10 +1530,25 @@ function App({ onGoHome, onOpenSettings }) {
               animate="center"
               exit="exit"
               transition={springTrans}
+              ref={unifiedScrollRef}
               style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", background: C.surface }}
-              onScroll={handleFeedScroll}
             >
-              {renderMobileFeed()}
+              {/* ProfileCard sits at the top of the scroll flow — scrolls away naturally */}
+              <ProfileCard
+                onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+                profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                onEditAvatar={onOpenSettings}
+                followed={followed}
+                onToggleFollow={() => setFollowed(f => !f)}
+                subscribed={subscribed}
+                onToggleSubscribe={() => setSubscribed(s => !s)}
+              />
+
+              {/* Feed content — immediately below ProfileCard in the same scroll */}
+              <div style={{ minHeight: "calc(100% + 1px)", background: C.bg }}>
+                {renderMobileFeed()}
+              </div>
+
               <div style={{ height: 40 }} />
             </motion.div>
           </AnimatePresence>
