@@ -705,7 +705,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
       {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
 
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }} {...(scrollProps || {})}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
         {/* TopBar */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
@@ -788,6 +788,9 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
         <div style={{ height: COMPOSER_H + 24 }} />
       </div>
 
+      {/* FAB — fixed, always visible, only for hosts inside a thread */}
+      {isHost && <FAB onAddUpdate={() => {}} onCreateSubtema={() => {}} />}
+
       {/* Host composer — sticky bottom bar ONLY inside ThreadView */}
       {isHost && <UpdateComposer onSubmit={handleNewUpdate} />}
     </div>
@@ -799,7 +802,7 @@ function FAB({ onAddUpdate, onCreateSubtema }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ position: "absolute", bottom: 24, right: 20, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+    <div style={{ position: "fixed", bottom: 28, right: 20, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
       <AnimatePresence>
         {open && (
           <>
@@ -834,7 +837,7 @@ function FAB({ onAddUpdate, onCreateSubtema }) {
         animate={{ rotate: open ? 45 : 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 28 }}
         onClick={() => setOpen(o => !o)}
-        style={{ width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, boxShadow: open ? `0 8px 32px ${C.accent}80` : `0 6px 24px ${C.accent}60`, color: "#fff", transition: "box-shadow 0.2s", zIndex: 51 }}>
+        style={{ width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${C.green}, #0ea876)`, boxShadow: open ? `0 8px 32px ${C.green}80` : `0 6px 24px ${C.green}60`, color: "#fff", transition: "box-shadow 0.2s", zIndex: 51 }}>
         <Plus size={24} strokeWidth={2.5} />
       </motion.button>
     </div>
@@ -927,7 +930,7 @@ function NewPostSheet({ onSubmit, onClose }) {
 //   openThread     → navigation (separate)
 //   debouncedQuery → search (read-only in PostFeed)
 //   fabOpen / sheets → UI only
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab, scrollProps }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -1057,7 +1060,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 <PostFeed threads={threads} debouncedQuery={debouncedQuery} onOpenThread={openThreadView} />
               )}
             </div>
-            {isHost && <FAB onAddUpdate={() => setShowNewPost(true)} onCreateSubtema={() => setShowSubtema(true)} />}
+            {/* FAB only in thread view */}
           </motion.div>
         ) : (
           <motion.div key={openThread.id} custom={direction} variants={slideVariants}
@@ -1098,7 +1101,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             )}
           </div>
 
-          {isHost && <FAB onAddUpdate={() => setShowNewPost(true)} onCreateSubtema={() => setShowSubtema(true)} />}
+          {/* FAB only appears inside ThreadView, not in the main feed list */}
         </>
       ) : (
         /* Thread view in mobile: fills the unified scroll naturally */

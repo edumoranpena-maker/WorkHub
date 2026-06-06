@@ -999,7 +999,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, scrollProps }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
