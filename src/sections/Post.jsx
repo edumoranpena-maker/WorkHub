@@ -1034,56 +1034,79 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
   // ── Feed panel ─────────────────────────────────────────────────────────────
-  const FeedPanel = () => (
+  // Two modes:
+  //   Desktop: absolute-positioned full-height flex column (own scroll)
+  //   Mobile:  normal document flow — no height constraint, no inner overflow
+  //            Parent (unified scroll in App.jsx) handles scroll
+
+  const FeedPanelDesktop = () => (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <AnimatePresence mode="popLayout" custom={direction}>
         {!openThread ? (
           <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
-
-            {/* Search bar — self-contained, no re-render propagation */}
-            <div style={{ padding: isDesktop ? "12px 28px 10px" : "12px 14px 10px", flexShrink: 0 }}>
+            <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
               <SearchBar onSearch={handleSearch} />
             </div>
-
-            {/* Scrollable feed */}
-            <div ref={feedContainerRef} style={{ flex: 1, overflowY: isDesktop ? "auto" : "visible", overflowX: "hidden", padding: isDesktop ? "0 28px 24px" : "0 14px 24px" }}>
+            <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
               {loadingThreads ? (
                 <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
                   <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
                 </div>
               ) : (
-                <PostFeed
-                  threads={threads}
-                  debouncedQuery={debouncedQuery}
-                  onOpenThread={openThreadView}
-                />
+                <PostFeed threads={threads} debouncedQuery={debouncedQuery} onOpenThread={openThreadView} />
               )}
             </div>
-
-            {/* FAB */}
-            {isHost && (
-              <FAB
-                onAddUpdate={() => setShowNewPost(true)}
-                onCreateSubtema={() => setShowSubtema(true)}
-              />
-            )}
+            {isHost && <FAB onAddUpdate={() => setShowNewPost(true)} onCreateSubtema={() => setShowSubtema(true)} />}
           </motion.div>
         ) : (
           <motion.div key={openThread.id} custom={direction} variants={slideVariants}
             initial="enter" animate="center" exit="exit" transition={springTrans}
             style={{ position: "absolute", inset: 0, background: C.surface }}>
-            <ThreadView
-              thread={openThread}
-              onBack={closeThread}
-              isHost={isHost}
-              onStatusChange={handleStatusChange}
-            />
+            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost} onStatusChange={handleStatusChange} />
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {showNewPost && <NewPostSheet onSubmit={handleCreateThread} onClose={() => setShowNewPost(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showSubtema && <SubtemaSheet onSubmit={handleCreateSubtema} onClose={() => setShowSubtema(false)} />}
+      </AnimatePresence>
+    </div>
+  );
 
-      {/* Modals */}
+  // Mobile: pure flow, no position:absolute, no overflow — parent scroll handles it
+  const FeedPanelMobile = () => (
+    <div style={{ background: C.surface, minHeight: 400 }}>
+      {!openThread ? (
+        <>
+          {/* Search bar */}
+          <div style={{ padding: "12px 14px 10px" }}>
+            <SearchBar onSearch={handleSearch} />
+          </div>
+
+          {/* Posts list — flows naturally */}
+          <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
+            {loadingThreads ? (
+              <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+              </div>
+            ) : (
+              <PostFeed threads={threads} debouncedQuery={debouncedQuery} onOpenThread={openThreadView} />
+            )}
+          </div>
+
+          {isHost && <FAB onAddUpdate={() => setShowNewPost(true)} onCreateSubtema={() => setShowSubtema(true)} />}
+        </>
+      ) : (
+        /* Thread view in mobile: fills the unified scroll naturally */
+        <div style={{ background: C.surface }}>
+          <ThreadView thread={openThread} onBack={closeThread} isHost={isHost} onStatusChange={handleStatusChange} />
+        </div>
+      )}
+
       <AnimatePresence>
         {showNewPost && <NewPostSheet onSubmit={handleCreateThread} onClose={() => setShowNewPost(false)} />}
       </AnimatePresence>
@@ -1116,7 +1139,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             </span>
           </div>
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            <FeedPanel />
+            <FeedPanelDesktop />
           </div>
         </div>
       </div>
@@ -1124,9 +1147,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
-  return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <FeedPanel />
-    </div>
-  );
+  // Render as plain flow — unified scroll in App.jsx handles overflow
+  return <FeedPanelMobile />;
 }
