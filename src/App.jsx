@@ -55,6 +55,14 @@ const slideVariants = {
   center: { x: 0, opacity: 1 },
   exit:   (d) => ({ x: d > 0 ? "-100%" : "100%", opacity: 0 }),
 };
+// Feed-only transitions: subtle fade + slight horizontal shift
+// No full-screen slide — ProfileCard and Chips stay anchored
+const feedVariants = {
+  enter:  (d) => ({ x: d > 0 ? 32 : -32, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit:   (d) => ({ x: d > 0 ? -32 : 32, opacity: 0 }),
+};
+const feedTrans = { duration: 0.18, ease: [0.22, 1, 0.36, 1] };
 const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 const fadeTrans   = { duration: 0.2, ease: "easeOut" };
 
@@ -1495,73 +1503,68 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
 
         {/*
-          ── UNIFIED SCROLL CONTAINER (Instagram-style) ───────────────────────
-          Structure inside the scroll (top to bottom):
-            1. ProfileCard        — scrolls away naturally
-            2. Chips (sticky)     — travels with ProfileCard, then sticks to top
-            3. Feed content       — fills the rest, scrolls freely after chips stick
-
-          No JS translateY. No separate scroll contexts. No flickering.
-          Chips stick exactly when ProfileCard disappears — identical to Instagram.
+          ── SINGLE SCROLL CONTAINER — never remounts ─────────────────────────
+          ProfileCard and Chips live here permanently.
+          Only the feed content area transitions between sections.
         */}
         <div
-          style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}
+          ref={unifiedScrollRef}
+          style={{ flex: 1, overflowY: "auto", overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <AnimatePresence mode="sync" custom={direction}>
-            <motion.div
-              key={activeSectionId ?? "perfil"}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={springTrans}
-              ref={unifiedScrollRef}
-              style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", background: C.surface }}
-            >
-              {/* 1. ProfileCard — first in flow, scrolls away */}
-              <ProfileCard
-                onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-                profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-                onEditAvatar={onOpenSettings}
-                followed={followed}
-                onToggleFollow={() => setFollowed(f => !f)}
-                subscribed={subscribed}
-                onToggleSubscribe={() => setSubscribed(s => !s)}
+          {/* 1. ProfileCard — always mounted, scrolls away naturally */}
+          <ProfileCard
+            onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+            profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+            onEditAvatar={onOpenSettings}
+            followed={followed}
+            onToggleFollow={() => setFollowed(f => !f)}
+            subscribed={subscribed}
+            onToggleSubscribe={() => setSubscribed(s => !s)}
+          />
+
+          {/* 2. Chips — sticky, always mounted, never animates */}
+          <div style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 25,
+            background: `${C.surface}fd`,
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            borderBottom: `1px solid ${C.border}`,
+          }}>
+            <div style={{ padding: "6px 14px 8px" }}>
+              <SectionChips
+                activeSectionId={activeSectionId}
+                onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
+                onSections={allSections}
+                onAddSection={() => setShowAddSection(true)}
               />
+            </div>
+          </div>
 
-              {/* 2. Chips — sticky: travels up with card, pins at top of scroll container */}
-              <div style={{
-                position: "sticky",
-                top: 0,
-                zIndex: 25,
-                background: `${C.surface}fd`,
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                borderBottom: `1px solid ${C.border}`,
-              }}>
-                <div style={{ padding: "6px 14px 8px" }}>
-                  <SectionChips
-                    activeSectionId={activeSectionId}
-                    onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                    onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
-                    onSections={allSections}
-                    onAddSection={() => setShowAddSection(true)}
-                  />
-                </div>
-              </div>
-
-              {/* 3. Feed content — fills remaining space, scrolls freely */}
-              <div style={{ background: C.bg, minHeight: "100%" }}>
+          {/* 3. Feed — only this area transitions between sections */}
+          <div style={{ position: "relative", overflow: "hidden", background: C.bg }}>
+            <AnimatePresence mode="wait" custom={direction}>
+              <motion.div
+                key={activeSectionId ?? "perfil"}
+                custom={direction}
+                variants={feedVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={feedTrans}
+                style={{ willChange: "opacity, transform" }}
+              >
                 {renderMobileFeed()}
                 <div style={{ height: 40 }} />
-              </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-            </motion.div>
-          </AnimatePresence>
         </div>
 
         {/* Role toggle */}
