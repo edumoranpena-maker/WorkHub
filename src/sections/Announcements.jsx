@@ -1100,14 +1100,6 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
         <FeedPanel />
 
-        {/* Floating compose btn */}
-        {isHost && (
-          <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComposer(true)}
-            style={{ position: "fixed", bottom: 24, right: 20, zIndex: 200, width: 52, height: 52, borderRadius: "50%", background: `linear-gradient(135deg, ${A}, #d97706)`, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 4px 24px ${A}55` }}>
-            <Plus size={22} color="#000" strokeWidth={2.5} />
-          </motion.button>
-        )}
-
         {/* Story viewer */}
         <AnimatePresence>
           {viewingStory !== null && (
