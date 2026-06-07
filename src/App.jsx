@@ -1307,6 +1307,14 @@ function App({ onGoHome, onOpenSettings }) {
   const [showAIPanel,       setShowAIPanel]       = useState(false);
   const [fabOpen,           setFabOpen]           = useState(false);
   const [insideThread,      setInsideThread]      = useState(false);
+
+  // Reset insideThread when user navigates away from Post section
+  useEffect(() => {
+    if (activeSectionId !== "recaps") {
+      setInsideThread(false);
+      setFabOpen(false);
+    }
+  }, [activeSectionId]);
   const [showGreenComposer, setShowGreenComposer] = useState(false);
   const [showNewPost,       setShowNewPost]       = useState(false);
   const [showBroadcast,     setShowBroadcast]     = useState(false);
@@ -1645,7 +1653,7 @@ function App({ onGoHome, onOpenSettings }) {
           Shows on: Home, Profile, Post main feed.
           Hidden on: inside a thread, settings, modals.
       ══════════════════════════════════════════════════════════════════════════ */}
-      {isHost && ((!activeSectionId || activeSectionId === "recaps" || activeSectionId === "announcements") && !insideThread) ? (
+      {isHost && ((!activeSectionId || activeSectionId === "recaps") && !insideThread) ? (
         <>
           {/* Backdrop */}
           <AnimatePresence>

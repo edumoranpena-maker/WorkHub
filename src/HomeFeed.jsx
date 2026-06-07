@@ -5,7 +5,7 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
-         MoreHorizontal, X } from "lucide-react";
+         MoreHorizontal, X, FileText, Megaphone, Zap, Plus } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const C = {
