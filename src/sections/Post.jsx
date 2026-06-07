@@ -677,6 +677,45 @@ function UpdateComposer({ onSubmit }) {
   );
 }
 
+// ─── UpdateComposerSheet ─────────────────────────────────────────────────────
+function UpdateComposerSheet({ onSubmit, onClose }) {
+  const [content, setContent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async () => {
+    if (!content.trim() || submitting) return;
+    setSubmitting(true);
+    await onSubmit({ content: content.trim(), audio: null });
+    setSubmitting(false);
+    setContent(""); onClose();
+  };
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 380, damping: 38 }}
+        style={{ width: "100%", maxWidth: 430, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.teal}30`, borderBottom: "none", padding: "16px 18px 36px" }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 16px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: `${C.green}20`, border: `1px solid ${C.green}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Plus size={14} color={C.green} />
+          </div>
+          <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>Añadir Update</span>
+        </div>
+        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Comparte una actualización…" rows={4} autoFocus
+          style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${content.trim() ? C.teal + "55" : C.border}`, borderRadius: 14, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 12, transition: "border-color 0.2s", caretColor: C.teal }} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>Cancelar</button>
+          <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!content.trim() || submitting}
+            style={{ flex: 2, height: 44, borderRadius: 12, border: "none", cursor: content.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: content.trim() ? `linear-gradient(135deg, ${C.green}, #0ea876)` : C.border, color: content.trim() ? "#000" : C.textMuted, transition: "all 0.2s" }}>
+            {submitting ? "Publicando…" : "Publicar Update"}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── ThreadView — reutilizado de Recaps, SIN sticky bottom bar en el feed ─────
 function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
   const [thread, setThread] = useState(initialThread);
@@ -699,7 +738,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
     if (saved) setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
   };
 
-  const COMPOSER_H = isHost ? 130 : 0;
+  const COMPOSER_H = 0;
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
@@ -788,61 +827,11 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
         <div style={{ height: COMPOSER_H + 24 }} />
       </div>
 
-      {/* FAB — fixed, always visible, only for hosts inside a thread */}
-      {isHost && <FAB onAddUpdate={() => {}} onCreateSubtema={() => {}} />}
-
-      {/* Host composer — sticky bottom bar ONLY inside ThreadView */}
-      {isHost && <UpdateComposer onSubmit={handleNewUpdate} />}
+      {/* Composer triggered via green FAB from App.jsx */}
     </div>
   );
 }
 
-// ─── FAB — Floating Action Button with menu ────────────────────────────────────
-function FAB({ onAddUpdate, onCreateSubtema }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div style={{ position: "fixed", bottom: 28, right: 20, zIndex: 200, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-      <AnimatePresence>
-        {open && (
-          <>
-            {/* Backdrop */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setOpen(false)} />
-
-            {/* Añadir Update */}
-            <motion.button
-              initial={{ opacity: 0, y: 12, scale: 0.88 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.88 }}
-              transition={{ delay: 0.05 }}
-              onClick={() => { setOpen(false); onAddUpdate(); }}
-              style={{ display: "flex", alignItems: "center", gap: 10, background: `linear-gradient(135deg, ${C.green}, #0ea876)`, border: "none", borderRadius: 99, padding: "10px 18px", cursor: "pointer", color: "#000", fontFamily: font, fontSize: 13, fontWeight: 700, boxShadow: `0 6px 24px ${C.green}50`, whiteSpace: "nowrap" }}>
-              <FolderPlus size={16} /> Añadir Update
-            </motion.button>
-
-            {/* Crear Subtema */}
-            <motion.button
-              initial={{ opacity: 0, y: 12, scale: 0.88 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.88 }}
-              transition={{ delay: 0.0 }}
-              onClick={() => { setOpen(false); onCreateSubtema(); }}
-              style={{ display: "flex", alignItems: "center", gap: 10, background: `linear-gradient(135deg, ${C.teal}, #0ea876)`, border: "none", borderRadius: 99, padding: "10px 18px", cursor: "pointer", color: "#000", fontFamily: font, fontSize: 13, fontWeight: 700, boxShadow: `0 6px 24px ${C.teal}50`, whiteSpace: "nowrap" }}>
-              <Layers size={16} /> Crear Subtema
-            </motion.button>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main FAB button */}
-      <motion.button
-        whileTap={{ scale: 0.9 }}
-        animate={{ rotate: open ? 45 : 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 28 }}
-        onClick={() => setOpen(o => !o)}
-        style={{ width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${C.green}, #0ea876)`, boxShadow: open ? `0 8px 32px ${C.green}80` : `0 6px 24px ${C.green}60`, color: "#fff", transition: "box-shadow 0.2s", zIndex: 51 }}>
-        <Plus size={24} strokeWidth={2.5} />
-      </motion.button>
-    </div>
-  );
-}
 
 // ─── SubtemaComposer sheet ─────────────────────────────────────────────────────
 function SubtemaSheet({ onSubmit, onClose }) {
@@ -930,7 +919,7 @@ function NewPostSheet({ onSubmit, onClose }) {
 //   openThread     → navigation (separate)
 //   debouncedQuery → search (read-only in PostFeed)
 //   fabOpen / sheets → UI only
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab, onOpenCreate, onThreadChange }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -1014,13 +1003,14 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []);
 
   const openThreadView = useCallback((thread) => {
+    onThreadChange?.(true);
     if (feedContainerRef.current) feedScrollRef.current = feedContainerRef.current.scrollTop;
     setDirection(1); setOpenThread(thread);
   }, []);
 
   const closeThread = useCallback(() => {
-    setDirection(-1); setOpenThread(null);
-  }, []);
+    setDirection(-1); setOpenThread(null); onThreadChange?.(false);
+  }, [onThreadChange]);
 
   // Restore scroll on back
   useEffect(() => {
