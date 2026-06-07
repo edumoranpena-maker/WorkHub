@@ -1116,6 +1116,17 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
         <AnimatePresence>
           {showComposer && <PostComposer onPublish={handlePublishPost} onClose={() => setShowComposer(false)} />}
         </AnimatePresence>
+
+        {/* Orange FAB — fixed, always visible for hosts */}
+        {isHost && (
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            onClick={() => setShowComposer(true)}
+            style={{ position: "fixed", bottom: 28, right: 20, zIndex: 200, width: 58, height: 58, borderRadius: "50%", background: `linear-gradient(135deg, ${A}, #d97706)`, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 6px 28px ${A}70, 0 0 0 1px ${A}30` }}
+          >
+            <Plus size={26} color="#000" strokeWidth={2.5} />
+          </motion.button>
+        )}
       </div>
     );
   }
