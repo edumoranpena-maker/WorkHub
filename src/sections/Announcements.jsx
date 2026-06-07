@@ -999,7 +999,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1007,6 +1007,10 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
   const [viewingStory, setViewingStory] = useState(null); // index
   const [showUploader, setShowUploader] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
+
+  // Open composer or story uploader when signaled from App (Crear Difusión / Crear Story)
+  useEffect(() => { if (openComposerSignal) setShowComposer(true); }, [openComposerSignal]);
+  useEffect(() => { if (openStorySignal) setShowUploader(true); }, [openStorySignal]);
 
   // ── Load announcements from Supabase ──────────────────────────────────────
   useEffect(() => {
@@ -1117,16 +1121,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
           {showComposer && <PostComposer onPublish={handlePublishPost} onClose={() => setShowComposer(false)} />}
         </AnimatePresence>
 
-        {/* Orange FAB — fixed, always visible for hosts */}
-        {isHost && (
-          <motion.button
-            whileTap={{ scale: 0.88 }}
-            onClick={() => setShowComposer(true)}
-            style={{ position: "fixed", bottom: 28, right: 20, zIndex: 200, width: 58, height: 58, borderRadius: "50%", background: `linear-gradient(135deg, ${A}, #d97706)`, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 6px 28px ${A}70, 0 0 0 1px ${A}30` }}
-          >
-            <Plus size={26} color="#000" strokeWidth={2.5} />
-          </motion.button>
-        )}
+        {/* Orange FAB rendered from App.jsx to stay fixed regardless of scroll */}
       </div>
     );
   }
