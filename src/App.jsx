@@ -1304,7 +1304,13 @@ function App({ onGoHome, onOpenSettings }) {
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
   const [showAddSection,  setShowAddSection]  = useState(false);
-  const [showAIPanel,     setShowAIPanel]     = useState(false);
+  const [showAIPanel,       setShowAIPanel]       = useState(false);
+  const [fabOpen,           setFabOpen]           = useState(false);
+  const [insideThread,      setInsideThread]      = useState(false);
+  const [showGreenComposer, setShowGreenComposer] = useState(false);
+  const [showNewPost,       setShowNewPost]       = useState(false);
+  const [showBroadcast,     setShowBroadcast]     = useState(false);
+  const [showNewStory,      setShowNewStory]      = useState(false);
   // ── Persistent button state — survives section changes ──────────────────────
   const [followed,        setFollowed]        = useState(false);
   const [subscribed,      setSubscribed]      = useState(false);
