@@ -14,6 +14,7 @@ import {
   deleteAnnouncement,
   toggleAnnouncementLike,
 } from "../lib/announcementsApi.js";
+import { InstagramStoryCreator } from "../components/Sheets.jsx";
 
 // ─── Design Tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -1113,7 +1114,8 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
         {/* Story uploader */}
         <AnimatePresence>
-          {showUploader && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
+          {showUploader && <InstagramStoryCreator onClose={() => setShowUploader(false)} onPublish={(data) => { handlePublishStory && handlePublishStory(data); setShowUploader(false); }} />}
+        {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
         </AnimatePresence>
 
         {/* Post composer */}
@@ -1174,7 +1176,8 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
       {/* Story uploader */}
       <AnimatePresence>
-        {showUploader && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile={false} />}
+        {showUploader && <InstagramStoryCreator onClose={() => setShowUploader(false)} onPublish={(data) => { handlePublishStory && handlePublishStory(data); setShowUploader(false); }} />}
+        {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile={false} />}
       </AnimatePresence>
 
       {/* Post composer */}
