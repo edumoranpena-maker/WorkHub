@@ -4,8 +4,9 @@
  */
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
-         MoreHorizontal, X, FileText, Megaphone, Zap, Plus } from "lucide-react";
+         MoreHorizontal, X, FileText, Megaphone, Zap, Plus, Mic, Image, Send, ChevronLeft } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -173,6 +174,8 @@ export default function HomeFeed({ onEnterProfile }) {
   const [messages]                      = useState(2);
   const [fabOpen,      setFabOpen]      = useState(false);
   const [showNewPost,  setShowNewPost]  = useState(false);
+  const [showDiffusion,setShowDiffusion]= useState(false);
+  const [showStory,    setShowStory]    = useState(false);
 
   const SUGGESTED = STORIES.slice(2, 6);
 

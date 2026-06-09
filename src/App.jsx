@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
-  Bell, Search, ChevronLeft, ChevronRight, ArrowRight,
+  Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
   Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil,
 } from "lucide-react";
 import HomeFeed      from "./HomeFeed.jsx";
+import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import Post          from "./sections/Post";
 import Announcements from "./sections/Announcements";
 
@@ -1262,28 +1263,31 @@ function NewPostSheet({ onSubmit, onClose }) {
   const [description,  setDescription]  = useState("");
   const [status,       setStatus]       = useState("active");
   const [asset,        setAsset]        = useState("");
-  const [mediaFiles,   setMediaFiles]   = useState([]); // [{type,url,file}]
+  const [mediaFiles,   setMediaFiles]   = useState([]);
   const [thumbnail,    setThumbnail]    = useState(null);
-  const [activeTab,    setActiveTab]    = useState("image"); // image|video|audio|thumbnail
+  const [links,        setLinks]        = useState([{ url: "", preview: null }]);
+  const [showLinkSheet,setShowLinkSheet]= useState(false);
+  const [recording,    setRecording]    = useState(false);
+  const [audioBlob,    setAudioBlob]    = useState(null);
+  const [audioURL,     setAudioURL]     = useState(null);
   const [showCancel,   setShowCancel]   = useState(false);
   const [publishing,   setPublishing]   = useState(false);
+  const [activeTab,    setActiveTab]    = useState("image");
 
-  const mediaRef      = useRef(null);
-  const thumbRef      = useRef(null);
+  const mediaRef   = useRef(null);
+  const thumbRef   = useRef(null);
+  const mediaRecRef = useRef(null);
 
-  const canPublish = mediaFiles.length > 0 || title.trim() || description.trim();
+  const canPublish = mediaFiles.length > 0 || title.trim() || description.trim() || links.some(l => l.url.trim());
 
   const handleMedia = (e) => {
     const files = Array.from(e.target.files || []);
     const mapped = files.map(f => ({
-      type: f.type.startsWith("video") ? "video" : f.type.startsWith("audio") ? "audio" : "image",
-      url:  URL.createObjectURL(f), file: f,
+      type: f.type.startsWith("video") ? "video" : "image",
+      url: URL.createObjectURL(f), file: f,
     }));
     setMediaFiles(prev => [...prev, ...mapped]);
-    // Auto-set thumbnail from first image/video
-    if (!thumbnail && mapped.length > 0 && mapped[0].type !== "audio") {
-      setThumbnail(mapped[0].url);
-    }
+    if (!thumbnail && mapped.length > 0) setThumbnail(mapped[0].url);
   };
 
   const handleThumb = (e) => {
@@ -1291,11 +1295,51 @@ function NewPostSheet({ onSubmit, onClose }) {
     if (f) setThumbnail(URL.createObjectURL(f));
   };
 
+  const toggleRecord = async () => {
+    if (recording) {
+      mediaRecRef.current?.stop();
+      setRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const rec = new MediaRecorder(stream);
+        const chunks = [];
+        rec.ondataavailable = e => chunks.push(e.data);
+        rec.onstop = () => {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          setAudioBlob(blob);
+          setAudioURL(URL.createObjectURL(blob));
+          stream.getTracks().forEach(t => t.stop());
+        };
+        mediaRecRef.current = rec;
+        rec.start();
+        setRecording(true);
+      } catch { alert("Microphone access denied"); }
+    }
+  };
+
+  const fetchLinkPreview = async (url, idx) => {
+    if (!url.trim()) return;
+    // Use Open Graph via allorigins proxy for demo
+    try {
+      const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      const doc = new DOMParser().parseFromString(data.contents, "text/html");
+      const img = doc.querySelector('meta[property="og:image"]')?.content
+               || doc.querySelector('meta[name="twitter:image"]')?.content || null;
+      const title2 = doc.querySelector('meta[property="og:title"]')?.content
+               || doc.querySelector("title")?.textContent || url;
+      setLinks(prev => prev.map((l, i) => i === idx ? { ...l, preview: { img, title: title2 } } : l));
+    } catch {
+      setLinks(prev => prev.map((l, i) => i === idx ? { ...l, preview: { img: null, title: url } } : l));
+    }
+  };
+
   const publish = async () => {
     if (!canPublish || publishing) return;
     setPublishing(true);
     await new Promise(r => setTimeout(r, 500));
-    onSubmit({ title, description, status, asset, mediaFiles, thumbnail });
+    onSubmit({ title, description, status, asset, mediaFiles, thumbnail, links, audioBlob });
     setPublishing(false);
   };
 
@@ -1308,40 +1352,39 @@ function NewPostSheet({ onSubmit, onClose }) {
   const TABS = [
     { id: "image",     label: "Imagen",    accept: "image/*" },
     { id: "video",     label: "Video",     accept: "video/*" },
-    { id: "audio",     label: "Audio",     accept: "audio/*" },
+    { id: "link",      label: "Link",      accept: null },
     { id: "thumbnail", label: "Miniatura", accept: "image/*" },
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      style={{ position: "fixed", inset: 0, zIndex: 2000, background: C.bg, display: "flex", flexDirection: "column", overflowY: "auto" }}
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: "fixed", inset: 0, zIndex: 2000, background: C.bg, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+
       {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface, position: "sticky", top: 0, zIndex: 10 }}>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowCancel(true)}
           style={{ background: "none", border: "none", cursor: "pointer", color: C.accentLight, marginRight: 12, display: "flex", alignItems: "center" }}>
           <ChevronLeft size={24} strokeWidth={2.4} />
         </motion.button>
         <span style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: C.text, flex: 1 }}>New Post</span>
-        <motion.button whileTap={{ scale: 0.92 }} onClick={publish}
-          disabled={!canPublish || publishing}
-          style={{ padding: "8px 18px", borderRadius: 99, border: "none", cursor: canPublish ? "pointer" : "default", background: canPublish ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canPublish ? "#fff" : C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 700, transition: "all 0.2s" }}>
+        <motion.button whileTap={{ scale: 0.92 }} onClick={publish} disabled={!canPublish || publishing}
+          style={{ padding: "8px 18px", borderRadius: 99, border: "none", cursor: canPublish ? "pointer" : "default", background: canPublish ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canPublish ? "#fff" : C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 700 }}>
           {publishing ? "Posting…" : "Share"}
         </motion.button>
       </div>
 
       {/* Media tabs */}
-      <div style={{ display: "flex", gap: 8, padding: "12px 16px 8px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 8, padding: "12px 16px 8px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, overflowX: "auto" }}>
         {TABS.map(tab => (
-          <button key={tab.id} onClick={() => {
-            setActiveTab(tab.id);
-            if (tab.id === "thumbnail") { thumbRef.current?.click(); }
-            else { mediaRef.current && (mediaRef.current.accept = tab.accept); mediaRef.current?.click(); }
-          }}
-            style={{ padding: "7px 14px", borderRadius: 99, border: `1px solid ${activeTab === tab.id ? C.accent + "55" : C.border}`, background: activeTab === tab.id ? `${C.accent}18` : "transparent", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: activeTab === tab.id ? C.accentLight : C.textMuted }}>
+          <button key={tab.id}
+            onClick={() => {
+              setActiveTab(tab.id);
+              if (tab.id === "link") { setShowLinkSheet(true); return; }
+              if (tab.id === "thumbnail") { thumbRef.current?.click(); return; }
+              mediaRef.current && (mediaRef.current.accept = tab.accept);
+              mediaRef.current?.click();
+            }}
+            style={{ padding: "7px 14px", borderRadius: 99, border: `1px solid ${activeTab === tab.id ? C.accent + "55" : C.border}`, background: activeTab === tab.id ? `${C.accent}18` : "transparent", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: activeTab === tab.id ? C.accentLight : C.textMuted, whiteSpace: "nowrap" }}>
             {tab.label}
           </button>
         ))}
@@ -1357,52 +1400,88 @@ function NewPostSheet({ onSubmit, onClose }) {
               <div key={i} style={{ position: "relative", flexShrink: 0 }}>
                 {m.type === "image" && <img src={m.url} alt="" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 12, border: `1px solid ${C.border}` }} />}
                 {m.type === "video" && <video src={m.url} style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 12 }} />}
-                {m.type === "audio" && <div style={{ width: 90, height: 90, borderRadius: 12, background: `${C.accent}18`, border: `1px solid ${C.accent}30`, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 28 }}>🎵</span></div>}
                 <button onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))}
-                  style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11 }}>×</button>
+                  style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", cursor: "pointer", color: "#fff", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Thumbnail preview */}
+      {/* Thumbnail */}
       {thumbnail && (
-        <div style={{ padding: "8px 16px 0", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={thumbnail} alt="thumbnail" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 10, border: `1px solid ${C.border}` }} />
-            <div>
-              <p style={{ margin: 0, fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text }}>Thumbnail</p>
-              <button onClick={() => setThumbnail(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, padding: 0 }}>Remove</button>
-            </div>
+        <div style={{ padding: "8px 16px 0", display: "flex", alignItems: "center", gap: 10 }}>
+          <img src={thumbnail} alt="thumbnail" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 10, border: `1px solid ${C.border}` }} />
+          <div>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text }}>Thumbnail</p>
+            <button onClick={() => setThumbnail(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, padding: 0 }}>Remove</button>
           </div>
         </div>
       )}
 
-      {/* Form fields */}
+      {/* Form */}
       <div style={{ padding: "16px 16px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* Title */}
         <div>
           <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Title</p>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. EURUSD Analysis"
-            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${title.trim() ? C.accent + "55" : C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, outline: "none", transition: "border-color 0.2s" }} />
+            style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${title.trim() ? C.accent + "55" : C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, outline: "none" }} />
         </div>
 
         {/* Description */}
         <div>
           <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Description</p>
           <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe your trade setup, analysis, or update…" rows={5}
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: C.card, border: `1.5px solid ${description.trim() ? C.accent + "44" : C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", transition: "border-color 0.2s", caretColor: C.accentLight }} />
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: C.card, border: `1.5px solid ${description.trim() ? C.accent + "44" : C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", caretColor: C.accentLight }} />
         </div>
 
-        {/* Status chips */}
+        {/* Audio recorder */}
+        <div>
+          <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Grabar Audio</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <motion.button whileTap={{ scale: 0.88 }} onClick={toggleRecord}
+              style={{ width: 52, height: 52, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: recording ? `linear-gradient(135deg, ${C.red}, #e11d48)` : `${C.accent}22`, boxShadow: recording ? `0 0 0 6px ${C.red}30` : "none", transition: "all 0.2s" }}>
+              {recording
+                ? <motion.div animate={{ scale: [1, 0.8, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} style={{ width: 18, height: 18, borderRadius: 3, background: "#fff" }} />
+                : <Mic size={22} color={C.accentLight} />}
+            </motion.button>
+            {recording && <span style={{ fontFamily: font, fontSize: 13, color: C.red, fontWeight: 600 }}>Recording… (tap to stop)</span>}
+            {audioURL && !recording && (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                <audio src={audioURL} controls style={{ flex: 1, height: 36, borderRadius: 8 }} />
+                <button onClick={() => { setAudioBlob(null); setAudioURL(null); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}>×</button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Links section */}
+        {links.some(l => l.url.trim() || l.preview) && (
+          <div>
+            <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Links</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {links.filter(l => l.url.trim() || l.preview).map((l, i) => (
+                <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  {l.preview?.img && <img src={l.preview.img} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {l.preview?.title && <p style={{ margin: "0 0 2px", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.preview.title}</p>}
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.accentLight, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.url}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Status */}
         <div>
           <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Status</p>
           <div style={{ display: "flex", gap: 8 }}>
             {STATUS_OPTIONS.map(s => (
               <motion.button key={s.id} whileTap={{ scale: 0.92 }} onClick={() => setStatus(s.id)}
-                style={{ padding: "8px 16px", borderRadius: 99, border: `1.5px solid ${status === s.id ? s.color + "80" : C.border}`, background: status === s.id ? `${s.color}18` : "transparent", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700, color: status === s.id ? s.color : C.textMuted, transition: "all 0.15s" }}>
+                style={{ padding: "8px 16px", borderRadius: 99, border: `1.5px solid ${status === s.id ? s.color + "80" : C.border}`, background: status === s.id ? `${s.color}18` : "transparent", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700, color: status === s.id ? s.color : C.textMuted }}>
                 {s.label}
               </motion.button>
             ))}
@@ -1411,29 +1490,67 @@ function NewPostSheet({ onSubmit, onClose }) {
 
         {/* Asset */}
         <div>
-          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Asset <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></p>
+          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Asset <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span></p>
           <input value={asset} onChange={e => setAsset(e.target.value)} placeholder="e.g. XAUUSD, BTC, SPX"
             style={{ width: "100%", boxSizing: "border-box", background: C.card, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, outline: "none" }} />
         </div>
 
         {/* Tag people */}
-        <div>
-          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Tag People <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></p>
-          <div style={{ padding: "12px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-            <span style={{ fontFamily: font, fontSize: 14, color: C.textMuted }}>Tag members…</span>
-            <ChevronRight size={16} color={C.textMuted} />
-          </div>
+        <div style={{ padding: "12px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+          <span style={{ fontFamily: font, fontSize: 14, color: C.textMuted }}>Tag people… (optional)</span>
+          <ChevronRight size={16} color={C.textMuted} />
         </div>
 
-        {/* Publish button */}
-        <motion.button whileTap={{ scale: 0.95 }} onClick={publish}
-          disabled={!canPublish || publishing}
-          style={{ width: "100%", height: 52, borderRadius: 16, border: "none", cursor: canPublish ? "pointer" : "default", fontFamily: font, fontSize: 16, fontWeight: 800, background: canPublish ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canPublish ? "#fff" : C.textMuted, transition: "all 0.2s", boxShadow: canPublish ? `0 6px 24px ${C.accent}44` : "none", marginTop: 8 }}>
+        {/* Publish */}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={publish} disabled={!canPublish || publishing}
+          style={{ width: "100%", height: 52, borderRadius: 16, border: "none", cursor: canPublish ? "pointer" : "default", fontFamily: font, fontSize: 16, fontWeight: 800, background: canPublish ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canPublish ? "#fff" : C.textMuted, marginTop: 8 }}>
           {publishing ? "Publishing…" : "Publish Post"}
         </motion.button>
       </div>
 
-      {/* Cancel confirmation dialog */}
+      {/* Link Sheet */}
+      <AnimatePresence>
+        {showLinkSheet && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(16px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+            onClick={e => e.target === e.currentTarget && setShowLinkSheet(false)}>
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 380, damping: 38 }}
+              style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.border}`, borderBottom: "none", padding: "20px 18px 36px" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 16px" }} />
+              <p style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 16 }}>Agregar Links</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {links.map((l, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      value={l.url}
+                      onChange={e => setLinks(prev => prev.map((x, j) => j === i ? { ...x, url: e.target.value } : x))}
+                      onBlur={() => fetchLinkPreview(l.url, i)}
+                      placeholder={`https://...`}
+                      style={{ flex: 1, background: C.surface, border: `1.5px solid ${l.url.trim() ? C.accent + "44" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, outline: "none" }}
+                    />
+                    {links.length > 1 && (
+                      <button onClick={() => setLinks(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: `${C.red}18`, border: `1px solid ${C.red}30`, borderRadius: 10, width: 38, height: 38, cursor: "pointer", color: C.red, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
+                    )}
+                    {l.preview?.img && <img src={l.preview.img} alt="" style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setLinks(prev => [...prev, { url: "", preview: null }])}
+                style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: C.accentLight, fontFamily: font, fontSize: 13, fontWeight: 600, padding: 0 }}>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Agregar otro link
+              </button>
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowLinkSheet(false)}
+                style={{ marginTop: 18, width: "100%", height: 44, borderRadius: 14, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 800 }}>
+                Confirmar
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Cancel dialog */}
       <AnimatePresence>
         {showCancel && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1442,17 +1559,11 @@ function NewPostSheet({ onSubmit, onClose }) {
               style={{ width: "100%", maxWidth: 320, background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, padding: "24px 22px", textAlign: "center" }}>
               <p style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 8 }}>Discard post?</p>
               <p style={{ fontFamily: font, fontSize: 14, color: C.textMuted, marginBottom: 22, lineHeight: 1.5 }}>
-                {(title || description || mediaFiles.length > 0) ? "Your content will be lost if you go back." : "Are you sure you want to cancel?"}
+                {(title || description || mediaFiles.length > 0) ? "Your content will be lost." : "Are you sure you want to cancel?"}
               </p>
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setShowCancel(false)}
-                  style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700 }}>
-                  Keep editing
-                </button>
-                <motion.button whileTap={{ scale: 0.92 }} onClick={onClose}
-                  style={{ flex: 1, height: 44, borderRadius: 12, border: "none", background: C.red, cursor: "pointer", color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 700 }}>
-                  Discard
-                </motion.button>
+                <button onClick={() => setShowCancel(false)} style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700 }}>Keep editing</button>
+                <motion.button whileTap={{ scale: 0.92 }} onClick={onClose} style={{ flex: 1, height: 44, borderRadius: 12, border: "none", background: C.red, cursor: "pointer", color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 700 }}>Discard</motion.button>
               </div>
             </motion.div>
           </motion.div>
@@ -2009,34 +2120,27 @@ function App({ onGoHome, onOpenSettings }) {
         )}
       </AnimatePresence>
 
-      {/* Broadcast Sheet */}
+      {/* Broadcast Sheet — NewDiffusionSheet */}
       <AnimatePresence>
         {showBroadcast && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(16px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-            onClick={e => e.target === e.currentTarget && setShowBroadcast(false)}>
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
-              style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.orange}22`, borderBottom: "none", padding: "20px 20px 40px" }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, background: `${C.orange}20`, border: `1px solid ${C.orange}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Megaphone size={15} color={C.orange} />
-                </div>
-                <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Crear Difusión</span>
-              </div>
-              <p style={{ fontFamily: font, fontSize: 13, color: C.textMuted, marginBottom: 14 }}>Las difusiones aparecen en Announcements y se notifican a todos los miembros.</p>
-              <textarea rows={4} placeholder="Escribe tu difusión…"
-                style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${C.orange}44`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 12 }} />
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowBroadcast(false)}
-                style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 800, background: `linear-gradient(135deg, ${C.orange}, #d97706)`, color: "#000" }}>
-                Publicar Difusión
-              </motion.button>
-            </motion.div>
-          </motion.div>
+          <NewDiffusionSheet
+            onClose={() => setShowBroadcast(false)}
+            onPublish={() => { setShowBroadcast(false); navigateTo("announcements"); }}
+          />
         )}
       </AnimatePresence>
 
-      {/* Story Sheet */}
+      {/* Story Creator — InstagramStoryCreator */}
+      <AnimatePresence>
+        {showNewStory && (
+          <InstagramStoryCreator
+            onClose={() => setShowNewStory(false)}
+            onPublish={() => { setShowNewStory(false); navigateTo("announcements"); }}
+          />
+        )}
+      </AnimatePresence>
+
+
       <AnimatePresence>
         {showNewStory && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
