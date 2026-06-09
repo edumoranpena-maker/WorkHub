@@ -4,7 +4,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mic, Image, ChevronLeft, Send, Type, Sticker, PenLine } from "lucide-react";
+import { X, Mic, Image, ChevronLeft, Send, Type, Smile, Pencil } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const A    = "#f59e0b"; // Announcements orange
@@ -221,9 +221,9 @@ export function InstagramStoryCreator({ onClose, onPublish }) {
   ];
 
   const EDIT_TOOLS = [
-    { id: "text",    icon: Type,    label: "Texto" },
-    { id: "sticker", icon: Sticker, label: "Stickers" },
-    { id: "draw",    icon: PenLine, label: "Draw" },
+    { id: "text",    icon: Type,    label: "Texto"    },
+    { id: "sticker", icon: Smile,   label: "Stickers" },
+    { id: "draw",    icon: Pencil,  label: "Draw"     },
   ];
 
   const handleFileSelect = (e) => {
