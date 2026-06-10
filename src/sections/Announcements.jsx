@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { InstagramStoryCreator } from "../components/Sheets.jsx";
+import { InstagramStoryCreator, NewDiffusionSheet } from "../components/Sheets.jsx";
 import {
   ChevronLeft, Plus, X, Heart, MessageCircle, Share2, Bookmark,
   Pin, MoreHorizontal, Trash2, Check, Image, Video, Mic, Square,
@@ -1120,7 +1120,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
         {/* Post composer */}
         <AnimatePresence>
-          {showComposer && <PostComposer onPublish={handlePublishPost} onClose={() => setShowComposer(false)} />}
+          {showComposer && <NewDiffusionSheet onClose={() => setShowComposer(false)} onPublish={(data) => { handlePublishPost && handlePublishPost({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status }); setShowComposer(false); }} />}
         </AnimatePresence>
 
         {/* Orange FAB rendered from App.jsx to stay fixed regardless of scroll */}
@@ -1182,7 +1182,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
       {/* Post composer */}
       <AnimatePresence>
-        {showComposer && <PostComposer onPublish={handlePublishPost} onClose={() => setShowComposer(false)} />}
+        {showComposer && <NewDiffusionSheet onClose={() => setShowComposer(false)} onPublish={(data) => { handlePublishPost && handlePublishPost({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status }); setShowComposer(false); }} />}
       </AnimatePresence>
     </div>
   );
