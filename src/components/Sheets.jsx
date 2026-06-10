@@ -202,7 +202,8 @@ export function InstagramStoryCreator({ onClose, onPublish }) {
   const [caption,    setCaption]    = useState("");
   const [privacy,    setPrivacy]    = useState("members");
   const [activeEdit, setActiveEdit] = useState(null);      // text|sticker|draw
-  const fileRef = useRef(null);
+  const fileRef    = useRef(null);
+  const cameraRef  = useRef(null);
 
   // Mock gallery items
   const GALLERY = [
@@ -247,12 +248,14 @@ export function InstagramStoryCreator({ onClose, onPublish }) {
           </motion.button>
           <span style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: "#fff", marginLeft: 12, flex: 1 }}>New Story</span>
           {/* Camera / take photo */}
-          <motion.button whileTap={{ scale: 0.9 }} onClick={() => fileRef.current?.click()}
+          <motion.button whileTap={{ scale: 0.9 }} onClick={() => cameraRef.current?.click()}
+            title="Take photo/video"
             style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff" }}>
             <Image size={18} />
           </motion.button>
         </div>
-        <input ref={fileRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={handleFileSelect} />
+        <input ref={fileRef}   type="file" accept="image/*,video/*"            style={{ display: "none" }} onChange={handleFileSelect} />
+        <input ref={cameraRef} type="file" accept="image/*,video/*" capture="environment" style={{ display: "none" }} onChange={handleFileSelect} />
 
         {/* Gallery grid */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 2px" }}>
