@@ -1320,18 +1320,30 @@ function NewPostSheet({ onSubmit, onClose }) {
 
   const fetchLinkPreview = async (url, idx) => {
     if (!url.trim()) return;
-    // Use Open Graph via allorigins proxy for demo
+    // Show URL as preview immediately; try to fetch OG data
+    const domain = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+    const favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    // Set immediate placeholder so user sees feedback right away
+    setLinks(prev => prev.map((l, i) => i === idx ? {
+      ...l,
+      preview: { img: favicon, title: domain, url }
+    } : l));
+    // Try to fetch real OG data via cors proxy
     try {
-      const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+      const res = await fetch(
+        `https://api.microlink.io?url=${encodeURIComponent(url)}&screenshot=false&meta=true`,
+        { signal: AbortSignal.timeout(4000) }
+      );
+      if (!res.ok) return;
       const data = await res.json();
-      const doc = new DOMParser().parseFromString(data.contents, "text/html");
-      const img = doc.querySelector('meta[property="og:image"]')?.content
-               || doc.querySelector('meta[name="twitter:image"]')?.content || null;
-      const title2 = doc.querySelector('meta[property="og:title"]')?.content
-               || doc.querySelector("title")?.textContent || url;
-      setLinks(prev => prev.map((l, i) => i === idx ? { ...l, preview: { img, title: title2 } } : l));
+      const img2   = data?.data?.image?.url || data?.data?.logo?.url || favicon;
+      const title2 = data?.data?.title || domain;
+      setLinks(prev => prev.map((l, i) => i === idx ? {
+        ...l,
+        preview: { img: img2, title: title2, url }
+      } : l));
     } catch {
-      setLinks(prev => prev.map((l, i) => i === idx ? { ...l, preview: { img: null, title: url } } : l));
+      // Keep favicon placeholder — already set above
     }
   };
 
