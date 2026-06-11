@@ -20,7 +20,7 @@ import {
   ChevronLeft, Search, X, Heart, MessageCircle, Plus,
   Send, Mic, Square, Image, Video,
   Loader, FileText, Check, ChevronRight,
-  Bookmark, Share2, Layers, FolderPlus,
+  Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -239,7 +239,7 @@ function MonthDivider({ label }) {
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 0 10px" }}>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.border}, transparent)` }} />
       <div style={{ padding: "5px 14px", borderRadius: 99, background: "rgba(14,14,24,0.85)", backdropFilter: "blur(16px)", border: `1px solid rgba(92,47,255,0.22)`, boxShadow: "0 0 20px rgba(124,77,255,0.1)" }}>
-        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.accentLight, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</span>
+        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.green, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</span>
       </div>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(270deg, ${C.border}, transparent)` }} />
     </div>
@@ -330,13 +330,19 @@ function TelegramDatePicker({ value, onChange }) {
 }
 
 // ─── FilterBar — Filter btn (left) + search input + Search btn (right) ────────
-// Search fires ONLY on button press, not while typing.
-// Filter panel appears below with status chips + Telegram-style date picker.
+// Search fires ONLY on button press (or Enter). Input stays visible after search.
+// Active filter chips row appears below the bar when any filter is on.
+const STATUS_FILTER = [
+  { id: "active",      label: "Active",      color: C.green,     bg: C.greenDim },
+  { id: "in_progress", label: "In Progress", color: C.amber,     bg: "rgba(245,166,35,0.12)" },
+  { id: "closed",      label: "Closed",      color: C.textMuted, bg: "rgba(106,106,130,0.10)" },
+];
+
 const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
-  const [inputVal, setInputVal] = useState("");
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [activeStatuses, setActiveStatuses] = useState([]);   // [] = all
-  const [fromDate, setFromDate]     = useState(null);
+  const [inputVal, setInputVal]         = useState("");
+  const [filterOpen, setFilterOpen]     = useState(false);
+  const [activeStatuses, setActiveStatuses] = useState([]);
+  const [fromDate, setFromDate]         = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const containerRef = useRef(null);
 
@@ -353,13 +359,10 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [filterOpen]);
 
-  const handleSearch = () => {
-    onSearch(inputVal.trim());
-  };
+  const commitSearch = () => onSearch(inputVal.trim());
+  const handleKeyDown = (e) => { if (e.key === "Enter") commitSearch(); };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") handleSearch();
-  };
+  const clearInput = () => { setInputVal(""); onSearch(""); };
 
   const toggleStatus = (id) => {
     setActiveStatuses(prev => {
@@ -369,31 +372,65 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
     });
   };
 
+  const removeStatus = (id) => {
+    const next = activeStatuses.filter(s => s !== id);
+    setActiveStatuses(next);
+    onFilterChange({ statuses: next, fromDate });
+  };
+
   const handleFromDate = (d) => {
     setFromDate(d);
     setShowDatePicker(false);
     onFilterChange({ statuses: activeStatuses, fromDate: d });
   };
 
-  const hasActiveFilters = activeStatuses.length > 0 || fromDate !== null;
+  const removeFromDate = () => {
+    setFromDate(null);
+    onFilterChange({ statuses: activeStatuses, fromDate: null });
+  };
 
-  const STATUS_FILTER = [
-    { id: "active",      label: "Active",      color: C.green,  bg: C.greenDim },
-    { id: "in_progress", label: "In Progress", color: C.amber,  bg: "rgba(245,166,35,0.12)" },
-    { id: "closed",      label: "Closed",      color: C.textMuted, bg: "rgba(106,106,130,0.10)" },
+  const clearAll = () => {
+    setInputVal("");
+    setActiveStatuses([]);
+    setFromDate(null);
+    setShowDatePicker(false);
+    setFilterOpen(false);
+    onSearch("");
+    onFilterChange({ statuses: [], fromDate: null });
+  };
+
+  const hasActiveFilters = activeStatuses.length > 0 || fromDate !== null;
+  const hasAnything = hasActiveFilters || inputVal.trim() !== "";
+
+  // Build chip list: one per active status + one for date
+  const activeChips = [
+    ...activeStatuses.map(id => {
+      const s = STATUS_FILTER.find(x => x.id === id);
+      return { key: `s_${id}`, label: s.label, color: s.color, bg: s.bg, onRemove: () => removeStatus(id) };
+    }),
+    ...(fromDate ? [{
+      key: "date",
+      label: `Desde: ${fromDate.getDate().toString().padStart(2,"0")}-${(fromDate.getMonth()+1).toString().padStart(2,"0")}-${fromDate.getFullYear()}`,
+      color: C.teal,
+      bg: `${C.teal}14`,
+      onRemove: removeFromDate,
+    }] : []),
   ];
 
   return (
     <div ref={containerRef} style={{ position: "relative" }}>
+
       {/* ── Row: Filter btn | Search input | Search btn ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
-        {/* Filter button — left anchor */}
+
+        {/* Filter button */}
         <motion.button
           whileTap={{ scale: 0.92 }}
           onClick={() => { setFilterOpen(o => !o); setShowDatePicker(false); }}
           style={{
             flexShrink: 0, height: 44, minWidth: 44, padding: "0 12px",
-            borderRadius: 14, border: `1px solid ${hasActiveFilters ? C.teal + "70" : filterOpen ? C.teal + "55" : C.border}`,
+            borderRadius: 14,
+            border: `1px solid ${hasActiveFilters ? C.teal + "70" : filterOpen ? C.teal + "55" : C.border}`,
             background: hasActiveFilters ? `${C.teal}14` : filterOpen ? `${C.teal}0d` : C.card,
             color: hasActiveFilters || filterOpen ? C.teal : C.textMuted,
             display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
@@ -410,8 +447,13 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
           )}
         </motion.button>
 
-        {/* Search input — grows */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", background: C.card, border: `1px solid ${inputVal ? C.teal + "44" : C.border}`, borderRadius: 14, padding: "0 12px", height: "100%", transition: "border-color 0.18s" }}>
+        {/* Search input */}
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center",
+          background: C.card,
+          border: `1px solid ${inputVal ? C.teal + "44" : C.border}`,
+          borderRadius: 14, padding: "0 12px", height: "100%", transition: "border-color 0.18s",
+        }}>
           <input
             value={inputVal}
             onChange={e => setInputVal(e.target.value)}
@@ -420,23 +462,24 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
             style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.text, fontFamily: font, fontSize: 14 }}
           />
           {inputVal && (
-            <button onClick={() => { setInputVal(""); onSearch(""); }}
-              style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 0, display: "flex", marginLeft: 6 }}>
+            <motion.button initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}
+              onClick={clearInput}
+              style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 0, display: "flex", marginLeft: 6, flexShrink: 0 }}>
               <X size={13} />
-            </button>
+            </motion.button>
           )}
         </div>
 
-        {/* Search button — right anchor */}
+        {/* Search button */}
         <motion.button
           whileTap={{ scale: 0.91 }}
-          onClick={handleSearch}
+          onClick={commitSearch}
           style={{
             flexShrink: 0, height: 44, minWidth: 44, padding: "0 12px",
-            borderRadius: 14, border: "none",
+            borderRadius: 14,
             background: inputVal.trim() ? `linear-gradient(135deg, ${C.teal}, #18b87a)` : C.card,
             color: inputVal.trim() ? "#000" : C.textMuted,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer", transition: "all 0.18s",
             border: `1px solid ${inputVal.trim() ? "transparent" : C.border}`,
             boxShadow: inputVal.trim() ? `0 0 14px ${C.teal}44` : "none",
@@ -445,7 +488,79 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
         </motion.button>
       </div>
 
-      {/* ── Filter panel ── */}
+      {/* ── Active filter chips row ── */}
+      <AnimatePresence>
+        {(activeChips.length > 0 || hasAnything) && activeChips.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            style={{ overflow: "hidden" }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              overflowX: "auto", paddingBottom: 2,
+              scrollbarWidth: "none", msOverflowStyle: "none",
+            }}>
+              {/* Individual filter chips */}
+              {activeChips.map(chip => (
+                <motion.div
+                  key={chip.key}
+                  initial={{ opacity: 0, scale: 0.8, x: -6 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.8, x: -6 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  style={{
+                    flexShrink: 0,
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "5px 8px 5px 11px",
+                    borderRadius: 99,
+                    border: `1px solid ${chip.color}50`,
+                    background: chip.bg,
+                    whiteSpace: "nowrap",
+                  }}>
+                  <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: chip.color, letterSpacing: "0.01em" }}>
+                    {chip.label}
+                  </span>
+                  <button onClick={chip.onRemove}
+                    style={{
+                      background: `${chip.color}22`, border: "none", borderRadius: "50%",
+                      width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", padding: 0, flexShrink: 0, color: chip.color,
+                    }}>
+                    <X size={9} strokeWidth={2.5} />
+                  </button>
+                </motion.div>
+              ))}
+
+              {/* Separator dot */}
+              {activeChips.length > 0 && (
+                <div style={{ width: 3, height: 3, borderRadius: "50%", background: C.textDim, flexShrink: 0, opacity: 0.5 }} />
+              )}
+
+              {/* Clear all button */}
+              <motion.button
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                whileTap={{ scale: 0.93 }}
+                onClick={clearAll}
+                style={{
+                  flexShrink: 0,
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "5px 11px", borderRadius: 99,
+                  border: `1px solid ${C.border}`,
+                  background: "transparent", cursor: "pointer",
+                  fontFamily: font, fontSize: 11, fontWeight: 600, color: C.textMuted,
+                  whiteSpace: "nowrap", transition: "border-color 0.15s, color 0.15s",
+                }}>
+                <X size={9} strokeWidth={2.5} />
+                Limpiar todo
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Filter panel dropdown ── */}
       <AnimatePresence>
         {filterOpen && (
           <motion.div
@@ -459,7 +574,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
               padding: "14px 16px 16px", boxShadow: "0 8px 40px rgba(0,0,0,0.55)",
             }}>
 
-            {/* Status row */}
+            {/* Status section */}
             <p style={{ margin: "0 0 10px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.textMuted }}>
               Estado
             </p>
@@ -487,7 +602,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
             {/* Divider */}
             <div style={{ height: 1, background: C.border, margin: "0 0 14px" }} />
 
-            {/* From date */}
+            {/* From date section */}
             <p style={{ margin: "0 0 10px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.textMuted }}>
               Desde
             </p>
@@ -506,7 +621,8 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
                   ? `${fromDate.getDate()} ${MONTHS[fromDate.getMonth()].slice(0,3)} ${fromDate.getFullYear()}`
                   : "Seleccionar fecha"}
               </span>
-              <ChevronRight size={13} color={fromDate ? C.teal : C.textMuted} style={{ transform: showDatePicker ? "rotate(90deg)" : "none", transition: "transform 0.18s" }} />
+              <ChevronRight size={13} color={fromDate ? C.teal : C.textMuted}
+                style={{ transform: showDatePicker ? "rotate(90deg)" : "none", transition: "transform 0.18s" }} />
             </motion.button>
 
             <AnimatePresence>
@@ -517,14 +633,6 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
               )}
             </AnimatePresence>
 
-            {/* Clear all */}
-            {hasActiveFilters && (
-              <motion.button whileTap={{ scale: 0.95 }}
-                onClick={() => { setActiveStatuses([]); setFromDate(null); setShowDatePicker(false); onFilterChange({ statuses: [], fromDate: null }); }}
-                style={{ marginTop: 14, width: "100%", padding: "8px 0", borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, fontFamily: font, fontSize: 12, cursor: "pointer", transition: "color 0.15s" }}>
-                Limpiar filtros
-              </motion.button>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -613,7 +721,7 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
         </div>
 
         {/* Footer: date */}
-        <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textDim, fontWeight: 500 }}>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.green, fontWeight: 500 }}>
           {fmtDate(thread.timestamp)}
         </p>
       </div>
@@ -757,7 +865,7 @@ function UpdateBubble({ update, index }) {
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-          <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
+          <span style={{ fontFamily: font, fontSize: 11, color: C.green }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
           <div style={{ flex: 1 }} />
           <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
             style={{ display: "flex", alignItems: "center", gap: 4, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.15s" }}>
@@ -943,73 +1051,409 @@ function UpdateComposer({ onSubmit }) {
   );
 }
 
-// ─── UpdateComposerSheet ─────────────────────────────────────────────────────
-function UpdateComposerSheet({ onSubmit, onClose }) {
-  const [content, setContent] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const submit = async () => {
-    if (!content.trim() || submitting) return;
-    setSubmitting(true);
-    await onSubmit({ content: content.trim(), audio: null });
-    setSubmitting(false);
-    setContent(""); onClose();
-  };
+// ─── useLinkPreviews — detects URLs in text, fetches OG meta via allorigins ───
+function useLinkPreviews(text) {
+  const [previews, setPreviews] = useState([]);
+  const cache = useRef({});
+
+  useEffect(() => {
+    const URL_RE = /https?:\/\/[^\s"<>]+/g;
+    const urls = [...new Set(text.match(URL_RE) || [])].slice(0, 5);
+    if (!urls.length) { setPreviews([]); return; }
+
+    let cancelled = false;
+    Promise.all(urls.map(async url => {
+      if (cache.current[url]) return cache.current[url];
+      try {
+        // Use allorigins to bypass CORS
+        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxy, { signal: AbortSignal.timeout(4000) });
+        const { contents } = await res.json();
+        const doc = new DOMParser().parseFromString(contents, "text/html");
+        const m = (prop) =>
+          doc.querySelector(`meta[property="${prop}"]`)?.content ||
+          doc.querySelector(`meta[name="${prop}"]`)?.content || "";
+        const preview = {
+          url,
+          title: m("og:title") || doc.title || url,
+          desc: m("og:description") || m("description") || "",
+          image: m("og:image") || "",
+          site: new URL(url).hostname.replace("www.", ""),
+        };
+        cache.current[url] = preview;
+        return preview;
+      } catch {
+        const preview = { url, title: url, desc: "", image: "", site: new URL(url).hostname.replace("www.", "") };
+        cache.current[url] = preview;
+        return preview;
+      }
+    })).then(results => {
+      if (!cancelled) setPreviews(results.filter(Boolean));
+    });
+    return () => { cancelled = true; };
+  }, [text]);
+
+  return previews;
+}
+
+// ─── LinkPreviewCard ──────────────────────────────────────────────────────────
+function LinkPreviewCard({ preview, onExpand }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-        transition={{ type: "spring", stiffness: 380, damping: 38 }}
-        style={{ width: "100%", maxWidth: 430, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.teal}30`, borderBottom: "none", padding: "16px 18px 36px" }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 16px" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: `${C.green}20`, border: `1px solid ${C.green}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Plus size={14} color={C.green} />
-          </div>
-          <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>Añadir Update</span>
+    <motion.div whileTap={{ scale: 0.97 }} onClick={() => onExpand(preview)}
+      style={{ flexShrink: 0, width: 220, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
+      {preview.image ? (
+        <img src={preview.image} alt="" style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
+          onError={e => { e.currentTarget.style.display = "none"; }} />
+      ) : (
+        <div style={{ width: "100%", height: 60, background: `${C.teal}10`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Link size={22} color={C.teal} strokeWidth={1.5} />
         </div>
-        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Comparte una actualización…" rows={4} autoFocus
-          style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${content.trim() ? C.teal + "55" : C.border}`, borderRadius: 14, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 12, transition: "border-color 0.2s", caretColor: C.teal }} />
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>Cancelar</button>
-          <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!content.trim() || submitting}
-            style={{ flex: 2, height: 44, borderRadius: 12, border: "none", cursor: content.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: content.trim() ? `linear-gradient(135deg, ${C.green}, #0ea876)` : C.border, color: content.trim() ? "#000" : C.textMuted, transition: "all 0.2s" }}>
-            {submitting ? "Publicando…" : "Publicar Update"}
-          </motion.button>
+      )}
+      <div style={{ padding: "9px 11px 10px" }}>
+        <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.35 }}>{preview.title}</p>
+        {preview.desc && <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 10, color: C.textMuted, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.4 }}>{preview.desc}</p>}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <ExternalLink size={9} color={C.teal} />
+          <span style={{ fontFamily: font, fontSize: 10, color: C.teal, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview.site}</span>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   );
 }
 
-// ─── ThreadView — reutilizado de Recaps, SIN sticky bottom bar en el feed ─────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
-  const [thread, setThread] = useState(initialThread);
-  const [liked, setLiked] = useState(initialThread.liked);
-  const [likeCount, setLikeCount] = useState(initialThread.likes);
-  const [showComments, setShowComments] = useState(false);
+// ─── LinkExpandModal ──────────────────────────────────────────────────────────
+function LinkExpandModal({ preview, onClose }) {
+  return (
+    <AnimatePresence>
+      {preview && (
+        <>
+          <motion.div key="overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)" }} />
+          <motion.div key="card" initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            style={{ position: "fixed", inset: "auto 16px", top: "50%", transform: "translateY(-50%)", zIndex: 2001, background: C.card, borderRadius: 22, border: `1px solid ${C.border}`, overflow: "hidden", maxWidth: 480, margin: "0 auto", boxShadow: "0 24px 80px rgba(0,0,0,0.7)" }}>
+            {preview.image && (
+              <img src={preview.image} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover", display: "block" }}
+                onError={e => { e.currentTarget.style.display = "none"; }} />
+            )}
+            <div style={{ padding: "16px 18px 20px" }}>
+              <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.35 }}>{preview.title}</p>
+              {preview.desc && <p style={{ margin: "0 0 14px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>{preview.desc}</p>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <a href={preview.url} target="_blank" rel="noopener noreferrer"
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, height: 42, borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, #0ea876)`, color: "#000", fontFamily: font, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                  <ExternalLink size={14} /> Abrir enlace
+                </a>
+                <button onClick={onClose}
+                  style={{ width: 42, height: 42, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
 
-  const toggleLike = async () => {
-    const next = !liked;
-    setLiked(next);
-    setLikeCount(c => next ? c + 1 : c - 1);
-    await toggleThreadLike(thread.id);
+// ─── ComposerSheet — shared base for Update and Subtema composers ─────────────
+// mode: "update" (no title) | "subtema" (has title field)
+function ComposerSheet({ mode, onSubmit, onClose }) {
+  const [title, setTitle]         = useState("");
+  const [content, setContent]     = useState("");
+  const [mediaFiles, setMediaFiles] = useState([]);      // [{type,url,file}]
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [pendingAudio, setPendingAudio]     = useState(null);
+  const [submitting, setSubmitting]         = useState(false);
+  const [expandedLink, setExpandedLink]     = useState(null);
+  const imageRef  = useRef(null);
+  const videoRef  = useRef(null);
+  const timerRef  = useRef(null);
+  const secsRef   = useRef(0);
+  const mediaRecRef = useRef(null);
+  const chunksRef   = useRef([]);
+
+  const previews = useLinkPreviews(content);
+
+  useEffect(() => { secsRef.current = recordSecs; }, [recordSecs]);
+
+  // ── Audio recording ─────────────────────────────────────────────────────────
+  const startRecord = () => {
+    navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
+      const mr = new MediaRecorder(stream);
+      mediaRecRef.current = mr;
+      chunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const dur = secsRef.current;
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const wf = Array.from({ length: 28 }, () => Math.random() * 0.75 + 0.25);
+        setRecording(false); setUploadingAudio(true);
+        try {
+          const path = storagePath("updates/audio", "recording.webm");
+          const url = await uploadFile("audio", blob, path).catch(() => URL.createObjectURL(blob));
+          setPendingAudio({ url, duration: dur, waveform: wf });
+        } finally { setUploadingAudio(false); }
+        setRecordSecs(0);
+      };
+      mr.start();
+      setRecording(true); setRecordSecs(0);
+      timerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000);
+    }).catch(() => alert("Microphone access denied"));
   };
 
-  const handleNewUpdate = async ({ content, audio }) => {
+  const stopRecord = () => {
+    clearInterval(timerRef.current);
+    if (mediaRecRef.current?.state !== "inactive") mediaRecRef.current.stop();
+  };
+
+  // ── Media picking ────────────────────────────────────────────────────────────
+  const pickMedia = (type) => {
+    const ref = type === "image" ? imageRef : videoRef;
+    ref.current?.click();
+  };
+
+  const handleFileChange = (e, type) => {
+    const files = Array.from(e.target.files || []);
+    const newMedia = files.map(f => ({ type, url: URL.createObjectURL(f), file: f, name: f.name }));
+    setMediaFiles(prev => [...prev, ...newMedia]);
+    e.target.value = "";
+  };
+
+  const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
+
+  // ── Submit ───────────────────────────────────────────────────────────────────
+  const canSubmit = mode === "subtema" ? title.trim().length > 0 : (content.trim().length > 0 || mediaFiles.length > 0 || pendingAudio);
+
+  const submit = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        title: title.trim(),
+        content: content.trim(),
+        media: mediaFiles,
+        audio: pendingAudio,
+        links: previews,
+      });
+      onClose();
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isUpdate = mode === "update";
+  const accent = C.green;
+  const label = isUpdate ? "Publicar Update" : "Crear Subtema";
+  const headerLabel = isUpdate ? "Nuevo Update" : "Crear Subtema";
+  const HeaderIcon = isUpdate ? Plus : Layers;
+
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={e => e.target === e.currentTarget && onClose()}
+        style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(14px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+
+        <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+          transition={{ type: "spring", stiffness: 380, damping: 38 }}
+          onClick={e => e.stopPropagation()}
+          style={{ width: "100%", maxWidth: 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${accent}28`, borderBottom: "none", padding: "0 0 36px", display: "flex", flexDirection: "column", maxHeight: "92vh", overflow: "hidden" }}>
+
+          {/* Drag handle */}
+          <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4, flexShrink: 0 }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
+          </div>
+
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 18px 14px", flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: `${accent}20`, border: `1px solid ${accent}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <HeaderIcon size={15} color={accent} />
+              </div>
+              <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>{headerLabel}</span>
+            </div>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Scrollable body */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 0" }}>
+
+            {/* Title (Subtema only) */}
+            {!isUpdate && (
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del subtema…" autoFocus={!isUpdate}
+                style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1.5px solid ${title ? accent + "55" : C.border}`, borderRadius: 14, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 12, transition: "border-color 0.2s" }} />
+            )}
+
+            {/* Textarea with integrated mic button */}
+            <div style={{ position: "relative", marginBottom: 10 }}>
+              {recording ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: `${C.red}12`, border: `1.5px solid ${C.red}40`, borderRadius: 16 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, boxShadow: `0 0 8px ${C.red}`, animation: "pulse-dot 1s infinite", flexShrink: 0 }} />
+                  <span style={{ fontFamily: font, fontSize: 14, color: C.red, fontWeight: 600, flex: 1 }}>Grabando… {fmtAudio(recordSecs)}</span>
+                  <button onClick={stopRecord} style={{ display: "flex", alignItems: "center", gap: 6, background: C.red, border: "none", borderRadius: 10, padding: "7px 14px", cursor: "pointer", color: "#fff", fontFamily: font, fontSize: 13, fontWeight: 600 }}>
+                    <Square size={12} fill="#fff" /> Detener
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <textarea value={content} onChange={e => setContent(e.target.value)}
+                    placeholder={isUpdate ? "Comparte una actualización…" : "Descripción (opcional)…"}
+                    rows={isUpdate ? 5 : 4} autoFocus={isUpdate}
+                    style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${content.trim() ? accent + "44" : C.border}`, borderRadius: 16, padding: "12px 48px 38px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.65, outline: "none", transition: "border-color 0.2s", caretColor: accent }} />
+                  {/* Mic button — bottom-right inside textarea */}
+                  <motion.button whileTap={{ scale: 0.88 }} onClick={startRecord}
+                    style={{ position: "absolute", bottom: 10, right: 10, width: 34, height: 34, borderRadius: 10, background: uploadingAudio ? `${C.teal}20` : `${C.teal}15`, border: `1px solid ${C.teal}35`, color: C.teal, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    {uploadingAudio ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Mic size={15} strokeWidth={2} />}
+                  </motion.button>
+                </>
+              )}
+            </div>
+
+            {/* Pending audio preview */}
+            {pendingAudio && (
+              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1 }}><AudioPlayer audio={pendingAudio} accentColor={C.teal} /></div>
+                <button onClick={() => setPendingAudio(null)} style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 4 }}><X size={14} /></button>
+              </div>
+            )}
+
+            {/* Media chips */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
+              <motion.button whileTap={{ scale: 0.93 }} onClick={() => pickMedia("image")}
+                style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 99, padding: "7px 14px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                📷 Imagen
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.93 }} onClick={() => pickMedia("video")}
+                style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 99, padding: "7px 14px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                🎥 Video
+              </motion.button>
+              {/* Hidden file inputs */}
+              <input ref={imageRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => handleFileChange(e, "image")} />
+              <input ref={videoRef} type="file" accept="video/*" multiple style={{ display: "none" }} onChange={e => handleFileChange(e, "video")} />
+            </div>
+
+            {/* Media previews */}
+            {mediaFiles.length > 0 && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
+                {mediaFiles.map((m, i) => (
+                  <div key={i} style={{ flexShrink: 0, position: "relative", width: 90, height: 90, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                    {m.type === "image"
+                      ? <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                    <button onClick={() => removeMedia(i)}
+                      style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Link previews carousel */}
+            {previews.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+                  Links detectados
+                </p>
+                <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+                  {previews.map((p, i) => (
+                    <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ height: 8 }} />
+          </div>
+
+          {/* Footer actions */}
+          <div style={{ padding: "12px 18px 0", flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onClose}
+                style={{ flex: 1, height: 46, borderRadius: 14, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>
+                Cancelar
+              </button>
+              <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!canSubmit || submitting}
+                style={{ flex: 2, height: 46, borderRadius: 14, border: "none", cursor: canSubmit ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: canSubmit ? `linear-gradient(135deg, ${accent}, #0ea876)` : C.border, color: canSubmit ? "#000" : C.textMuted, transition: "all 0.2s" }}>
+                {submitting ? "Publicando…" : label}
+              </motion.button>
+            </div>
+          </div>
+
+        </motion.div>
+      </motion.div>
+
+      {/* Link expand modal */}
+      <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+    </>
+  );
+}
+
+// Aliases for backwards compat
+const UpdateComposerSheet = ({ onSubmit, onClose }) => <ComposerSheet mode="update" onSubmit={onSubmit} onClose={onClose} />;
+
+// ─── SubtemaCard — compact card shown inside ThreadView ───────────────────────
+function SubtemaCard({ subtema, onClick }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <motion.div whileTap={{ scale: 0.97 }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onClick={onClick}
+      style={{
+        background: hov ? C.cardHover : C.card,
+        border: `1px solid ${hov ? C.teal + "50" : C.teal + "22"}`,
+        borderRadius: 16, padding: "12px 14px", cursor: "pointer",
+        marginBottom: 8, transition: "all 0.18s",
+        boxShadow: hov ? `0 4px 20px ${C.teal}14` : "none",
+      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 26, height: 26, borderRadius: 8, background: `${C.teal}18`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Layers size={12} color={C.teal} strokeWidth={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtema.title}</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+            <span style={{ fontFamily: font, fontSize: 10, color: C.green }}>{fmtDate(subtema.timestamp)}</span>
+            <span style={{ color: C.textDim, fontSize: 10 }}>·</span>
+            <span style={{ fontFamily: font, fontSize: 10, color: C.green }}>{fmtTime(subtema.timestamp)}</span>
+            {subtema.updates?.length > 0 && (
+              <>
+                <span style={{ color: C.textDim, fontSize: 10 }}>·</span>
+                <span style={{ fontFamily: font, fontSize: 10, color: C.teal, fontWeight: 600 }}>{subtema.updates.length} update{subtema.updates.length !== 1 ? "s" : ""}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <ChevronRight size={14} color={C.teal} />
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
+function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer }) {
+  const [subtema, setSubtema] = useState(initialSubtema);
+  const [expandedLink, setExpandedLink] = useState(null);
+
+  const handleNewUpdate = async ({ content, audio, media, links }) => {
     const tempId = `u_temp_${Date.now()}`;
-    const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: [], audio: audio || null };
-    setThread(t => ({ ...t, updates: [...t.updates, temp] }));
-    const saved = await addThreadUpdate(thread.id, { content, audio });
-    if (saved) setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
+    const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
+    setSubtema(s => ({ ...s, updates: [...(s.updates || []), temp] }));
+    try {
+      const saved = await addThreadUpdate(subtema.id, { content, audio });
+      if (saved) setSubtema(s => ({ ...s, updates: s.updates.map(u => u.id === tempId ? saved : u) }));
+    } catch {}
   };
-
-  const COMPOSER_H = 0;
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
-      {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
-
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
         {/* TopBar */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -1018,126 +1462,297 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange }) {
             <ChevronLeft size={19} strokeWidth={2.2} /> Back
           </button>
           <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 44, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {thread.title || "Post"}
+            {subtema.title}
           </span>
         </motion.div>
 
-        {/* Root Post */}
+        {/* Subtema header */}
         <div style={{ background: `${C.teal}08`, borderBottom: `1px solid ${C.teal}18`, padding: "20px 16px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <Avatar name={thread.author} size={36} />
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
-                <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.teal}18`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Layers size={14} color={C.teal} />
+            </div>
+            <div>
+              <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{subtema.author || "Alex H."}</span>
+              <div style={{ fontFamily: font, fontSize: 11, color: C.green }}>
+                {fmtDate(subtema.timestamp)} · {fmtTime(subtema.timestamp)}
               </div>
-              <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)}</span>
             </div>
-            <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
           </div>
 
-          {thread.title && (
-            <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 10 }}>
-              <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
+          {subtema.content && (
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.textMuted }}>{subtema.content}</p>
+          )}
+
+          {subtema.media?.length > 0 && (
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
+              {subtema.media.map((m, i) => (
+                <div key={i} style={{ flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 140, aspectRatio: "4/3" }}>
+                  {m.type === "video"
+                    ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                    : <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />}
+                </div>
+              ))}
             </div>
           )}
 
-          <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.textMuted }}>{thread.content}</p>
+          {subtema.audio && <AudioPlayer audio={subtema.audio} accentColor={C.teal} />}
 
-          {thread.hashtags?.length > 0 && (
-            <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
-          )}
-
-          {thread.media?.length > 0 && (
-            <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", aspectRatio: "16/10" }}>
-              <img src={thread.media[0].thumb || thread.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          {subtema.links?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+                {subtema.links.map((p, i) => <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />)}
+              </div>
             </div>
           )}
-
-          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
-            <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
-              style={{ display: "flex", alignItems: "center", gap: 5, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
-              <Heart size={13} fill={liked ? C.red : "none"} /> {likeCount}
-            </motion.button>
-            <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComments(true)}
-              style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
-              <MessageCircle size={13} /> {thread.commentCount}
-            </motion.button>
-            <div style={{ flex: 1 }} />
-            <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Bookmark size={14} /></button>
-            <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Share2 size={14} /></button>
-          </div>
         </div>
 
         {/* Updates */}
-        <div style={{ padding: "16px 16px 0" }}>
-          {thread.updates.length > 0 && (
+        <div style={{ padding: "16px 16px 80px" }}>
+          {(subtema.updates?.length || 0) > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}40, transparent)` }} />
               <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                {thread.updates.length} Update{thread.updates.length !== 1 ? "s" : ""}
+                {subtema.updates.length} Update{subtema.updates.length !== 1 ? "s" : ""}
               </span>
               <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}40, transparent)` }} />
             </div>
           )}
           <div style={{ paddingLeft: 4 }}>
-            {thread.updates.map((u, i) => (
-              <UpdateBubble key={u.id} update={u} index={i} />
-            ))}
+            {(subtema.updates || []).map((u, i) => <UpdateBubble key={u.id} update={u} index={i} />)}
           </div>
-          {thread.updates.length === 0 && !isHost && (
+          {(!subtema.updates || subtema.updates.length === 0) && !isHost && (
             <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
           )}
         </div>
-
-        <div style={{ height: COMPOSER_H + 24 }} />
       </div>
 
-      {/* Composer triggered via green FAB from App.jsx */}
+      {/* Composer overlay */}
+      <AnimatePresence>
+        {showComposer && (
+          <ComposerSheet mode="update"
+            onSubmit={async (data) => { await handleNewUpdate(data); onHideComposer(); }}
+            onClose={onHideComposer} />
+        )}
+      </AnimatePresence>
+
+      <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+    </div>
+  );
+}
+
+// ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, showComposer, composerMode, onHideComposer, onAddSubtema }) {
+  const [thread, setThread] = useState(initialThread);
+  const [liked, setLiked] = useState(initialThread.liked);
+  const [likeCount, setLikeCount] = useState(initialThread.likes);
+  const [showComments, setShowComments] = useState(false);
+  const [openSubtema, setOpenSubtema] = useState(null);
+  const [subtemaDirection, setSubtemaDirection] = useState(1);
+  const [expandedLink, setExpandedLink] = useState(null);
+
+  const toggleLike = async () => {
+    const next = !liked;
+    setLiked(next);
+    setLikeCount(c => next ? c + 1 : c - 1);
+    await toggleThreadLike(thread.id);
+  };
+
+  const handleNewUpdate = async ({ content, audio, media, links }) => {
+    const tempId = `u_temp_${Date.now()}`;
+    const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
+    setThread(t => ({ ...t, updates: [...t.updates, temp] }));
+    try {
+      const saved = await addThreadUpdate(thread.id, { content, audio });
+      if (saved) setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
+    } catch {}
+  };
+
+  const handleAddSubtema = async ({ title, content, media, audio, links }) => {
+    const newSub = {
+      id: `sub_${Date.now()}`,
+      title, content, media: media || [], audio: audio || null, links: links || [],
+      author: "Alex H.", timestamp: new Date(),
+      updates: [],
+    };
+    setThread(t => ({ ...t, subtemas: [...(t.subtemas || []), newSub] }));
+    onAddSubtema?.(thread.id, newSub);
+  };
+
+  const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); };
+  const closeSubtema = () => { setSubtemaDirection(-1); setOpenSubtema(null); };
+
+  const slideVariants = {
+    enter: d => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: d => ({ x: d > 0 ? "-100%" : "100%", opacity: 0 }),
+  };
+  const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
+
+  // Which composer to show inside this view
+  const showUpdateComposer = showComposer && composerMode === "update" && !openSubtema;
+  const showSubtemaComposer = showComposer && composerMode === "subtema" && !openSubtema;
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
+      {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
+
+      <AnimatePresence mode="popLayout" custom={subtemaDirection}>
+        {!openSubtema ? (
+          <motion.div key="thread-main" initial={false} animate={{}}
+            style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+              {/* TopBar */}
+              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
+                <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+                  <ChevronLeft size={19} strokeWidth={2.2} /> Back
+                </button>
+                <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 44, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {thread.title || "Post"}
+                </span>
+              </motion.div>
+
+              {/* Root Post */}
+              <div style={{ background: `${C.teal}08`, borderBottom: `1px solid ${C.teal}18`, padding: "20px 16px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <Avatar name={thread.author} size={36} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
+                      <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
+                    </div>
+                    <span style={{ fontFamily: font, fontSize: 11, color: C.green }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
+                  </div>
+                  <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
+                </div>
+
+                {thread.title && (
+                  <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 10 }}>
+                    <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
+                  </div>
+                )}
+
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.textMuted }}>{thread.content}</p>
+
+                {thread.hashtags?.length > 0 && (
+                  <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
+                )}
+
+                {thread.media?.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12 }}>
+                    {thread.media.map((m, i) => (
+                      <div key={i} style={{ flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 160, aspectRatio: "16/10" }}>
+                        {m.type === "video"
+                          ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                          : <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {thread.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={thread.audio} accentColor={C.teal} /></div>}
+
+                {thread.links?.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+                      {thread.links.map((p, i) => <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />)}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
+                  <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
+                    <Heart size={13} fill={liked ? C.red : "none"} /> {likeCount}
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComments(true)}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
+                    <MessageCircle size={13} /> {thread.commentCount}
+                  </motion.button>
+                  <div style={{ flex: 1 }} />
+                  <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Bookmark size={14} /></button>
+                  <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Share2 size={14} /></button>
+                </div>
+              </div>
+
+              {/* Updates */}
+              <div style={{ padding: "16px 16px 0" }}>
+                {thread.updates.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}40, transparent)` }} />
+                    <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      {thread.updates.length} Update{thread.updates.length !== 1 ? "s" : ""}
+                    </span>
+                    <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}40, transparent)` }} />
+                  </div>
+                )}
+                <div style={{ paddingLeft: 4 }}>
+                  {thread.updates.map((u, i) => <UpdateBubble key={u.id} update={u} index={i} />)}
+                </div>
+                {thread.updates.length === 0 && !isHost && (
+                  <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
+                )}
+              </div>
+
+              {/* Subtemas */}
+              {((thread.subtemas?.length || 0) > 0 || isHost) && (
+                <div style={{ padding: "16px 16px 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}30, transparent)` }} />
+                    <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      Subtemas {(thread.subtemas?.length || 0) > 0 ? `· ${thread.subtemas.length}` : ""}
+                    </span>
+                    <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}30, transparent)` }} />
+                  </div>
+                  {(thread.subtemas || []).map((sub) => (
+                    <SubtemaCard key={sub.id} subtema={sub} onClick={() => openSubtemaView(sub)} />
+                  ))}
+                  {(!thread.subtemas || thread.subtemas.length === 0) && (
+                    <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "12px 0 24px" }}>No subtemas yet.</p>
+                  )}
+                </div>
+              )}
+
+              <div style={{ height: 90 }} />
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key={openSubtema.id} custom={subtemaDirection} variants={slideVariants}
+            initial="enter" animate="center" exit="exit" transition={springTrans}
+            style={{ position: "absolute", inset: 0 }}>
+            <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
+              showComposer={showComposer && composerMode === "update"}
+              onHideComposer={onHideComposer} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Composers for thread-level actions */}
+      <AnimatePresence>
+        {showUpdateComposer && (
+          <ComposerSheet mode="update"
+            onSubmit={async (data) => { await handleNewUpdate(data); onHideComposer(); }}
+            onClose={onHideComposer} />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showSubtemaComposer && (
+          <ComposerSheet mode="subtema"
+            onSubmit={async (data) => { await handleAddSubtema(data); onHideComposer(); }}
+            onClose={onHideComposer} />
+        )}
+      </AnimatePresence>
+
+      <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
     </div>
   );
 }
 
 
-// ─── SubtemaComposer sheet ─────────────────────────────────────────────────────
-function SubtemaSheet({ onSubmit, onClose }) {
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-
-  const submit = () => {
-    if (!title.trim()) return;
-    onSubmit({ title: title.trim(), description: desc.trim() });
-    onClose();
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
-        style={{ width: "100%", maxWidth: 560, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.teal}30`, borderBottom: "none", padding: "20px 20px 32px" }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.teal}20`, border: `1px solid ${C.teal}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Layers size={15} color={C.teal} />
-            </div>
-            <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Crear Subtema</span>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
-        </div>
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del subtema…"
-          style={{ width: "100%", boxSizing: "border-box", background: `${C.bg}cc`, border: `1.5px solid ${title ? C.teal + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10, transition: "border-color 0.2s" }} />
-        <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descripción (opcional)…" rows={3}
-          style={{ width: "100%", boxSizing: "border-box", resize: "none", background: `${C.bg}cc`, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 13, outline: "none", marginBottom: 12, lineHeight: 1.55 }} />
-        <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!title.trim()}
-          style={{ width: "100%", height: 44, borderRadius: 14, border: "none", cursor: title.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: title.trim() ? `linear-gradient(135deg, ${C.teal}, #0ea876)` : C.border, color: title.trim() ? "#000" : C.textMuted, transition: "all 0.2s" }}>
-          Crear Subtema
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
-}
+// SubtemaSheet — uses ComposerSheet in subtema mode
+const SubtemaSheet = ({ onSubmit, onClose }) => <ComposerSheet mode="subtema" onSubmit={onSubmit} onClose={onClose} />;
 
 // ─── NewPostSheet ──────────────────────────────────────────────────────────────
 function NewPostSheet({ onSubmit, onClose }) {
@@ -1207,6 +1822,14 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const [showNewPost, setShowNewPost] = useState(false);
   const [showSubtema, setShowSubtema] = useState(false);
 
+  // ── FAB + composer state ───────────────────────────────────────────────────
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
+  const [activeComposer, setActiveComposer] = useState(null); // null | "update" | "subtema"
+  const fabVisible = activeComposer === null;
+
+  const openComposer = (mode) => { setFabMenuOpen(false); setActiveComposer(mode); };
+  const closeComposer = () => setActiveComposer(null);
+
   const isDesktop = useIsDesktop();
 
   // ── Load from Supabase ─────────────────────────────────────────────────────
@@ -1251,7 +1874,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       hashtags: [], status: "active", visibility: "members",
       author: "Alex H.", timestamp: new Date(),
       likes: 0, liked: false, commentCount: 0, newUpdates: 0,
-      media: [], updates: [],
+      media: [], audio: null, links: [], updates: [], subtemas: [],
     };
     setThreads(prev => [newThread, ...prev]);
     try { await createRecapThread(newThread); } catch {}
@@ -1260,12 +1883,13 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const handleCreateSubtema = useCallback((data) => {
     const newThread = {
       id: `t${Date.now()}`, planningPostId: null,
-      title: data.title, content: data.description || "",
+      title: data.title, content: data.content || "",
       hashtags: [], status: "active", visibility: "members",
       isSubtema: true,
       author: "Alex H.", timestamp: new Date(),
       likes: 0, liked: false, commentCount: 0, newUpdates: 0,
-      media: [], updates: [],
+      media: data.media || [], audio: data.audio || null, links: data.links || [],
+      updates: [], subtemas: [],
     };
     setThreads(prev => [newThread, ...prev]);
   }, []);
@@ -1300,6 +1924,80 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   //   Mobile:  normal document flow — no height constraint, no inner overflow
   //            Parent (unified scroll in App.jsx) handles scroll
 
+  // ─── FAB — fixed, always on viewport ──────────────────────────────────────
+  // isInSubtema: when inside a subtema, only show "Crear Update"
+  const GreenFAB = ({ isInSubtema = false }) => (
+    <AnimatePresence>
+      {fabVisible && (
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 440, damping: 32 }}
+          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 400 }}>
+
+          {/* FAB menu options */}
+          <AnimatePresence>
+            {fabMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.92 }}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                style={{ position: "absolute", bottom: "calc(100% + 12px)", right: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+
+                {/* Crear Update */}
+                <motion.button whileTap={{ scale: 0.93 }}
+                  onClick={() => openComposer("update")}
+                  style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.teal}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.teal}20`, border: `1px solid ${C.teal}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Send size={13} color={C.teal} />
+                  </div>
+                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Update</span>
+                </motion.button>
+
+                {/* Crear Subtema — only at post level */}
+                {!isInSubtema && (
+                  <motion.button whileTap={{ scale: 0.93 }}
+                    onClick={() => openComposer("subtema")}
+                    style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.green}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.green}20`, border: `1px solid ${C.green}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Layers size={13} color={C.green} />
+                    </div>
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Subtema</span>
+                  </motion.button>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Backdrop to close menu */}
+          {fabMenuOpen && (
+            <div style={{ position: "fixed", inset: 0, zIndex: -1 }} onClick={() => setFabMenuOpen(false)} />
+          )}
+
+          {/* Main FAB button */}
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            onClick={() => setFabMenuOpen(o => !o)}
+            style={{
+              width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer",
+              background: fabMenuOpen
+                ? `linear-gradient(135deg, #0ea876, ${C.teal})`
+                : `linear-gradient(135deg, ${C.green}, #0ea876)`,
+              boxShadow: `0 4px 24px ${C.green}55, 0 0 0 ${fabMenuOpen ? "6px" : "0px"} ${C.green}22`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "box-shadow 0.2s",
+            }}>
+            <motion.div animate={{ rotate: fabMenuOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
+              <Plus size={22} color="#000" strokeWidth={2.5} />
+            </motion.div>
+          </motion.button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   const FeedPanelDesktop = () => (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <AnimatePresence mode="popLayout" custom={direction}>
@@ -1318,13 +2016,19 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
               )}
             </div>
-            {/* FAB only in thread view */}
           </motion.div>
         ) : (
           <motion.div key={openThread.id} custom={direction} variants={slideVariants}
             initial="enter" animate="center" exit="exit" transition={springTrans}
             style={{ position: "absolute", inset: 0, background: C.surface }}>
-            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost} onStatusChange={handleStatusChange} />
+            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+              onStatusChange={handleStatusChange}
+              showComposer={activeComposer !== null}
+              composerMode={activeComposer}
+              onHideComposer={closeComposer}
+              onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+            />
+            {isHost && <GreenFAB />}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1342,7 +2046,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     <div style={{ background: C.surface, minHeight: 400 }}>
       {!openThread ? (
         <>
-          {/* Search bar */}
+          {/* Filter bar */}
           <div style={{ padding: "12px 14px 10px" }}>
             <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
           </div>
@@ -1358,13 +2062,17 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
             )}
           </div>
-
-          {/* FAB only appears inside ThreadView, not in the main feed list */}
         </>
       ) : (
-        /* Thread view in mobile: fills the unified scroll naturally */
         <div style={{ background: C.surface }}>
-          <ThreadView thread={openThread} onBack={closeThread} isHost={isHost} onStatusChange={handleStatusChange} />
+          <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+            onStatusChange={handleStatusChange}
+            showComposer={activeComposer !== null}
+            composerMode={activeComposer}
+            onHideComposer={closeComposer}
+            onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+          />
+          {isHost && <GreenFAB />}
         </div>
       )}
 
