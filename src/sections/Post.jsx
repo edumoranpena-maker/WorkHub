@@ -1,16 +1,15 @@
 /**
- * Post.jsx — Clean rewrite of the Updates/Recaps section.
+ * Post.jsx — Updates/Recaps section.
  *
  * STATE ARCHITECTURE (no re-render bugs):
  *  - threads      → stable, only mutated via setThreads()
- *  - searchInput  → LOCAL to SearchBar (uncontrolled from parent)
- *  - debouncedQ   → derived via useDebounce hook, 350ms
- *  - filtered     → useMemo(threads, debouncedQ)  ← feed never rerenders on keypress
+ *  - searchQuery  → committed only on Search button press (NOT while typing)
+ *  - filters      → { statuses: [], fromDate: null } — updated on filter change
  *  - openThread   → separate state, never collapses feed
  *  - fabOpen      → separate UI-only state
  *
  * Three cleanly separated layers:
- *  1. SearchBar      — fully self-contained, calls onSearch(q) after debounce
+ *  1. FilterBar      — filter btn (left) + search input + search btn (right)
  *  2. PostFeed       — stable list, keyed by thread.id only
  *  3. ThreadView     — reused from Recaps, minus the sticky bottom composer
  */
@@ -171,15 +170,6 @@ function groupByMonth(list) {
   return groups;
 }
 
-// ─── useDebounce — prevents feed re-render on each keystroke ──────────────────
-function useDebounce(value, delay = 350) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debouncedValue;
-}
 
 function useIsDesktop() {
   const [is, setIs] = useState(() => window.innerWidth >= 768);
@@ -256,31 +246,288 @@ function MonthDivider({ label }) {
   );
 }
 
-// ─── SearchBar — SELF-CONTAINED, parent never re-renders on keypress ──────────
-// Uses local state + debounce, notifies parent only after debounce fires.
-const SearchBar = memo(function SearchBar({ onSearch }) {
-  const [val, setVal] = useState("");
-  const debouncedVal = useDebounce(val, 350);
+// ─── TelegramDatePicker — minimal inline calendar picker ─────────────────────
+function TelegramDatePicker({ value, onChange }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(value ? value.getFullYear() : today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(value ? value.getMonth() : today.getMonth());
 
-  // Notify parent only when debounced value changes
-  useEffect(() => {
-    onSearch(debouncedVal.trim());
-  }, [debouncedVal, onSearch]);
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = Array(firstDay).fill(null).concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const isSelected = (d) => {
+    if (!d || !value) return false;
+    return value.getFullYear() === viewYear && value.getMonth() === viewMonth && value.getDate() === d;
+  };
+  const isToday = (d) => {
+    if (!d) return false;
+    return today.getFullYear() === viewYear && today.getMonth() === viewMonth && today.getDate() === d;
+  };
+  const isFuture = (d) => {
+    if (!d) return false;
+    return new Date(viewYear, viewMonth, d) > today;
+  };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.card, border: `1px solid ${val ? C.teal + "55" : C.border}`, borderRadius: 14, padding: "0 14px", transition: "border-color 0.2s", height: 44 }}>
-      <Search size={15} color={C.textMuted} strokeWidth={2} />
-      <input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        placeholder="Search posts…"
-        style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.text, fontFamily: font, fontSize: 14, padding: "11px 0" }}
-      />
-      {val && (
-        <button onClick={() => setVal("")} style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 0, display: "flex" }}>
-          <X size={14} />
+    <motion.div initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 400, damping: 34 }}
+      style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "14px 16px 12px", width: 260, boxShadow: "0 8px 40px rgba(0,0,0,0.6)", userSelect: "none" }}>
+      {/* Month nav */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, padding: "4px 6px", borderRadius: 8, display: "flex", alignItems: "center" }}>
+          <ChevronLeft size={15} />
+        </button>
+        <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>
+          {MONTHS[viewMonth].slice(0,3)} {viewYear}
+        </span>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, padding: "4px 6px", borderRadius: 8, display: "flex", alignItems: "center" }}>
+          <ChevronRight size={15} />
+        </button>
+      </div>
+      {/* Day labels */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+          <div key={d} style={{ textAlign: "center", fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textDim, padding: "2px 0" }}>{d}</div>
+        ))}
+      </div>
+      {/* Days grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1 }}>
+        {cells.map((d, i) => (
+          <button key={i} disabled={!d || isFuture(d)} onClick={() => d && !isFuture(d) && onChange(new Date(viewYear, viewMonth, d))}
+            style={{
+              width: "100%", aspectRatio: "1/1", borderRadius: 8, border: "none",
+              background: isSelected(d) ? C.teal : isToday(d) ? `${C.teal}20` : "transparent",
+              color: !d ? "transparent" : isFuture(d) ? C.textDim : isSelected(d) ? "#000" : isToday(d) ? C.teal : C.text,
+              fontFamily: font, fontSize: 12, fontWeight: isSelected(d) ? 800 : 500,
+              cursor: !d || isFuture(d) ? "default" : "pointer",
+              opacity: !d ? 0 : isFuture(d) ? 0.25 : 1,
+              transition: "all 0.1s",
+            }}>
+            {d}
+          </button>
+        ))}
+      </div>
+      {/* Clear */}
+      {value && (
+        <button onClick={() => onChange(null)}
+          style={{ marginTop: 10, width: "100%", padding: "7px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, fontFamily: font, fontSize: 12, cursor: "pointer", transition: "color 0.15s" }}>
+          Clear date
         </button>
       )}
+    </motion.div>
+  );
+}
+
+// ─── FilterBar — Filter btn (left) + search input + Search btn (right) ────────
+// Search fires ONLY on button press, not while typing.
+// Filter panel appears below with status chips + Telegram-style date picker.
+const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
+  const [inputVal, setInputVal] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeStatuses, setActiveStatuses] = useState([]);   // [] = all
+  const [fromDate, setFromDate]     = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const containerRef = useRef(null);
+
+  // Close filter panel on outside click
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setFilterOpen(false);
+        setShowDatePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [filterOpen]);
+
+  const handleSearch = () => {
+    onSearch(inputVal.trim());
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") handleSearch();
+  };
+
+  const toggleStatus = (id) => {
+    setActiveStatuses(prev => {
+      const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id];
+      onFilterChange({ statuses: next, fromDate });
+      return next;
+    });
+  };
+
+  const handleFromDate = (d) => {
+    setFromDate(d);
+    setShowDatePicker(false);
+    onFilterChange({ statuses: activeStatuses, fromDate: d });
+  };
+
+  const hasActiveFilters = activeStatuses.length > 0 || fromDate !== null;
+
+  const STATUS_FILTER = [
+    { id: "active",      label: "Active",      color: C.green,  bg: C.greenDim },
+    { id: "in_progress", label: "In Progress", color: C.amber,  bg: "rgba(245,166,35,0.12)" },
+    { id: "closed",      label: "Closed",      color: C.textMuted, bg: "rgba(106,106,130,0.10)" },
+  ];
+
+  return (
+    <div ref={containerRef} style={{ position: "relative" }}>
+      {/* ── Row: Filter btn | Search input | Search btn ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
+        {/* Filter button — left anchor */}
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => { setFilterOpen(o => !o); setShowDatePicker(false); }}
+          style={{
+            flexShrink: 0, height: 44, minWidth: 44, padding: "0 12px",
+            borderRadius: 14, border: `1px solid ${hasActiveFilters ? C.teal + "70" : filterOpen ? C.teal + "55" : C.border}`,
+            background: hasActiveFilters ? `${C.teal}14` : filterOpen ? `${C.teal}0d` : C.card,
+            color: hasActiveFilters || filterOpen ? C.teal : C.textMuted,
+            display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
+            transition: "all 0.18s",
+            boxShadow: hasActiveFilters ? `0 0 12px ${C.teal}22` : "none",
+          }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
+          </svg>
+          {hasActiveFilters && (
+            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, background: C.teal, color: "#000", borderRadius: 99, padding: "1px 5px", lineHeight: 1.4 }}>
+              {activeStatuses.length + (fromDate ? 1 : 0)}
+            </span>
+          )}
+        </motion.button>
+
+        {/* Search input — grows */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", background: C.card, border: `1px solid ${inputVal ? C.teal + "44" : C.border}`, borderRadius: 14, padding: "0 12px", height: "100%", transition: "border-color 0.18s" }}>
+          <input
+            value={inputVal}
+            onChange={e => setInputVal(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search posts…"
+            style={{ flex: 1, background: "none", border: "none", outline: "none", color: C.text, fontFamily: font, fontSize: 14 }}
+          />
+          {inputVal && (
+            <button onClick={() => { setInputVal(""); onSearch(""); }}
+              style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 0, display: "flex", marginLeft: 6 }}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Search button — right anchor */}
+        <motion.button
+          whileTap={{ scale: 0.91 }}
+          onClick={handleSearch}
+          style={{
+            flexShrink: 0, height: 44, minWidth: 44, padding: "0 12px",
+            borderRadius: 14, border: "none",
+            background: inputVal.trim() ? `linear-gradient(135deg, ${C.teal}, #18b87a)` : C.card,
+            color: inputVal.trim() ? "#000" : C.textMuted,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+            cursor: "pointer", transition: "all 0.18s",
+            border: `1px solid ${inputVal.trim() ? "transparent" : C.border}`,
+            boxShadow: inputVal.trim() ? `0 0 14px ${C.teal}44` : "none",
+          }}>
+          <Search size={15} strokeWidth={2.2} />
+        </motion.button>
+      </div>
+
+      {/* ── Filter panel ── */}
+      <AnimatePresence>
+        {filterOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 420, damping: 36 }}
+            style={{
+              position: "absolute", top: "calc(100% + 8px)", left: 0, right: 0, zIndex: 120,
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 18,
+              padding: "14px 16px 16px", boxShadow: "0 8px 40px rgba(0,0,0,0.55)",
+            }}>
+
+            {/* Status row */}
+            <p style={{ margin: "0 0 10px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.textMuted }}>
+              Estado
+            </p>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16 }}>
+              {STATUS_FILTER.map(s => {
+                const active = activeStatuses.includes(s.id);
+                return (
+                  <motion.button key={s.id} whileTap={{ scale: 0.93 }} onClick={() => toggleStatus(s.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 99,
+                      border: `1.5px solid ${active ? s.color + "80" : C.border}`,
+                      background: active ? s.bg : "transparent",
+                      cursor: "pointer", transition: "all 0.15s",
+                    }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color, opacity: active ? 1 : 0.45, boxShadow: active ? `0 0 6px ${s.color}` : "none" }} />
+                    <span style={{ fontFamily: font, fontSize: 12, fontWeight: active ? 700 : 500, color: active ? s.color : C.textMuted, transition: "color 0.15s" }}>
+                      {s.label}
+                    </span>
+                    {active && <Check size={10} color={s.color} />}
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: C.border, margin: "0 0 14px" }} />
+
+            {/* From date */}
+            <p style={{ margin: "0 0 10px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", textTransform: "uppercase", color: C.textMuted }}>
+              Desde
+            </p>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowDatePicker(o => !o)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 12, width: "100%",
+                border: `1.5px solid ${fromDate ? C.teal + "70" : C.border}`,
+                background: fromDate ? `${C.teal}12` : C.surface,
+                cursor: "pointer", transition: "all 0.15s",
+              }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={fromDate ? C.teal : C.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span style={{ flex: 1, fontFamily: font, fontSize: 13, color: fromDate ? C.teal : C.textMuted, textAlign: "left", fontWeight: fromDate ? 700 : 400 }}>
+                {fromDate
+                  ? `${fromDate.getDate()} ${MONTHS[fromDate.getMonth()].slice(0,3)} ${fromDate.getFullYear()}`
+                  : "Seleccionar fecha"}
+              </span>
+              <ChevronRight size={13} color={fromDate ? C.teal : C.textMuted} style={{ transform: showDatePicker ? "rotate(90deg)" : "none", transition: "transform 0.18s" }} />
+            </motion.button>
+
+            <AnimatePresence>
+              {showDatePicker && (
+                <div style={{ marginTop: 10 }}>
+                  <TelegramDatePicker value={fromDate} onChange={handleFromDate} />
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Clear all */}
+            {hasActiveFilters && (
+              <motion.button whileTap={{ scale: 0.95 }}
+                onClick={() => { setActiveStatuses([]); setFromDate(null); setShowDatePicker(false); onFilterChange({ statuses: [], fromDate: null }); }}
+                style={{ marginTop: 14, width: "100%", padding: "8px 0", borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, fontFamily: font, fontSize: 12, cursor: "pointer", transition: "color 0.15s" }}>
+                Limpiar filtros
+              </motion.button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });
@@ -374,21 +621,40 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
   );
 });
 
-// ─── PostFeed — stable grid, never recreated on search keypress ───────────────
-// Receives debouncedQuery (changes max 1x per 350ms), not raw input.
-const PostFeed = memo(function PostFeed({ threads, debouncedQuery, onOpenThread }) {
+// ─── PostFeed — stable grid, filters applied only on committed search + filter changes ──
+// searchQuery: committed on button press only. filters: { statuses, fromDate }
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread }) {
   const filtered = useMemo(() => {
-    let list = [...threads].sort((a, b) => b.timestamp - a.timestamp);
-    if (debouncedQuery) {
-      const q = debouncedQuery.toLowerCase();
+    let list = [...threads];
+
+    // 1. Status filter
+    if (filters.statuses && filters.statuses.length > 0) {
+      list = list.filter(t => filters.statuses.includes(t.status));
+    }
+
+    // 2. From-date filter — hide everything before fromDate, ascending order
+    if (filters.fromDate) {
+      const from = new Date(filters.fromDate);
+      from.setHours(0, 0, 0, 0);
+      list = list.filter(t => t.timestamp >= from);
+      list.sort((a, b) => a.timestamp - b.timestamp);
+    } else {
+      // Default: newest first
+      list.sort((a, b) => b.timestamp - a.timestamp);
+    }
+
+    // 3. Search query filter (committed on button press)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
       list = list.filter(t =>
         t.title?.toLowerCase().includes(q) ||
         t.content?.toLowerCase().includes(q) ||
         t.hashtags?.some(h => h.toLowerCase().includes(q))
       );
     }
+
     return list;
-  }, [threads, debouncedQuery]);
+  }, [threads, searchQuery, filters]);
 
   const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
 
@@ -917,7 +1183,7 @@ function NewPostSheet({ onSubmit, onClose }) {
 // STATE SEPARATION:
 //   threads        → feed data (stable)
 //   openThread     → navigation (separate)
-//   debouncedQuery → search (read-only in PostFeed)
+//   searchQuery  → committed on Search btn press (read-only in PostFeed)
 //   fabOpen / sheets → UI only
 export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab, onOpenCreate, onThreadChange }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
@@ -930,10 +1196,12 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const feedScrollRef = useRef(0);
   const feedContainerRef = useRef(null);
 
-  // ── Search state — SearchBar manages its own input, only debounced val here ─
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  // onSearch is called by SearchBar after its own debounce — stable ref
-  const handleSearch = useCallback((q) => setDebouncedQuery(q), []);
+  // ── Search + Filter state ─────────────────────────────────────────────────
+  // searchQuery is committed only when user presses the Search button
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState({ statuses: [], fromDate: null });
+  const handleSearch = useCallback((q) => setSearchQuery(q), []);
+  const handleFilterChange = useCallback((f) => setFilters(f), []);
 
   // ── UI-only state ──────────────────────────────────────────────────────────
   const [showNewPost, setShowNewPost] = useState(false);
@@ -1038,7 +1306,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         {!openThread ? (
           <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
             <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
-              <SearchBar onSearch={handleSearch} />
+              <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
             </div>
             <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
               {loadingThreads ? (
@@ -1047,7 +1315,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                   <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
                 </div>
               ) : (
-                <PostFeed threads={threads} debouncedQuery={debouncedQuery} onOpenThread={openThreadView} />
+                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
               )}
             </div>
             {/* FAB only in thread view */}
@@ -1076,7 +1344,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         <>
           {/* Search bar */}
           <div style={{ padding: "12px 14px 10px" }}>
-            <SearchBar onSearch={handleSearch} />
+            <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
           </div>
 
           {/* Posts list — flows naturally */}
@@ -1087,7 +1355,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
               </div>
             ) : (
-              <PostFeed threads={threads} debouncedQuery={debouncedQuery} onOpenThread={openThreadView} />
+              <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
             )}
           </div>
 
