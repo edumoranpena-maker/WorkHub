@@ -400,8 +400,6 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
   };
 
   const hasActiveFilters = activeStatuses.length > 0 || fromDate !== null;
-  const hasAnything = hasActiveFilters || inputVal.trim() !== "";
-
   // Build chip list: one per active status + one for date
   const activeChips = [
     ...activeStatuses.map(id => {
@@ -490,7 +488,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
 
       {/* ── Active filter chips row ── */}
       <AnimatePresence>
-        {(activeChips.length > 0 || hasAnything) && activeChips.length > 0 && (
+        {activeChips.length > 0 && (
           <motion.div
             initial={{ opacity: 0, height: 0, marginTop: 0 }}
             animate={{ opacity: 1, height: "auto", marginTop: 8 }}
@@ -1308,9 +1306,6 @@ function ComposerSheet({ mode, onSubmit, onClose }) {
   );
 }
 
-// Aliases for backwards compat
-const UpdateComposerSheet = ({ onSubmit, onClose }) => <ComposerSheet mode="update" onSubmit={onSubmit} onClose={onClose} />;
-
 // ─── SubtemaCard — compact card shown inside ThreadView ───────────────────────
 function SubtemaCard({ subtema, onClick }) {
   const [hov, setHov] = useState(false);
@@ -1661,49 +1656,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
 }
 
 
-// SubtemaSheet — uses ComposerSheet in subtema mode
-const SubtemaSheet = ({ onSubmit, onClose }) => <ComposerSheet mode="subtema" onSubmit={onSubmit} onClose={onClose} />;
-
-// ─── NewPostSheet ──────────────────────────────────────────────────────────────
-function NewPostSheet({ onSubmit, onClose }) {
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-
-  const submit = () => {
-    if (!title.trim()) return;
-    onSubmit({ title: title.trim(), content: content.trim() });
-    onClose();
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
-        style={{ width: "100%", maxWidth: 560, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.green}30`, borderBottom: "none", padding: "20px 20px 32px" }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.green}20`, border: `1px solid ${C.green}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FolderPlus size={15} color={C.green} />
-            </div>
-            <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Nuevo Post</span>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><X size={18} /></button>
-        </div>
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del post…"
-          style={{ width: "100%", boxSizing: "border-box", background: `${C.bg}cc`, border: `1.5px solid ${title ? C.green + "55" : C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 10, transition: "border-color 0.2s" }} />
-        <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Contenido del post…" rows={4}
-          style={{ width: "100%", boxSizing: "border-box", resize: "none", background: `${C.bg}cc`, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 13, outline: "none", marginBottom: 12, lineHeight: 1.55 }} />
-        <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!title.trim()}
-          style={{ width: "100%", height: 44, borderRadius: 14, border: "none", cursor: title.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: title.trim() ? `linear-gradient(135deg, ${C.green}, #0ea876)` : C.border, color: title.trim() ? "#000" : C.textMuted, transition: "all 0.2s" }}>
-          Publicar
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
-}
-
 // ─── PostSection (default export) — Root component ────────────────────────────
 // STATE SEPARATION:
 //   threads        → feed data (stable)
@@ -1772,19 +1724,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     setThreads(prev => prev.map(t => t.id === threadId ? { ...t, status: newStatus } : t));
     setOpenThread(t => t?.id === threadId ? { ...t, status: newStatus } : t);
     await updateThreadStatus(threadId, newStatus);
-  }, []);
-
-  const handleCreateThread = useCallback(async (data) => {
-    const newThread = {
-      id: `t${Date.now()}`, planningPostId: null,
-      title: data.title || "New Post", content: data.content || "",
-      hashtags: [], status: "active", visibility: "members",
-      author: "Alex H.", timestamp: new Date(),
-      likes: 0, liked: false, commentCount: 0, newUpdates: 0,
-      media: [], audio: null, links: [], updates: [], subtemas: [],
-    };
-    setThreads(prev => [newThread, ...prev]);
-    try { await createRecapThread(newThread); } catch {}
   }, []);
 
   const handleCreateSubtema = useCallback((data) => {
