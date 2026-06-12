@@ -1449,7 +1449,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 }
 
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, showComposer, composerMode, onHideComposer, onAddSubtema }) {
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
   const [thread, setThread] = useState(initialThread);
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1486,8 +1486,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
     onAddSubtema?.(thread.id, newSub);
   };
 
-  const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); };
-  const closeSubtema = () => { setSubtemaDirection(-1); setOpenSubtema(null); };
+  const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); onSubtemaChange?.(true); };
+  const closeSubtema = () => { setSubtemaDirection(-1); setOpenSubtema(null); onSubtemaChange?.(false); };
 
   const slideVariants = {
     enter: d => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
@@ -1684,6 +1684,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // ── FAB + composer state ───────────────────────────────────────────────────
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [activeComposer, setActiveComposer] = useState(null); // null | "update" | "subtema"
+  const [subtemaOpen, setSubtemaOpen] = useState(false); // true when inside a SubtemaView
   const fabVisible = activeComposer === null;
 
   const openComposer = (mode) => { setFabMenuOpen(false); setActiveComposer(mode); };
@@ -1747,7 +1748,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []);
 
   const closeThread = useCallback(() => {
-    setDirection(-1); setOpenThread(null); onThreadChange?.(false);
+    setDirection(-1); setOpenThread(null); setSubtemaOpen(false); onThreadChange?.(false);
   }, [onThreadChange]);
 
   // Restore scroll on back
@@ -1872,9 +1873,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               showComposer={activeComposer !== null}
               composerMode={activeComposer}
               onHideComposer={closeComposer}
+              onSubtemaChange={setSubtemaOpen}
               onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
             />
-            {isHost && <GreenFAB />}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1910,9 +1911,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             showComposer={activeComposer !== null}
             composerMode={activeComposer}
             onHideComposer={closeComposer}
+            onSubtemaChange={setSubtemaOpen}
             onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
           />
-          {isHost && <GreenFAB />}
         </div>
       )}
 
@@ -1947,11 +1948,17 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             <FeedPanelDesktop />
           </div>
         </div>
+        {isHost && openThread && <GreenFAB isInSubtema={subtemaOpen} />}
       </div>
     );
   }
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
   // Render as plain flow — unified scroll in App.jsx handles overflow
-  return <FeedPanelMobile />;
+  return (
+    <>
+      <FeedPanelMobile />
+      {isHost && openThread && <GreenFAB isInSubtema={subtemaOpen} />}
+    </>
+  );
 }
