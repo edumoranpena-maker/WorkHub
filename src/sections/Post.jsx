@@ -962,94 +962,6 @@ function CommentsSheet({ threadId, onClose }) {
   );
 }
 
-// ─── UpdateComposer (host only, floating inside ThreadView) ───────────────────
-function UpdateComposer({ onSubmit }) {
-  const [content, setContent] = useState("");
-  const [focused, setFocused] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [recordSecs, setRecordSecs] = useState(0);
-  const [uploadingAudio, setUploadingAudio] = useState(false);
-  const timerRef = useRef(null);
-  const secsRef = useRef(0);
-  const mediaRecRef = useRef(null);
-  const chunksRef = useRef([]);
-
-  useEffect(() => { secsRef.current = recordSecs; }, [recordSecs]);
-
-  const startRecord = () => {
-    navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
-      const mr = new MediaRecorder(stream);
-      mediaRecRef.current = mr;
-      chunksRef.current = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const dur = secsRef.current;
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const wf = Array.from({ length: 20 }, () => Math.random() * 0.8 + 0.2);
-        setRecording(false); setUploadingAudio(true);
-        try {
-          const path = storagePath("updates/audio", "recording.webm");
-          const url = await uploadFile("audio", blob, path);
-          onSubmit({ content: content.trim(), audio: { url: url || URL.createObjectURL(blob), duration: dur, waveform: wf } });
-        } finally { setUploadingAudio(false); }
-        setContent(""); setRecordSecs(0);
-      };
-      mr.start();
-      setRecording(true); setRecordSecs(0);
-      timerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000);
-    }).catch(() => alert("Microphone access denied"));
-  };
-
-  const stopRecord = () => {
-    clearInterval(timerRef.current);
-    if (mediaRecRef.current?.state !== "inactive") mediaRecRef.current.stop();
-  };
-
-  const handleSubmit = () => {
-    if (!content.trim()) return;
-    onSubmit({ content: content.trim(), audio: null });
-    setContent("");
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-      style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: 430, margin: "0 auto", zIndex: 40, background: "rgba(14,14,24,0.92)", backdropFilter: "blur(28px)", borderTop: `1px solid rgba(92,47,255,0.2)`, boxShadow: "0 -4px 40px rgba(34,211,160,0.1)", padding: "10px 14px 20px" }}>
-      {recording ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: `${C.red}14`, border: `1px solid ${C.red}30`, borderRadius: 16 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, boxShadow: `0 0 8px ${C.red}`, animation: "pulse-dot 1s infinite" }} />
-          <span style={{ fontFamily: font, fontSize: 14, color: C.red, fontWeight: 600, flex: 1 }}>Recording… {fmtAudio(recordSecs)}</span>
-          <button onClick={stopRecord} style={{ display: "flex", alignItems: "center", gap: 6, background: C.red, border: "none", borderRadius: 10, padding: "7px 14px", cursor: "pointer", color: "#fff", fontFamily: font, fontSize: 13, fontWeight: 600 }}>
-            <Square size={13} fill="#fff" /> Done
-          </button>
-        </div>
-      ) : (
-        <>
-          <div style={{ background: C.card, border: `1px solid ${focused ? C.teal + "55" : C.border}`, borderRadius: 18, overflow: "hidden", transition: "all 0.2s" }}>
-            <div style={{ display: "flex", alignItems: "flex-end" }}>
-              <textarea value={content} onChange={e => setContent(e.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} placeholder="Share an update…" rows={2}
-                style={{ flex: 1, background: "none", border: "none", outline: "none", resize: "none", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.55, padding: "12px 14px" }} />
-              <motion.button whileTap={{ scale: 0.88 }} onClick={handleSubmit}
-                style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, margin: "0 8px 8px 0", background: content.trim() ? `linear-gradient(135deg, ${C.teal}, #0ea876)` : C.border, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: content.trim() ? "pointer" : "default", transition: "all 0.2s" }}>
-                <Send size={15} />
-              </motion.button>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            {[{ icon: Image, label: "Photo" }, { icon: Video, label: "Video" }].map(a => (
-              <motion.button key={a.label} whileTap={{ scale: 0.93 }} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, fontWeight: 600 }}>
-                <a.icon size={13} /> {a.label}
-              </motion.button>
-            ))}
-            <motion.button whileTap={{ scale: 0.93 }} onClick={startRecord} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, fontWeight: 600 }}>
-              <Mic size={13} /> Audio
-            </motion.button>
-          </div>
-        </>
-      )}
-    </motion.div>
-  );
-}
 
 // ─── useLinkPreviews — detects URLs in text, fetches OG meta via allorigins ───
 function useLinkPreviews(text) {
@@ -1453,7 +1365,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   };
 
   return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
         {/* TopBar */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -1594,12 +1506,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   const showSubtemaComposer = showComposer && composerMode === "subtema" && !openSubtema;
 
   return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: C.surface }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, position: "relative" }}>
       {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
 
       <AnimatePresence mode="popLayout" custom={subtemaDirection}>
         {!openSubtema ? (
-          <motion.div key="thread-main" initial={false} animate={{}}
+          <motion.div key="thread-main" initial={{ opacity: 1 }} animate={{ opacity: 1 }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
@@ -1709,9 +1621,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                   {(thread.subtemas || []).map((sub) => (
                     <SubtemaCard key={sub.id} subtema={sub} onClick={() => openSubtemaView(sub)} />
                   ))}
-                  {(!thread.subtemas || thread.subtemas.length === 0) && (
-                    <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "12px 0 24px" }}>No subtemas yet.</p>
-                  )}
+
                 </div>
               )}
 
@@ -1721,7 +1631,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
         ) : (
           <motion.div key={openSubtema.id} custom={subtemaDirection} variants={slideVariants}
             initial="enter" animate="center" exit="exit" transition={springTrans}
-            style={{ position: "absolute", inset: 0 }}>
+            style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
               showComposer={showComposer && composerMode === "update"}
               onHideComposer={onHideComposer} />
@@ -1819,9 +1729,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const handleFilterChange = useCallback((f) => setFilters(f), []);
 
   // ── UI-only state ──────────────────────────────────────────────────────────
-  const [showNewPost, setShowNewPost] = useState(false);
-  const [showSubtema, setShowSubtema] = useState(false);
-
   // ── FAB + composer state ───────────────────────────────────────────────────
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [activeComposer, setActiveComposer] = useState(null); // null | "update" | "subtema"
@@ -1934,7 +1841,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0, opacity: 0 }}
           transition={{ type: "spring", stiffness: 440, damping: 32 }}
-          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 400 }}>
+          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 395 }}>
 
           {/* FAB menu options */}
           <AnimatePresence>
@@ -2020,7 +1927,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         ) : (
           <motion.div key={openThread.id} custom={direction} variants={slideVariants}
             initial="enter" animate="center" exit="exit" transition={springTrans}
-            style={{ position: "absolute", inset: 0, background: C.surface }}>
+            style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
             <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
               onStatusChange={handleStatusChange}
               showComposer={activeComposer !== null}
@@ -2031,12 +1938,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             {isHost && <GreenFAB />}
           </motion.div>
         )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {showNewPost && <NewPostSheet onSubmit={handleCreateThread} onClose={() => setShowNewPost(false)} />}
-      </AnimatePresence>
-      <AnimatePresence>
-        {showSubtema && <SubtemaSheet onSubmit={handleCreateSubtema} onClose={() => setShowSubtema(false)} />}
       </AnimatePresence>
     </div>
   );
@@ -2064,7 +1965,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           </div>
         </>
       ) : (
-        <div style={{ background: C.surface }}>
+        <div style={{ background: C.surface, height: "100vh", display: "flex", flexDirection: "column" }}>
           <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
             onStatusChange={handleStatusChange}
             showComposer={activeComposer !== null}
@@ -2076,12 +1977,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         </div>
       )}
 
-      <AnimatePresence>
-        {showNewPost && <NewPostSheet onSubmit={handleCreateThread} onClose={() => setShowNewPost(false)} />}
-      </AnimatePresence>
-      <AnimatePresence>
-        {showSubtema && <SubtemaSheet onSubmit={handleCreateSubtema} onClose={() => setShowSubtema(false)} />}
-      </AnimatePresence>
     </div>
   );
 
@@ -2103,9 +1998,11 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>Posts & threads</p>
               </div>
             </div>
-            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px" }}>
-              {isHost ? "Host" : "Member"}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: isHost ? C.accentLight : C.textMuted, background: isHost ? `${C.accent}18` : C.border + "80", border: `1px solid ${isHost ? C.accent + "30" : C.border}`, borderRadius: 6, padding: "3px 7px" }}>
+                {isHost ? "Host" : "Member"}
+              </span>
+            </div>
           </div>
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
             <FeedPanelDesktop />
