@@ -1930,8 +1930,8 @@ function App({ onGoHome, onOpenSettings }) {
             </div>
           </div>
 
-          {/* 3. Feed — only this area transitions between sections */}
-          <div style={{ position: "relative", overflow: "hidden", background: C.bg }}>
+          {/* 3. Feed — only this area transitions. No overflow:hidden so Post can flow. */}
+          <div style={{ position: "relative", background: C.bg, minHeight: "50vh" }}>
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={activeSectionId ?? "perfil"}
