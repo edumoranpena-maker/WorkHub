@@ -1220,43 +1220,6 @@ function SettingsPanel({ onClose }) {
 
 // ─── Root Shell ───────────────────────────────────────────────────────────────
 
-// ─── NewPostForm — simple text composer for the universal FAB ─────────────────
-function NewPostForm({ onSubmit, onClose }) {
-  const [text, setText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async () => {
-    if (!text.trim() || submitting) return;
-    setSubmitting(true);
-    await new Promise(r => setTimeout(r, 400));
-    onSubmit(text.trim());
-    setSubmitting(false);
-  };
-
-  return (
-    <div>
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="¿Qué quieres compartir?"
-        rows={5}
-        autoFocus
-        style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${text.trim() ? C.accent + "55" : C.border}`, borderRadius: 14, padding: "13px 16px", color: C.text, fontFamily: font, fontSize: 15, lineHeight: 1.6, outline: "none", marginBottom: 14, transition: "border-color 0.2s", caretColor: C.accentLight }}
-      />
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={onClose} style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 600, color: C.textMuted }}>
-          Cancelar
-        </button>
-        <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!text.trim() || submitting}
-          style={{ flex: 2, height: 44, borderRadius: 12, border: "none", cursor: text.trim() ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: text.trim() ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: text.trim() ? "#fff" : C.textMuted, transition: "all 0.2s", boxShadow: text.trim() ? `0 4px 20px ${C.accent}44` : "none" }}>
-          {submitting ? "Publicando…" : "Publicar Post"}
-        </motion.button>
-      </div>
-    </div>
-  );
-}
-
-
 // ─── NewPostSheet — Full Instagram-style post creation ────────────────────────
 function NewPostSheet({ onSubmit, onClose }) {
   const [title,        setTitle]        = useState("");
@@ -1636,18 +1599,10 @@ function App({ onGoHome, onOpenSettings }) {
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [showAIPanel,       setShowAIPanel]       = useState(false);
   const [fabOpen,           setFabOpen]           = useState(false);
-  const [insideThread,      setInsideThread]      = useState(false);
 
-  // Reset insideThread when user navigates away from Post section
-  useEffect(() => {
-    if (activeSectionId !== "recaps") {
-      setInsideThread(false);
-      setFabOpen(false);
-    }
-  }, [activeSectionId]);
-  const [showGreenComposer, setShowGreenComposer] = useState(false);
-  const [showNewPost,       setShowNewPost]       = useState(false);
-  const [showBroadcast,     setShowBroadcast]     = useState(false);
+  // Close the purple speed-dial whenever the section changes
+  useEffect(() => { setFabOpen(false); }, [activeSectionId]);
+
   const [showNewStory,      setShowNewStory]      = useState(false);
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
@@ -1716,7 +1671,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderContent() {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1861,7 +1816,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderMobileFeed() {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} mobileTab onOpenCreate={() => setFabOpen(true)} onThreadChange={setInsideThread} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1986,7 +1941,7 @@ function App({ onGoHome, onOpenSettings }) {
           Shows on: Home, Profile, Post main feed.
           Hidden on: inside a thread, settings, modals.
       ══════════════════════════════════════════════════════════════════════════ */}
-      {isHost && ((!activeSectionId || activeSectionId === "recaps") && !insideThread) ? (
+      {isHost && (!activeSectionId || activeSectionId === "recaps") ? (
         <>
           {/* Backdrop */}
           <AnimatePresence>
@@ -2062,65 +2017,6 @@ function App({ onGoHome, onOpenSettings }) {
         </motion.button>
       )}
 
-      {/* ── GREEN FAB — shown only when inside a thread in Post section ── */}
-      {isHost && insideThread && activeSectionId === "recaps" && (
-        <>
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.88 }}
-            onClick={() => setShowGreenComposer(true)}
-            style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${C.green}, #0ea876)`, boxShadow: `0 6px 28px ${C.green}70, 0 0 0 1px ${C.green}30` }}
-          >
-            <Plus size={26} color="#000" strokeWidth={2.5} />
-          </motion.button>
-
-          {/* Green composer sheet */}
-          <AnimatePresence>
-            {showGreenComposer && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-                onClick={e => e.target === e.currentTarget && setShowGreenComposer(false)}>
-                <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-                  transition={{ type: "spring", stiffness: 380, damping: 38 }}
-                  style={{ width: "100%", maxWidth: 430, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.green}30`, borderBottom: "none", padding: "16px 18px 36px" }}>
-                  <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 16px" }} />
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: `${C.green}20`, border: `1px solid ${C.green}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Plus size={14} color={C.green} />
-                    </div>
-                    <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>Añadir Update</span>
-                  </div>
-                  <textarea
-                    placeholder="Comparte una actualización…"
-                    rows={4}
-                    autoFocus
-                    id="green-composer-text"
-                    style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${C.green}44`, borderRadius: 14, padding: "12px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.6, outline: "none", marginBottom: 12, caretColor: C.green }}
-                  />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => setShowGreenComposer(false)}
-                      style={{ flex: 1, height: 44, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>
-                      Cancelar
-                    </button>
-                    <motion.button whileTap={{ scale: 0.95 }}
-                      onClick={() => {
-                        const el = document.getElementById("green-composer-text");
-                        if (el && el.value.trim()) {
-                          // Post will receive via onOpenCreate or threadUpdateRef
-                          // For now close and notify
-                          setShowGreenComposer(false);
-                        }
-                      }}
-                      style={{ flex: 2, height: 44, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 800, background: `linear-gradient(135deg, ${C.green}, #0ea876)`, color: "#000" }}>
-                      Publicar Update
-                    </motion.button>
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </>
-      )}
 
       {/* Full New Post Sheet */}
       <AnimatePresence>
@@ -2132,15 +2028,6 @@ function App({ onGoHome, onOpenSettings }) {
         )}
       </AnimatePresence>
 
-      {/* Broadcast Sheet — NewDiffusionSheet */}
-      <AnimatePresence>
-        {showBroadcast && (
-          <NewDiffusionSheet
-            onClose={() => setShowBroadcast(false)}
-            onPublish={() => { setShowBroadcast(false); navigateTo("announcements"); }}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Story Creator — InstagramStoryCreator */}
       <AnimatePresence>
@@ -2152,30 +2039,6 @@ function App({ onGoHome, onOpenSettings }) {
         )}
       </AnimatePresence>
 
-
-      <AnimatePresence>
-        {showNewStory && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(16px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
-            onClick={e => e.target === e.currentTarget && setShowNewStory(false)}>
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 380, damping: 38 }}
-              style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: "22px 22px 0 0", border: `1px solid ${C.gold}22`, borderBottom: "none", padding: "20px 20px 40px" }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, background: `${C.gold}20`, border: `1px solid ${C.gold}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Zap size={15} color={C.gold} />
-                </div>
-                <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>Crear Story</span>
-              </div>
-              <p style={{ fontFamily: font, fontSize: 13, color: C.textMuted, marginBottom: 14 }}>Las stories duran 24 horas y aparecen en el carrusel de la sección Announcements.</p>
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => setShowNewStory(false)}
-                style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", fontFamily: font, fontSize: 14, fontWeight: 800, background: `linear-gradient(135deg, ${C.gold}, #b8860b)`, color: "#000" }}>
-                Subir Story (cámara / galería)
-              </motion.button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {showAIPanel && (
