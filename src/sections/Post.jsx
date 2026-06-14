@@ -1662,6 +1662,83 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
 //   openThread     → navigation (separate)
 //   searchQuery  → committed on Search btn press (read-only in PostFeed)
 //   fabOpen / sheets → UI only
+// ─── GreenFAB ─────────────────────────────────────────────────────────────────
+// Defined at module level so its reference is stable across Post re-renders.
+// Receives all closed-over values as explicit props.
+const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpen, openComposer, isInSubtema }) {
+  return (
+    <AnimatePresence>
+      {fabVisible && (
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 440, damping: 32 }}
+          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 395 }}>
+
+          {/* FAB menu options */}
+          <AnimatePresence>
+            {fabMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.92 }}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                style={{ position: "absolute", bottom: "calc(100% + 12px)", right: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+
+                {/* Crear Update */}
+                <motion.button whileTap={{ scale: 0.93 }}
+                  onClick={() => openComposer("update")}
+                  style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.teal}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.teal}20`, border: `1px solid ${C.teal}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Send size={13} color={C.teal} />
+                  </div>
+                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Update</span>
+                </motion.button>
+
+                {/* Crear Subtema — only at post level */}
+                {!isInSubtema && (
+                  <motion.button whileTap={{ scale: 0.93 }}
+                    onClick={() => openComposer("subtema")}
+                    style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.green}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.green}20`, border: `1px solid ${C.green}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Layers size={13} color={C.green} />
+                    </div>
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Subtema</span>
+                  </motion.button>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Backdrop to close menu */}
+          {fabMenuOpen && (
+            <div style={{ position: "fixed", inset: 0, zIndex: -1 }} onClick={() => setFabMenuOpen(false)} />
+          )}
+
+          {/* Main FAB button */}
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            onClick={() => setFabMenuOpen(o => !o)}
+            style={{
+              width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer",
+              background: fabMenuOpen
+                ? `linear-gradient(135deg, #0ea876, ${C.teal})`
+                : `linear-gradient(135deg, ${C.green}, #0ea876)`,
+              boxShadow: `0 4px 24px ${C.green}55, 0 0 0 ${fabMenuOpen ? "6px" : "0px"} ${C.green}22`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "box-shadow 0.2s",
+            }}>
+            <motion.div animate={{ rotate: fabMenuOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
+              <Plus size={22} color="#000" strokeWidth={2.5} />
+            </motion.div>
+          </motion.button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+});
+
 export default function Post({ section, onBack, isHost, onNavigate, openThreadId }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
@@ -1770,156 +1847,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   //   Mobile:  normal document flow — no height constraint, no inner overflow
   //            Parent (unified scroll in App.jsx) handles scroll
 
-  // ─── FAB — fixed, always on viewport ──────────────────────────────────────
-  // isInSubtema: when inside a subtema, only show "Crear Update"
-  const GreenFAB = ({ isInSubtema = false }) => (
-    <AnimatePresence>
-      {fabVisible && (
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 440, damping: 32 }}
-          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 395 }}>
-
-          {/* FAB menu options */}
-          <AnimatePresence>
-            {fabMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.92 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.92 }}
-                transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                style={{ position: "absolute", bottom: "calc(100% + 12px)", right: 0, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-
-                {/* Crear Update */}
-                <motion.button whileTap={{ scale: 0.93 }}
-                  onClick={() => openComposer("update")}
-                  style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.teal}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.teal}20`, border: `1px solid ${C.teal}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Send size={13} color={C.teal} />
-                  </div>
-                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Update</span>
-                </motion.button>
-
-                {/* Crear Subtema — only at post level */}
-                {!isInSubtema && (
-                  <motion.button whileTap={{ scale: 0.93 }}
-                    onClick={() => openComposer("subtema")}
-                    style={{ display: "flex", alignItems: "center", gap: 10, background: C.card, border: `1px solid ${C.green}40`, borderRadius: 99, padding: "9px 16px 9px 12px", cursor: "pointer", boxShadow: "0 4px 24px rgba(0,0,0,0.5)", whiteSpace: "nowrap" }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${C.green}20`, border: `1px solid ${C.green}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Layers size={13} color={C.green} />
-                    </div>
-                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>Crear Subtema</span>
-                  </motion.button>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Backdrop to close menu */}
-          {fabMenuOpen && (
-            <div style={{ position: "fixed", inset: 0, zIndex: -1 }} onClick={() => setFabMenuOpen(false)} />
-          )}
-
-          {/* Main FAB button */}
-          <motion.button
-            whileTap={{ scale: 0.88 }}
-            onClick={() => setFabMenuOpen(o => !o)}
-            style={{
-              width: 54, height: 54, borderRadius: "50%", border: "none", cursor: "pointer",
-              background: fabMenuOpen
-                ? `linear-gradient(135deg, #0ea876, ${C.teal})`
-                : `linear-gradient(135deg, ${C.green}, #0ea876)`,
-              boxShadow: `0 4px 24px ${C.green}55, 0 0 0 ${fabMenuOpen ? "6px" : "0px"} ${C.green}22`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "box-shadow 0.2s",
-            }}>
-            <motion.div animate={{ rotate: fabMenuOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
-              <Plus size={22} color="#000" strokeWidth={2.5} />
-            </motion.div>
-          </motion.button>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
-  const FeedPanelDesktop = () => (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <AnimatePresence mode="popLayout" custom={direction}>
-        {!openThread ? (
-          <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
-            <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
-              <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
-            </div>
-            <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
-              {loadingThreads ? (
-                <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                  <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                  <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
-                </div>
-              ) : (
-                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
-              )}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div key={openThread.id} custom={direction} variants={slideVariants}
-            initial="enter" animate="center" exit="exit" transition={springTrans}
-            style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
-            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
-              onStatusChange={handleStatusChange}
-              showComposer={activeComposer !== null}
-              composerMode={activeComposer}
-              onHideComposer={closeComposer}
-              onSubtemaChange={setSubtemaOpen}
-              onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-
-  // Mobile: pure flow, no position:absolute, no overflow — parent scroll handles it
-  const FeedPanelMobile = () => (
-    <div style={{ background: C.surface, minHeight: 400 }}>
-      {!openThread ? (
-        <>
-          {/* Filter bar */}
-          <div style={{ padding: "12px 14px 10px" }}>
-            <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
-          </div>
-
-          {/* Posts list — flows naturally */}
-          <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
-            {loadingThreads ? (
-              <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
-              </div>
-            ) : (
-              <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
-            )}
-          </div>
-        </>
-      ) : (
-        <div style={{ background: C.surface, height: "100vh", display: "flex", flexDirection: "column" }}>
-          <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
-            onStatusChange={handleStatusChange}
-            showComposer={activeComposer !== null}
-            composerMode={activeComposer}
-            onHideComposer={closeComposer}
-            onSubtemaChange={setSubtemaOpen}
-            onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
-          />
-        </div>
-      )}
-
-    </div>
-  );
-
   // ── DESKTOP ────────────────────────────────────────────────────────────────
+  // fabProps: passed to module-level GreenFAB to keep its reference stable.
+  const fabProps = { fabVisible, fabMenuOpen, setFabMenuOpen, openComposer };
   if (isDesktop) {
     return (
       <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
@@ -1943,21 +1873,89 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               </span>
             </div>
           </div>
+          {/* ── Desktop feed / thread panel (inlined — no wrapper component) ── */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            <FeedPanelDesktop />
+            <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+              <AnimatePresence mode="popLayout" custom={direction}>
+                {!openThread ? (
+                  <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
+                    <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
+                      <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
+                    </div>
+                    <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
+                      {loadingThreads ? (
+                        <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                          <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                          <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+                        </div>
+                      ) : (
+                        <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
+                      )}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div key={openThread.id} custom={direction} variants={slideVariants}
+                    initial="enter" animate="center" exit="exit" transition={springTrans}
+                    style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
+                    <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+                      onStatusChange={handleStatusChange}
+                      showComposer={activeComposer !== null}
+                      composerMode={activeComposer}
+                      onHideComposer={closeComposer}
+                      onSubtemaChange={setSubtemaOpen}
+                      onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
-        {isHost && openThread && <GreenFAB isInSubtema={subtemaOpen} />}
+        {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
       </div>
     );
   }
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
-  // Render as plain flow — unified scroll in App.jsx handles overflow
+  // Render as plain flow — unified scroll in App.jsx handles overflow.
+  // FeedPanelMobile is inlined (not a sub-component) so React never sees a type
+  // change between renders, which would unmount ThreadView and wipe its state.
   return (
     <>
-      <FeedPanelMobile />
-      {isHost && openThread && <GreenFAB isInSubtema={subtemaOpen} />}
+      <div style={{ background: C.surface, minHeight: 400 }}>
+        {!openThread ? (
+          <>
+            {/* Filter bar */}
+            <div style={{ padding: "12px 14px 10px" }}>
+              <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
+            </div>
+
+            {/* Posts list — flows naturally */}
+            <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
+              {loadingThreads ? (
+                <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                  <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+                </div>
+              ) : (
+                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{ background: C.surface, height: "100vh", display: "flex", flexDirection: "column" }}>
+            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+              onStatusChange={handleStatusChange}
+              showComposer={activeComposer !== null}
+              composerMode={activeComposer}
+              onHideComposer={closeComposer}
+              onSubtemaChange={setSubtemaOpen}
+              onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+            />
+          </div>
+        )}
+      </div>
+      {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
     </>
   );
 }
