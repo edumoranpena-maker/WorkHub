@@ -1662,7 +1662,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
 //   openThread     → navigation (separate)
 //   searchQuery  → committed on Search btn press (read-only in PostFeed)
 //   fabOpen / sheets → UI only
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, mobileTab, onOpenCreate, onThreadChange }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -1742,14 +1742,13 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []);
 
   const openThreadView = useCallback((thread) => {
-    onThreadChange?.(true);
     if (feedContainerRef.current) feedScrollRef.current = feedContainerRef.current.scrollTop;
     setDirection(1); setOpenThread(thread);
   }, []);
 
   const closeThread = useCallback(() => {
-    setDirection(-1); setOpenThread(null); setSubtemaOpen(false); onThreadChange?.(false);
-  }, [onThreadChange]);
+    setDirection(-1); setOpenThread(null); setSubtemaOpen(false);
+  }, []);
 
   // Restore scroll on back
   useEffect(() => {
