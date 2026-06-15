@@ -1744,7 +1744,7 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -1838,6 +1838,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       feedContainerRef.current.scrollTop = feedScrollRef.current;
     }
   }, [openThread]);
+
+  // Notify parent when thread open state changes so it can hide the purple FAB
+  useEffect(() => { onThreadChange?.(!!openThread); }, [openThread]); // eslint-disable-line
 
   const slideVariants = {
     enter: d => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
