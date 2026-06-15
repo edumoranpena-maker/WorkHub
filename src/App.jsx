@@ -1599,9 +1599,10 @@ function App({ onGoHome, onOpenSettings }) {
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [showAIPanel,       setShowAIPanel]       = useState(false);
   const [fabOpen,           setFabOpen]           = useState(false);
+  const [insideThread,      setInsideThread]      = useState(false);
 
-  // Close the purple speed-dial whenever the section changes
-  useEffect(() => { setFabOpen(false); }, [activeSectionId]);
+  // Close the purple speed-dial and reset thread flag whenever the section changes
+  useEffect(() => { setFabOpen(false); setInsideThread(false); }, [activeSectionId]);
 
   const [showNewStory,      setShowNewStory]      = useState(false);
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
@@ -1671,7 +1672,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderContent() {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1816,7 +1817,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderMobileFeed() {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1941,7 +1942,7 @@ function App({ onGoHome, onOpenSettings }) {
           Shows on: Home, Profile, Post main feed.
           Hidden on: inside a thread, settings, modals.
       ══════════════════════════════════════════════════════════════════════════ */}
-      {isHost && (!activeSectionId || activeSectionId === "recaps") ? (
+      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideThread ? (
         <>
           {/* Backdrop */}
           <AnimatePresence>
