@@ -14,7 +14,8 @@
  *  3. ThreadView     — reused from Recaps, minus the sticky bottom composer
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo, memo, createPortal } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   ChevronLeft, Search, X, Heart, MessageCircle, Plus,
