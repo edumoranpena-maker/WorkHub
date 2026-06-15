@@ -14,7 +14,7 @@
  *  3. ThreadView     — reused from Recaps, minus the sticky bottom composer
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo, createPortal } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   ChevronLeft, Search, X, Heart, MessageCircle, Plus,
@@ -1666,7 +1666,10 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
 // Defined at module level so its reference is stable across Post re-renders.
 // Receives all closed-over values as explicit props.
 const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpen, openComposer, isInSubtema }) {
-  return (
+  // createPortal renders the FAB into document.body, making its position:fixed
+  // relative to the viewport regardless of any transform/will-change ancestor
+  // in the React tree (specifically the motion.div in App.jsx that wraps the feed).
+  return createPortal(
     <AnimatePresence>
       {fabVisible && (
         <motion.div
@@ -1735,7 +1738,8 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
           </motion.button>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 });
 
