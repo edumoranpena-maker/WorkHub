@@ -10,6 +10,9 @@ import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.js
 import Post          from "./sections/Post";
 import Announcements from "./sections/Announcements";
 
+// ─── API imports ─────────────────────────────────────────────────────────────
+import { createRecapThread } from "./lib/recapsApi.js";
+
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG, mergeProfileConfig } from "./config/profileConfig.js";
 import { resolveTheme, tokensToC }                   from "./config/themes.js";
@@ -1313,9 +1316,13 @@ function NewPostSheet({ onSubmit, onClose }) {
   const publish = async () => {
     if (!canPublish || publishing) return;
     setPublishing(true);
-    await new Promise(r => setTimeout(r, 500));
-    onSubmit({ title, description, status, asset, mediaFiles, thumbnail, links, audioBlob });
-    setPublishing(false);
+    try {
+      await onSubmit({ title, description, status, asset, mediaFiles, thumbnail, links, audioBlob });
+    } catch (err) {
+      console.error("[NewPostSheet] onSubmit threw:", err);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const STATUS_OPTIONS = [
@@ -1606,6 +1613,8 @@ function App({ onGoHome, onOpenSettings }) {
 
   const [showNewStory,      setShowNewStory]      = useState(false);
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
+  // Callback ref: Post registers this so App can prepend a created thread to the feed
+  const onPostCreatedRef = useRef(null);
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
   const [annStorySignal,    setAnnStorySignal]     = useState(0);
   // ── Persistent button state — survives section changes ──────────────────────
@@ -1672,7 +1681,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderContent() {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -1817,7 +1826,7 @@ function App({ onGoHome, onOpenSettings }) {
   function renderMobileFeed() {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
@@ -2023,7 +2032,36 @@ function App({ onGoHome, onOpenSettings }) {
       <AnimatePresence>
         {showFullPostSheet && (
           <NewPostSheet
-            onSubmit={() => { setShowFullPostSheet(false); navigateTo("recaps"); }}
+            onSubmit={async ({ title, description, status, mediaFiles, audioBlob }) => {
+              // Map NewPostSheet data → createRecapThread params
+              const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+              const audio    = audioBlob ? { blob: audioBlob } : null;
+
+              const saved = await createRecapThread({
+                title:     title?.trim()       || null,
+                content:   description?.trim() || "",
+                privacy:   "members",
+                audio,
+                mediaFiles: rawFiles,
+              });
+
+              if (!saved) {
+                // createRecapThread already console.errors the Supabase message;
+                // keep the sheet open so the user can retry
+                console.error("[App] createRecapThread returned null — post was NOT saved");
+                return;
+              }
+
+              console.info("[App] Post saved to Supabase:", saved.id);
+
+              // Prepend to feed if Post is currently mounted and registered its callback
+              if (onPostCreatedRef.current) {
+                onPostCreatedRef.current(saved);
+              }
+
+              setShowFullPostSheet(false);
+              navigateTo("recaps");
+            }}
             onClose={() => setShowFullPostSheet(false)}
           />
         )}
