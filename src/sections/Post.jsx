@@ -1744,10 +1744,20 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange, onRegisterPostCallback }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [loadingThreads, setLoadingThreads] = useState(true);
+
+  // Expose a stable callback so App.jsx can prepend a newly created thread
+  // without Post needing to know about NewPostSheet or createRecapThread directly.
+  useEffect(() => {
+    onRegisterPostCallback?.((newThread) => {
+      setThreads(prev => [newThread, ...prev]);
+    });
+    // Deregister on unmount so a stale ref can't fire into an unmounted component
+    return () => { onRegisterPostCallback?.(null); };
+  }, [onRegisterPostCallback]); // eslint-disable-line
 
   // ── Navigation state ───────────────────────────────────────────────────────
   const [openThread, setOpenThread] = useState(null);
