@@ -888,8 +888,16 @@ function CommentsSheet({ threadId, onClose }) {
   useEffect(() => {
     let cancelled = false;
     fetchThreadComments(threadId)
-      .then(data => { if (!cancelled) { if (data.length > 0) setComments(data); setLoading(false); } })
-      .catch(() => { if (!cancelled) setLoading(false); });
+      .then(data => {
+        if (!cancelled) {
+          setComments(data);   // always set — empty array shows "No comments yet" correctly
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error("[CommentsSheet] fetchThreadComments threw:", err);
+        if (!cancelled) setLoading(false);
+      });
     return () => { cancelled = true; };
   }, [threadId]);
 
@@ -903,10 +911,15 @@ function CommentsSheet({ threadId, onClose }) {
     const text = newComment.trim();
     setNewComment("");
     setSubmitting(true);
-    const temp = { id: `c_temp_${Date.now()}`, author: "You", avatar: "Y", text, likes: 0, liked: false, time: "just now" };
+    const temp = { id: `c_temp_${Date.now()}`, author: "You", avatar: "Y", text, likes: 0, liked: false, time: new Date().toISOString() };
     setComments(prev => [...prev, temp]);
     const saved = await addThreadComment(threadId, { author: "You", text });
-    if (saved) setComments(prev => prev.map(c => c.id === temp.id ? saved : c));
+    if (saved) {
+      setComments(prev => prev.map(c => c.id === temp.id ? saved : c));
+    } else {
+      console.error("[CommentsSheet] addThreadComment returned null — comment was NOT saved");
+      setComments(prev => prev.filter(c => c.id !== temp.id));
+    }
     setSubmitting(false);
   };
 
@@ -938,7 +951,17 @@ function CommentsSheet({ threadId, onClose }) {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
                   <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{c.author}</span>
-                  <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{c.time}</span>
+                  <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>
+                    {c.time === "just now" ? "just now" : (() => {
+                      const d = new Date(c.time);
+                      if (isNaN(d)) return "";
+                      const diff = (Date.now() - d) / 1000;
+                      if (diff < 60)   return "just now";
+                      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+                      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+                      return `${Math.floor(diff / 86400)}d ago`;
+                    })()}
+                  </span>
                 </div>
                 <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>{c.text}</p>
               </div>
@@ -1471,9 +1494,20 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
     const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
     setThread(t => ({ ...t, updates: [...t.updates, temp] }));
     try {
-      const saved = await addThreadUpdate(thread.id, { content, audio });
-      if (saved) setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
-    } catch {}
+      // Extract raw File objects from the [{type, url, file}] shape ComposerSheet sends
+      const rawFiles = (media || []).map(m => m.file).filter(Boolean);
+      const saved = await addThreadUpdate(thread.id, { content, audio, mediaFiles: rawFiles });
+      if (saved) {
+        setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
+      } else {
+        // INSERT failed — remove the optimistic item so the user knows to retry
+        console.error("[Post] addThreadUpdate returned null — update was NOT saved");
+        setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== tempId) }));
+      }
+    } catch (err) {
+      console.error("[Post] handleNewUpdate threw:", err);
+      setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== tempId) }));
+    }
   };
 
   const handleAddSubtema = async ({ title, content, media, audio, links }) => {
