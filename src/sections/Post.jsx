@@ -857,6 +857,16 @@ function UpdateBubble({ update, index }) {
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{update.content}</p>
+        {(() => {
+          // ── LOG 7: what UpdateBubble sees ──────────────────────────────────
+          console.log(`[UpdateBubble id=${update.id}] update.media:`, update.media);
+          if (update.media?.length > 0) {
+            console.log(`[UpdateBubble] will render img src:`, update.media[0].thumb || update.media[0].url);
+          } else {
+            console.log(`[UpdateBubble] update.media empty or missing — no image rendered`);
+          }
+          return null;
+        })()}
         {update.media?.length > 0 && (
           <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
             <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -1490,17 +1500,55 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   };
 
   const handleNewUpdate = async ({ content, audio, media, links }) => {
+    // ── LOG 1: what ComposerSheet sent ────────────────────────────────────────
+    console.group("[handleNewUpdate] called");
+    console.log("media value:", media);
+    console.log("media length:", media?.length ?? 0);
+    if (media?.length) {
+      media.forEach((m, i) => {
+        console.log(`  media[${i}]:`, {
+          type:     m.type,
+          url:      m.url,
+          name:     m.name,
+          fileType: m.file?.type,
+          fileSize: m.file?.size,
+          fileRef:  m.file instanceof File ? "✅ File object" : "❌ NOT a File",
+        });
+      });
+    }
+
+    const rawFiles = (media || []).map(m => m.file).filter(Boolean);
+
+    // ── LOG 2: rawFiles after extraction ──────────────────────────────────────
+    console.log("rawFiles length:", rawFiles.length);
+    rawFiles.forEach((f, i) => {
+      console.log(`  rawFiles[${i}]:`, { name: f.name, type: f.type, size: f.size });
+    });
+    if ((media || []).length > 0 && rawFiles.length === 0) {
+      console.warn("[handleNewUpdate] ⚠️ media items present but rawFiles is empty — m.file may be undefined");
+      (media || []).forEach((m, i) => console.warn(`  media[${i}].file =`, m.file));
+    }
+    console.groupEnd();
+
     const tempId = `u_temp_${Date.now()}`;
     const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
     setThread(t => ({ ...t, updates: [...t.updates, temp] }));
     try {
-      // Extract raw File objects from the [{type, url, file}] shape ComposerSheet sends
-      const rawFiles = (media || []).map(m => m.file).filter(Boolean);
       const saved = await addThreadUpdate(thread.id, { content, audio, mediaFiles: rawFiles });
+
+      // ── LOG 3: what came back from addThreadUpdate ─────────────────────────
+      console.group("[handleNewUpdate] addThreadUpdate returned");
+      console.log("saved:", saved);
+      console.log("saved.media:", saved?.media);
+      console.log("saved.media length:", saved?.media?.length ?? "null/undefined");
+      if (saved?.media?.length === 0) {
+        console.warn("[handleNewUpdate] ⚠️ saved.media is EMPTY — images will be lost when temp is replaced");
+      }
+      console.groupEnd();
+
       if (saved) {
         setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
       } else {
-        // INSERT failed — remove the optimistic item so the user knows to retry
         console.error("[Post] addThreadUpdate returned null — update was NOT saved");
         setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== tempId) }));
       }
