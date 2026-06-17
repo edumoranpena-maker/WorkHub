@@ -868,8 +868,8 @@ function UpdateBubble({ update, index }) {
           return null;
         })()}
         {update.media?.length > 0 && (
-          <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", width: "100%" }}>
-            <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
+            <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
