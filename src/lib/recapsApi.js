@@ -207,6 +207,21 @@ export async function createRecapThread({ title, content, privacy, audio, mediaF
  * Handles audio blob upload + media file uploads.
  */
 export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [] }, author = "Alex H.") {
+  // ── LOG 4a: incoming payload ───────────────────────────────────────────────
+  console.group("[addThreadUpdate] called");
+  console.log("threadId:", threadId);
+  console.log("content:", content);
+  console.log("mediaFiles received:", mediaFiles);
+  console.log("mediaFiles length:", mediaFiles.length);
+  mediaFiles.forEach((f, i) => {
+    console.log(`  mediaFiles[${i}]:`, {
+      name: f?.name,
+      type: f?.type,
+      size: f?.size,
+      isFile: f instanceof File ? "✅ File" : "❌ NOT File — actual type: " + typeof f,
+    });
+  });
+
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
@@ -232,7 +247,12 @@ export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [
     .select()
     .single();
 
-  if (error) { console.error("[recapsApi] addThreadUpdate:", error.message); return null; }
+  if (error) {
+    console.error("[recapsApi] addThreadUpdate INSERT error:", error.message, error);
+    console.groupEnd();
+    return null;
+  }
+  console.log("[addThreadUpdate] thread_updates INSERT ok, update.id:", update.id);
 
   // 3. Increment new_updates_count on thread
   await supabase.from("recap_threads").select("new_updates_count").eq("id", threadId).single()
@@ -246,15 +266,50 @@ export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [
     const isVideo = file.type?.startsWith("video/");
     const bucket = isVideo ? "videos" : "images";
     const path = storagePath(isVideo ? "updates/videos" : "updates/images", file.name);
+
+    // ── LOG 4b: per-file upload attempt ───────────────────────────────────
+    console.group(`[addThreadUpdate] uploading file: ${file.name}`);
+    console.log("bucket:", bucket);
+    console.log("path:", path);
+
     const url = await uploadFile(bucket, file, path);
-    if (!url) continue;
-    const { data: mRow } = await supabase.from("update_media")
-      .insert({ update_id: update.id, type: isVideo ? "video" : "image", url, thumb_url: url, storage_path: path })
+
+    // ── LOG 4c: upload result ──────────────────────────────────────────────
+    console.log("uploadFile result url:", url);
+    if (!url) {
+      console.error(`[addThreadUpdate] ❌ uploadFile returned null/undefined for ${file.name} — skipping update_media INSERT`);
+      console.groupEnd();
+      continue;
+    }
+    console.log("upload ✅ url:", url);
+
+    // ── LOG 4d: update_media INSERT ────────────────────────────────────────
+    const insertPayload = { update_id: update.id, type: isVideo ? "video" : "image", url, thumb_url: url, storage_path: path };
+    console.log("update_media INSERT payload:", insertPayload);
+
+    const { data: mRow, error: mErr } = await supabase.from("update_media")
+      .insert(insertPayload)
       .select().single();
-    if (mRow) insertedMedia.push(mRow);
+
+    if (mErr) {
+      console.error("[addThreadUpdate] ❌ update_media INSERT error:", mErr.message, mErr);
+    } else {
+      console.log("[addThreadUpdate] ✅ update_media INSERT ok:", mRow);
+      insertedMedia.push(mRow);
+    }
+    console.groupEnd();
   }
 
-  return rowToUpdate(update, insertedMedia);
+  // ── LOG 5: final return value ────────────────────────────────────────────
+  const result = rowToUpdate(update, insertedMedia);
+  console.log("[addThreadUpdate] insertedMedia:", insertedMedia);
+  console.log("[addThreadUpdate] rowToUpdate result:", result);
+  console.log("[addThreadUpdate] result.media:", result.media);
+  if (result.media.length === 0 && mediaFiles.length > 0) {
+    console.error("[addThreadUpdate] ❌ result.media is EMPTY despite receiving", mediaFiles.length, "file(s) — all uploads may have failed");
+  }
+  console.groupEnd();
+  return result;
 }
 
 /** Toggle like on a thread. */
