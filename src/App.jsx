@@ -1622,6 +1622,9 @@ function App({ onGoHome, onOpenSettings }) {
   const onPostCreatedRef = useRef(null);
   // Callback ref: Announcements registers its handlePublishPost for mobile NewDiffusionSheet
   const annPublishRef = useRef(null);
+  // Callback ref: Announcements registers its handlePublishStory for mobile InstagramStoryCreator
+  const annStoryRef = useRef(null);
+  const [showAnnStory, setShowAnnStory] = useState(false);
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
   const [annStorySignal,    setAnnStorySignal]     = useState(0);
   const [showAnnComposer,   setShowAnnComposer]    = useState(false); // mobile fullscreen sheet
@@ -1928,7 +1931,7 @@ function App({ onGoHome, onOpenSettings }) {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     return null;
@@ -2078,7 +2081,7 @@ function App({ onGoHome, onOpenSettings }) {
                 {[
                   { label: "Crear Post",       icon: FileText,  color: C.accent,    action: () => { setFabOpen(false); setShowFullPostSheet(true); } },
                   { label: "Crear Difusión",   icon: Megaphone, color: C.orange,    action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setShowAnnComposer(true), 50); } },
-                  { label: "Crear Story",      icon: Zap,       color: C.gold,      action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnStorySignal(n => n + 1), 300); } },
+                  { label: "Crear Story",      icon: Zap,       color: C.gold,      action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setShowAnnStory(true), 50); } },
                 ].map((opt, i) => (
                   <motion.div
                     key={opt.label}
@@ -2139,6 +2142,19 @@ function App({ onGoHome, onOpenSettings }) {
                 annPublishRef.current({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status });
               }
               setShowAnnComposer(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── STORY CREATOR — mobile fullscreen, at root to escape stacking contexts ── */}
+      <AnimatePresence>
+        {showAnnStory && (
+          <InstagramStoryCreator
+            onClose={() => setShowAnnStory(false)}
+            onPublish={(data) => {
+              if (annStoryRef.current) { annStoryRef.current(data); }
+              setShowAnnStory(false);
             }}
           />
         )}
