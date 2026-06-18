@@ -1700,8 +1700,16 @@ function App({ onGoHome, onOpenSettings }) {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* Top bar */}
-          <div style={{ flexShrink: 0, zIndex: 30, background: `${C.surface}f4`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "10px 20px", display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ flex: 1, minWidth: 0 }} />
+          <div style={{ flexShrink: 0, zIndex: 30, background: `${C.surface}f4`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "10px 24px", display: "flex", alignItems: "center" }}>
+            {/* Left: brand */}
+            <span style={{ fontFamily: font, fontSize: 18, fontWeight: 900, letterSpacing: "-0.04em", color: C.text, flexShrink: 0 }}>
+              Plan<span style={{ color: C.accentLight }}>Space</span>
+            </span>
+
+            {/* Center spacer */}
+            <div style={{ flex: 1 }} />
+
+            {/* Right: actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               {/* AI Studio button */}
               <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowAIPanel(v => !v)}
@@ -1709,14 +1717,18 @@ function App({ onGoHome, onOpenSettings }) {
                 <Zap size={14} color={showAIPanel ? C.accentLight : C.textMuted} />
                 <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: showAIPanel ? C.accentLight : C.textMuted }}>AI Studio</span>
               </motion.button>
-              <IconBtn icon={MessageSquare} />
               <IconBtn icon={Search} />
+              <IconBtn icon={MessageSquare} />
               <IconBtn icon={Bell} badge />
               <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 10px" }}>
                 <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{isHost ? "Host" : "Member"}</span>
                 <button onClick={() => setIsHost(h => !h)} style={{ width: 34, height: 18, borderRadius: 9, border: "none", background: isHost ? C.accent : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
                   <motion.div animate={{ x: isHost ? 16 : 2 }} transition={{ type: "spring", stiffness: 400, damping: 28 }} style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2 }} />
                 </button>
+              </div>
+              {/* Avatar */}
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, border: `2px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                <span style={{ fontFamily: font, fontSize: 12, fontWeight: 800, color: "#fff" }}>A</span>
               </div>
             </div>
           </div>

@@ -181,7 +181,7 @@ export default function HomeFeed({ onEnterProfile }) {
 
   return (
     <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", justifyContent: "center", overflowY: "auto" }}>
-      <div style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <div style={{ width: "100%", maxWidth: 935, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
 
         {/* ── TopBar ── */}
         <div style={{ position: "sticky", top: 0, zIndex: 50, background: `${C.surface}f8`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", minHeight: 52, flexShrink: 0 }}>
