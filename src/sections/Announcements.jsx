@@ -1000,7 +1000,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1010,8 +1010,20 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
   const [showComposer, setShowComposer] = useState(false);
 
   // Open composer or story uploader when signaled from App (Crear Difusión / Crear Story)
-  useEffect(() => { if (openComposerSignal) setShowComposer(true); }, [openComposerSignal]);
+  useEffect(() => {
+    if (!openComposerSignal) return;
+    // On mobile, delegate to App so the sheet renders outside the transform stacking context.
+    // On desktop, open locally as before.
+    if (onShowComposer) { onShowComposer(); } else { setShowComposer(true); }
+  }, [openComposerSignal]);
   useEffect(() => { if (openStorySignal) setShowUploader(true); }, [openStorySignal]);
+
+  // Register handlePublishPost with App so mobile NewDiffusionSheet can call it
+  useEffect(() => {
+    onRegisterAnnPublish?.(handlePublishPost);
+    return () => { onRegisterAnnPublish?.(null); };
+  // eslint-disable-next-line
+  }, [onRegisterAnnPublish]);
 
   // ── Load announcements from Supabase ──────────────────────────────────────
   useEffect(() => {
@@ -1095,7 +1107,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
             </button>
             <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, textAlign: "center" }}>Announcements</span>
             {isHost && (
-              <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComposer(true)}
+              <motion.button whileTap={{ scale: 0.88 }} onClick={() => onShowComposer ? onShowComposer() : setShowComposer(true)}
                 style={{ width: 34, height: 34, borderRadius: 10, background: `${A}18`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                 <Plus size={18} color={A} strokeWidth={2.5} />
               </motion.button>
@@ -1118,10 +1130,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
         {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
         </AnimatePresence>
 
-        {/* Post composer */}
-        <AnimatePresence>
-          {showComposer && <NewDiffusionSheet onClose={() => setShowComposer(false)} onPublish={(data) => { handlePublishPost && handlePublishPost({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status }); setShowComposer(false); }} />}
-        </AnimatePresence>
+        {/* Post composer — rendered by App.jsx on mobile to escape transform stacking context */}
 
         {/* Orange FAB rendered from App.jsx to stay fixed regardless of scroll */}
       </div>
