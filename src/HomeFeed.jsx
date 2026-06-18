@@ -185,18 +185,15 @@ export default function HomeFeed({ onEnterProfile }) {
 
         {/* ── TopBar ── */}
         <div style={{ position: "sticky", top: 0, zIndex: 50, background: `${C.surface}f8`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", minHeight: 52, flexShrink: 0 }}>
-          {/* Left: user avatar → enter profile */}
-          <motion.div whileTap={{ scale: 0.9 }} onClick={() => onEnterProfile && onEnterProfile()}
-            style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, border: `2px solid ${C.accent}44` }}>
-            <span style={{ fontFamily: font, fontSize: 12, fontWeight: 800, color: "#fff" }}>Y</span>
-          </motion.div>
-          {/* Center: PlanSpace wordmark */}
-          <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-            <span style={{ fontFamily: font, fontSize: 20, fontWeight: 900, letterSpacing: "-0.04em", color: C.text }}>
-              Plan<span style={{ color: C.accentLight }}>Space</span>
-            </span>
-          </div>
-          {/* Right: icons */}
+          {/* Left: PlanSpace wordmark */}
+          <span style={{ fontFamily: font, fontSize: 20, fontWeight: 900, letterSpacing: "-0.04em", color: C.text, flexShrink: 0 }}>
+            Plan<span style={{ color: C.accentLight }}>Space</span>
+          </span>
+
+          {/* Center spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Right: icons + avatar */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             <motion.button whileTap={{ scale: 0.88 }} style={{ position: "relative", background: "none", border: "none", cursor: "pointer", padding: 4, color: C.text }}>
               <Search size={22} />
@@ -213,6 +210,11 @@ export default function HomeFeed({ onEnterProfile }) {
                 </span>
               )}
             </motion.button>
+            {/* Avatar → enter profile */}
+            <motion.div whileTap={{ scale: 0.9 }} onClick={() => onEnterProfile && onEnterProfile()}
+              style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, border: `2px solid ${C.accent}44`, marginLeft: 2 }}>
+              <span style={{ fontFamily: font, fontSize: 12, fontWeight: 800, color: "#fff" }}>Y</span>
+            </motion.div>
           </div>
         </div>
 

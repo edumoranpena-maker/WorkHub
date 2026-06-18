@@ -315,7 +315,12 @@ function Sidebar({ activeSectionId, onNavigate, onHome, onSections, onAddSection
       style={{ width: 234, flexShrink: 0, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
 
       <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "center" }}>
-        <img src="/workspace_logo.png" alt="Workspace" style={{ height: 32, width: "auto", mixBlendMode: "screen", filter: "brightness(1.15) contrast(1.05)", userSelect: "none", pointerEvents: "none" }} />
+        <motion.button whileTap={{ scale: 0.96 }} onClick={onHome}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 20, fontWeight: 900, letterSpacing: "-0.04em", color: "#eaeaf5" }}>
+            Plan<span style={{ color: "#a78bfa" }}>Space</span>
+          </span>
+        </motion.button>
       </div>
 
       <div style={{ padding: "10px 10px 4px" }}>
@@ -1699,11 +1704,11 @@ function App({ onGoHome, onOpenSettings }) {
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-          {/* Top bar */}
+          {/* Top bar — Perfil web: profile name left, actions right */}
           <div style={{ flexShrink: 0, zIndex: 30, background: `${C.surface}f4`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "10px 24px", display: "flex", alignItems: "center" }}>
-            {/* Left: brand */}
-            <span style={{ fontFamily: font, fontSize: 18, fontWeight: 900, letterSpacing: "-0.04em", color: C.text, flexShrink: 0 }}>
-              Plan<span style={{ color: C.accentLight }}>Space</span>
+            {/* Left: profile name */}
+            <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", flexShrink: 0 }}>
+              {profileConfig.identity.name}
             </span>
 
             {/* Center spacer */}
@@ -1725,10 +1730,6 @@ function App({ onGoHome, onOpenSettings }) {
                 <button onClick={() => setIsHost(h => !h)} style={{ width: 34, height: 18, borderRadius: 9, border: "none", background: isHost ? C.accent : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
                   <motion.div animate={{ x: isHost ? 16 : 2 }} transition={{ type: "spring", stiffness: 400, damping: 28 }} style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2 }} />
                 </button>
-              </div>
-              {/* Avatar */}
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, border: `2px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-                <span style={{ fontFamily: font, fontSize: 12, fontWeight: 800, color: "#fff" }}>A</span>
               </div>
             </div>
           </div>
