@@ -1687,7 +1687,7 @@ function App({ onGoHome, onOpenSettings }) {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","metrics","rooms"].includes(activeSectionId));
