@@ -1620,8 +1620,11 @@ function App({ onGoHome, onOpenSettings }) {
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
   // Callback ref: Post registers this so App can prepend a created thread to the feed
   const onPostCreatedRef = useRef(null);
+  // Callback ref: Announcements registers its handlePublishPost for mobile NewDiffusionSheet
+  const annPublishRef = useRef(null);
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
   const [annStorySignal,    setAnnStorySignal]     = useState(0);
+  const [showAnnComposer,   setShowAnnComposer]    = useState(false); // mobile fullscreen sheet
   // ── Persistent button state — survives section changes ──────────────────────
   const [followed,        setFollowed]        = useState(false);
   const [subscribed,      setSubscribed]      = useState(false);
@@ -1925,7 +1928,7 @@ function App({ onGoHome, onOpenSettings }) {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     return null;
@@ -2074,7 +2077,7 @@ function App({ onGoHome, onOpenSettings }) {
               >
                 {[
                   { label: "Crear Post",       icon: FileText,  color: C.accent,    action: () => { setFabOpen(false); setShowFullPostSheet(true); } },
-                  { label: "Crear Difusión",   icon: Megaphone, color: C.orange,    action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnComposerSignal(n => n + 1), 300); } },
+                  { label: "Crear Difusión",   icon: Megaphone, color: C.orange,    action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setShowAnnComposer(true), 50); } },
                   { label: "Crear Story",      icon: Zap,       color: C.gold,      action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnStorySignal(n => n + 1), 300); } },
                 ].map((opt, i) => (
                   <motion.div
@@ -2118,13 +2121,28 @@ function App({ onGoHome, onOpenSettings }) {
       {isHost && activeSectionId === "announcements" && (
         <motion.button
           whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }}
-          onClick={() => setAnnComposerSignal(n => n + 1)}
+          onClick={() => setShowAnnComposer(true)}
           style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #f59e0b, #d97706)", boxShadow: "0 6px 28px rgba(245,158,11,0.7), 0 0 0 1px rgba(245,158,11,0.3)" }}
         >
           <Plus size={26} color="#000" strokeWidth={2.5} />
         </motion.button>
       )}
 
+
+      {/* ── NEW DIFFUSION SHEET — mobile fullscreen, at root to escape stacking contexts ── */}
+      <AnimatePresence>
+        {showAnnComposer && (
+          <NewDiffusionSheet
+            onClose={() => setShowAnnComposer(false)}
+            onPublish={(data) => {
+              if (annPublishRef.current) {
+                annPublishRef.current({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status });
+              }
+              setShowAnnComposer(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Full New Post Sheet */}
       <AnimatePresence>
