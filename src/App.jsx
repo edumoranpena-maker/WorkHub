@@ -1775,6 +1775,91 @@ function App({ onGoHome, onOpenSettings }) {
           />
         )}
       </AnimatePresence>
+
+      {/* ── PURPLE FAB — desktop: Post feed ── */}
+      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideThread && (
+        <>
+          <AnimatePresence>
+            {fabOpen && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setFabOpen(false)}
+                style={{ position: "fixed", inset: 0, zIndex: 998, background: "rgba(8,8,14,0.55)", backdropFilter: "blur(6px)" }}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {fabOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.92 }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                style={{ position: "fixed", bottom: 100, right: 20, zIndex: 999, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}
+              >
+                {[
+                  { label: "Crear Post",     icon: FileText,  color: C.accent, action: () => { setFabOpen(false); setShowFullPostSheet(true); } },
+                  { label: "Crear Difusión", icon: Megaphone, color: C.orange, action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnComposerSignal(n => n + 1), 300); } },
+                  { label: "Crear Story",    icon: Zap,       color: C.gold,   action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnStorySignal(n => n + 1), 300); } },
+                ].map((opt, i) => (
+                  <motion.div key={opt.label} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ delay: i * 0.05 }}
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 14px", whiteSpace: "nowrap", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+                      {opt.label}
+                    </span>
+                    <motion.button whileTap={{ scale: 0.88 }} onClick={opt.action}
+                      style={{ width: 46, height: 46, borderRadius: "50%", background: `${opt.color}22`, border: `2px solid ${opt.color}55`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: `0 4px 16px ${opt.color}40` }}>
+                      <opt.icon size={18} color={opt.color} />
+                    </motion.button>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }} onClick={() => setFabOpen(v => !v)}
+            style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.accent}, #5c2fff)`, boxShadow: fabOpen ? `0 4px 20px rgba(0,0,0,0.5)` : `0 6px 28px ${C.accent}70, 0 0 0 1px ${C.accent}30` }}>
+            <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
+              <Plus size={26} color="#fff" strokeWidth={2.5} />
+            </motion.div>
+          </motion.button>
+        </>
+      )}
+
+      {/* ── ORANGE FAB — desktop: Announcements ── */}
+      {isHost && activeSectionId === "announcements" && (
+        <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }}
+          onClick={() => setAnnComposerSignal(n => n + 1)}
+          style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #f59e0b, #d97706)", boxShadow: "0 6px 28px rgba(245,158,11,0.7), 0 0 0 1px rgba(245,158,11,0.3)" }}>
+          <Plus size={26} color="#000" strokeWidth={2.5} />
+        </motion.button>
+      )}
+
+      {/* Full New Post Sheet */}
+      <AnimatePresence>
+        {showFullPostSheet && (
+          <NewPostSheet
+            onSubmit={async ({ title, description, status, mediaFiles, audioBlob }) => {
+              const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+              const audio    = audioBlob ? { blob: audioBlob } : null;
+              const saved = await createRecapThread({
+                title:     title?.trim()       || null,
+                content:   description?.trim() || "",
+                privacy:   "members",
+                audio,
+                mediaFiles: rawFiles,
+              });
+              if (!saved) {
+                console.error("[App] createRecapThread returned null — post was NOT saved");
+                return;
+              }
+              console.info("[App] Post saved to Supabase:", saved.id);
+              if (onPostCreatedRef.current) { onPostCreatedRef.current(saved); }
+              setShowFullPostSheet(false);
+              navigateTo("recaps");
+            }}
+            onClose={() => setShowFullPostSheet(false)}
+          />
+        )}
+      </AnimatePresence>
+
       </ThemeProvider>
     );
   }
