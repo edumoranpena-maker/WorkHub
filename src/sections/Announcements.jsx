@@ -1000,7 +1000,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish, onShowStory, onRegisterAnnStory }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1016,7 +1016,10 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
     // On desktop, open locally as before.
     if (onShowComposer) { onShowComposer(); } else { setShowComposer(true); }
   }, [openComposerSignal]);
-  useEffect(() => { if (openStorySignal) setShowUploader(true); }, [openStorySignal]);
+  useEffect(() => {
+    if (!openStorySignal) return;
+    if (onShowStory) { onShowStory(); } else { setShowUploader(true); }
+  }, [openStorySignal]);
 
   // Register handlePublishPost with App so mobile NewDiffusionSheet can call it
   useEffect(() => {
@@ -1024,6 +1027,13 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
     return () => { onRegisterAnnPublish?.(null); };
   // eslint-disable-next-line
   }, [onRegisterAnnPublish]);
+
+  // Register handlePublishStory with App so mobile InstagramStoryCreator can call it
+  useEffect(() => {
+    onRegisterAnnStory?.(handlePublishStory);
+    return () => { onRegisterAnnStory?.(null); };
+  // eslint-disable-next-line
+  }, [onRegisterAnnStory]);
 
   // ── Load announcements from Supabase ──────────────────────────────────────
   useEffect(() => {
@@ -1081,7 +1091,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: A, boxShadow: `0 0 8px ${A}` }} />
           <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: A, textTransform: "uppercase", letterSpacing: "0.1em" }}>News</span>
         </div>
-        <NewsBar stories={stories} onOpen={i => setViewingStory(i)} onAdd={() => setShowUploader(true)} isHost={isHost} />
+        <NewsBar stories={stories} onOpen={i => setViewingStory(i)} onAdd={() => onShowStory ? onShowStory() : setShowUploader(true)} isHost={isHost} />
       </div>
 
       {/* Announcement feed */}
@@ -1124,11 +1134,8 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
           )}
         </AnimatePresence>
 
-        {/* Story uploader */}
-        <AnimatePresence>
-          {showUploader && <InstagramStoryCreator onClose={() => setShowUploader(false)} onPublish={(data) => { handlePublishStory && handlePublishStory(data); setShowUploader(false); }} />}
+        {/* Story uploader — rendered by App.jsx on mobile to escape transform stacking context */}
         {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
-        </AnimatePresence>
 
         {/* Post composer — rendered by App.jsx on mobile to escape transform stacking context */}
 
