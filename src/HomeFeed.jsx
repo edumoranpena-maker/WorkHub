@@ -2,7 +2,7 @@
  * HomeFeed.jsx — PlanSpace main feed (Instagram-style landing page)
  * Static content. Universal purple FAB for hosts.
  */
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
@@ -48,13 +48,53 @@ const POSTS = [
 ];
 
 // ── StoryViewer ────────────────────────────────────────────────────────────────
-function StoryViewer({ story, onClose }) {
+// Instagram-style behavior: each account here has exactly one story slide.
+// On finish, advance to the next account that still has hasNew; if none remain,
+// close back to Homepage with a normal fade (handled by the parent AnimatePresence).
+function StoryViewer({ accounts, startId, onClose }) {
+  const [accountIdx, setAccountIdx] = useState(() => accounts.findIndex(a => a.id === startId));
+  const closedRef = useRef(false);
+
+  const closeOnce = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onClose();
+  }, [onClose]);
+
+  const story = accounts[accountIdx];
+
+  const goToNextAccount = useCallback(() => {
+    // Find the next account after the current one that still has a story to show
+    for (let i = accountIdx + 1; i < accounts.length; i++) {
+      if (accounts[i].hasNew) { setAccountIdx(i); return; }
+    }
+    // No more accounts with stories — return to Homepage
+    closeOnce();
+  }, [accountIdx, accounts, closeOnce]);
+
+  // Guard: if accountIdx ever points past the end, close immediately instead of
+  // rendering undefined.story (mirrors the same fix applied in Announcements).
+  useEffect(() => {
+    if (!story) closeOnce();
+  }, [story, closeOnce]);
+
+  if (!story) return null;
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ position: "absolute", top: 12, left: 12, right: 12, height: 2, background: "rgba(255,255,255,0.2)", borderRadius: 1 }}>
-        <motion.div initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 4, ease: "linear" }}
-          onAnimationComplete={onClose} style={{ height: "100%", background: "#fff", borderRadius: 1 }} />
+      {/* Progress bars — one segment per account in this session */}
+      <div style={{ position: "absolute", top: 12, left: 12, right: 12, display: "flex", gap: 4 }}>
+        {accounts.map((a, i) => (
+          <div key={a.id} style={{ flex: 1, height: 2, background: "rgba(255,255,255,0.2)", borderRadius: 1, overflow: "hidden" }}>
+            {i === accountIdx ? (
+              <motion.div key={a.id} initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 4, ease: "linear" }}
+                onAnimationComplete={goToNextAccount} style={{ height: "100%", background: "#fff" }} />
+            ) : (
+              <div style={{ height: "100%", width: i < accountIdx ? "100%" : "0%", background: "#fff" }} />
+            )}
+          </div>
+        ))}
       </div>
       <div style={{ position: "absolute", top: 24, left: 16, right: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -63,7 +103,7 @@ function StoryViewer({ story, onClose }) {
           </div>
           <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: "#fff" }}>{story.name}</span>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={22} color="#fff" /></button>
+        <button onClick={closeOnce} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={22} color="#fff" /></button>
       </div>
       <div style={{ width: "100%", maxWidth: 400, aspectRatio: "9/16", background: `linear-gradient(135deg, ${story.color}22, ${story.color}11)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ textAlign: "center" }}>
@@ -169,7 +209,7 @@ function SuggestedCard({ user }) {
 
 // ── Main HomeFeed ──────────────────────────────────────────────────────────────
 export default function HomeFeed({ onEnterProfile }) {
-  const [activeStory,  setActiveStory]  = useState(null);
+  const [activeStoryId, setActiveStoryId] = useState(null);
   const [notifications]                 = useState(3);
   const [messages]                      = useState(2);
   const [fabOpen,      setFabOpen]      = useState(false);
@@ -222,7 +262,7 @@ export default function HomeFeed({ onEnterProfile }) {
         <div style={{ display: "flex", gap: 12, padding: "12px 16px", overflowX: "auto", scrollbarWidth: "none", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           {STORIES.map(s => (
             <motion.div key={s.id} whileTap={{ scale: 0.92 }}
-              onClick={() => s.isOwn ? onEnterProfile && onEnterProfile() : setActiveStory(s)}
+              onClick={() => s.isOwn ? onEnterProfile && onEnterProfile() : setActiveStoryId(s.id)}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0 }}>
               <div style={{ width: 58, height: 58, borderRadius: "50%", padding: s.hasNew ? 2 : 0, background: s.hasNew ? `conic-gradient(${s.color} 0deg, ${s.color}88 180deg, ${s.color} 360deg)` : C.border }}>
                 <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `2px solid ${C.surface}`, background: s.isOwn ? `linear-gradient(135deg, ${C.accent}44, ${C.accentDim})` : `linear-gradient(135deg, ${s.color}44, ${s.color}22)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -259,7 +299,13 @@ export default function HomeFeed({ onEnterProfile }) {
 
       {/* ── Story Viewer ── */}
       <AnimatePresence>
-        {activeStory && <StoryViewer story={activeStory} onClose={() => setActiveStory(null)} />}
+        {activeStoryId !== null && (
+          <StoryViewer
+            accounts={STORIES.filter(s => !s.isOwn)}
+            startId={activeStoryId}
+            onClose={() => setActiveStoryId(null)}
+          />
+        )}
       </AnimatePresence>
 
       {/* ── Universal FAB (purple) ── */}
