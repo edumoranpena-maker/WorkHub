@@ -197,10 +197,20 @@ function StoryViewer({ stories, startIndex, onClose, isHost }) {
   const [paused, setPaused] = useState(false);
   const [comment, setComment] = useState("");
   const [showCommentBar, setShowCommentBar] = useState(false);
+  const closedRef = useRef(false); // guards against double onClose() calls (race between RAF and exit animation)
   const story = stories[idx];
   const DURATION = 5000;
 
+  const closeOnce = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
+    // story is undefined whenever idx has advanced past the last item —
+    // stop immediately instead of letting the RAF loop run against it.
+    if (!story) { closeOnce(); return; }
     if (paused) return;
     setProgress(0);
     const start = Date.now();
@@ -210,15 +220,19 @@ function StoryViewer({ stories, startIndex, onClose, isHost }) {
       if (p < 1) requestAnimationFrame(raf);
       else {
         if (idx < stories.length - 1) setIdx(i => i + 1);
-        else onClose();
+        else closeOnce();
       }
     };
     const id = requestAnimationFrame(raf);
     return () => cancelAnimationFrame(id);
-  }, [idx, paused]); // eslint-disable-line
+  }, [idx, paused, story]); // eslint-disable-line
 
   const prev = () => { if (idx > 0) setIdx(i => i - 1); };
-  const next = () => { if (idx < stories.length - 1) setIdx(i => i + 1); else onClose(); };
+  const next = () => { if (idx < stories.length - 1) setIdx(i => i + 1); else closeOnce(); };
+
+  // Render nothing during the single frame where story is undefined —
+  // AnimatePresence will finish the exit transition via onClose already firing above.
+  if (!story) return null;
 
   const timeSince = fmtTime(story.createdAt);
 
