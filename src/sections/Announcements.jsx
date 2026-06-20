@@ -21,7 +21,7 @@ const C = {
   bg: "#08080e", surface: "#0e0e18", card: "#13131f", cardHover: "#19192a",
   border: "#1c1c2e",
   accent: "#f59e0b", accentLight: "#fbbf24", accentDim: "#78350f",
-  text: "#eaeaf5", textMuted: "#6a6a82", textDim: "#32324a",
+  text: "#fafafa", textMuted: "#8e8e8e", textDim: "#32324a",
   green: "#1ed99a", greenDim: "rgba(30,217,154,0.12)",
   red: "#ff4f6a", amber: "#f59e0b",
   blue: "#4fa3ff", purple: "#7c4dff",
@@ -664,7 +664,7 @@ function CommentsSheet({ postId, onClose }) {
                   <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{c.author}</span>
                   <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{typeof c.time === "number" ? fmtTime(c.time) : c.time}</span>
                 </div>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.textMuted, lineHeight: 1.5, wordBreak: "break-word" }}>{c.text}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.5, wordBreak: "break-word" }}>{c.text}</p>
               </div>
             </div>
           ))}
@@ -970,7 +970,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 
           {/* Title + content */}
           {post.title && <h3 style={{ margin: "0 0 6px", fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{post.title}</h3>}
-          {post.content && <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.textMuted, lineHeight: 1.6, wordBreak: "break-word", overflowWrap: "break-word" }}>{post.content}</p>}
+          {post.content && <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.6, wordBreak: "break-word", overflowWrap: "break-word" }}>{post.content}</p>}
 
           {/* Standard image */}
           {post.type === "standard" && post.media?.length > 0 && (
