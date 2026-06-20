@@ -56,7 +56,7 @@ if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
 const C = {
   bg: "#08080e", surface: "#0e0e18", card: "#13131f", cardHover: "#19192a",
   border: "#1c1c2e", accent: "#7c4dff", accentLight: "#9d71ff",
-  accentDim: "#3d2480", text: "#eaeaf5", textMuted: "#6a6a82", textDim: "#32324a",
+  accentDim: "#3d2480", text: "#fafafa", textMuted: "#8e8e8e", textDim: "#32324a",
   green: "#1ed99a", greenDim: "rgba(30,217,154,0.12)",
   amber: "#f5a623", blue: "#4fa3ff", red: "#ff4f6a",
   teal: "#22d3a0", tealDim: "rgba(34,211,160,0.14)",
@@ -868,8 +868,8 @@ function UpdateBubble({ update, index }) {
           return null;
         })()}
         {update.media?.length > 0 && (
-          <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9" }}>
-            <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", width: "100%" }}>
+            <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
@@ -973,7 +973,7 @@ function CommentsSheet({ threadId, onClose }) {
                     })()}
                   </span>
                 </div>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>{c.text}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.55 }}>{c.text}</p>
               </div>
             </motion.div>
           ))}
@@ -1422,7 +1422,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </div>
 
           {subtema.content && (
-            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.textMuted }}>{subtema.content}</p>
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{subtema.content}</p>
           )}
 
           {subtema.media?.length > 0 && (
@@ -1624,7 +1624,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                   </div>
                 )}
 
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.textMuted }}>{thread.content}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{thread.content}</p>
 
                 {thread.hashtags?.length > 0 && (
                   <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
