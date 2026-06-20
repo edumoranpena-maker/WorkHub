@@ -2,7 +2,7 @@
  * HomeFeed.jsx — PlanSpace main feed (Instagram-style landing page)
  * Static content. Universal purple FAB for hosts.
  */
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
