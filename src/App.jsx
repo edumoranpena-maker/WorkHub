@@ -8,7 +8,7 @@ import {
 import HomeFeed      from "./HomeFeed.jsx";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import Post          from "./sections/Post";
-import Announcements from "./sections/Announcements";
+import Announcements, { StoryViewer } from "./sections/Announcements";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
@@ -1625,6 +1625,9 @@ function App({ onGoHome, onOpenSettings }) {
   // Callback ref: Announcements registers its handlePublishStory for mobile InstagramStoryCreator
   const annStoryRef = useRef(null);
   const [showAnnStory, setShowAnnStory] = useState(false);
+  // Stories array + viewer index for mobile StoryViewer, rendered at App's root
+  const [annStories, setAnnStories]         = useState([]);
+  const [viewingAnnStory, setViewingAnnStory] = useState(null);
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
   const [annStorySignal,    setAnnStorySignal]     = useState(0);
   const [showAnnComposer,   setShowAnnComposer]    = useState(false); // mobile fullscreen sheet
@@ -1931,7 +1934,7 @@ function App({ onGoHome, onOpenSettings }) {
     // No scrollProps — unified scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} />;
+    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />;
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     return null;
@@ -2156,6 +2159,21 @@ function App({ onGoHome, onOpenSettings }) {
               if (annStoryRef.current) { annStoryRef.current(data); }
               setShowAnnStory(false);
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── STORY VIEWER (Announcements) — mobile fullscreen, at root to escape stacking contexts ──
+          Reuses the exact same StoryViewer component used on desktop (imported from
+          Announcements.jsx), fed by the stories array Announcements registers via
+          onRegisterAnnStories. Same component, same logic — no duplication. */}
+      <AnimatePresence>
+        {viewingAnnStory !== null && (
+          <StoryViewer
+            stories={annStories}
+            startIndex={viewingAnnStory}
+            onClose={() => setViewingAnnStory(null)}
+            isHost={isHost}
           />
         )}
       </AnimatePresence>
