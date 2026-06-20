@@ -160,7 +160,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
 
         {/* Bio + stats — right of divider */}
         <div style={{ flex: 1, paddingTop: 2 }}>
-          {(profile?.showBio !== false) && <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
+          {(profile?.showBio !== false) && <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>
             {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
             {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
           </p>}
@@ -451,7 +451,7 @@ function ReviewsCard({ onVerMas }) {
         {reviews.map((r, i) => (
           <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 + i * 0.07 }}>
             <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.text }}>{r.author}</p>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.text}</p>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.text, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.text}</p>
           </motion.div>
         ))}
       </div>
@@ -488,9 +488,9 @@ function PreviewCard({ section, onClick }) {
           </div>
         </div>
         <h3 style={{ margin: "0 0 3px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>{post.title}</h3>
-        <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{post.excerpt}</p>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.text, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{post.excerpt}</p>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-          <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{post.author}</span>
+          <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{post.author}</span>
           <span style={{ width: 2, height: 2, borderRadius: "50%", background: C.textDim }} />
           <span style={{ fontFamily: font, fontSize: 11, color: post.timestamp === "Live now" ? C.red : C.textDim }}>{post.timestamp}</span>
         </div>
@@ -721,7 +721,7 @@ function ReviewsContent({ onBack }) {
               </div>
             </div>
             {/* Review text */}
-            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>{r.text}</p>
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.55 }}>{r.text}</p>
             {/* Actions: helpful + reply */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <motion.button whileTap={{ scale: 0.88 }} onClick={() => toggleLike(r.id)}
@@ -745,7 +745,7 @@ function ReviewsContent({ onBack }) {
                     <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text }}>{rep.author}</span>
                     {rep.isHost && <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Creator</span>}
                   </div>
-                  <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{rep.text}</p>
+                  <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.text, lineHeight: 1.5 }}>{rep.text}</p>
                 </div>
               </div>
             ))}
@@ -827,7 +827,7 @@ function CommunityChatContent({ section }) {
                 <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{m.time}</span>
               </div>
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px 16px 16px 16px", padding: "10px 14px", display: "inline-block", maxWidth: "100%" }}>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.textMuted, lineHeight: 1.55 }}>{m.text}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.55 }}>{m.text}</p>
               </div>
             </div>
           </motion.div>
@@ -945,7 +945,7 @@ function CustomSectionContent({ section }) {
               <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{p.author}</span>
               <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{p.time}</span>
             </div>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.textMuted, lineHeight: 1.55 }}>{p.text}</p>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.55 }}>{p.text}</p>
           </motion.div>
         ))}
       </div>

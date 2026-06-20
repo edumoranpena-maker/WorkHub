@@ -11,7 +11,7 @@ import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
 const font = "'DM Sans', sans-serif";
 const C = {
   bg: "#08080e", surface: "#0e0e18", card: "#13131f", border: "#1c1c2e",
-  text: "#eaeaf5", textMuted: "#6a6a82", accent: "#7c4dff", accentLight: "#9d71ff",
+  text: "#fafafa", textMuted: "#8e8e8e", accent: "#7c4dff", accentLight: "#9d71ff",
   accentDim: "#3d2480", green: "#1ed99a", gold: "#d4a843", red: "#ff4f6a",
   blue: "#4fa3ff", orange: "#f97316",
 };
