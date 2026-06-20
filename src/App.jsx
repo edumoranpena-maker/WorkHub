@@ -14,11 +14,10 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import { createRecapThread } from "./lib/recapsApi.js";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
-import { DEFAULT_PROFILE_CONFIG, mergeProfileConfig } from "./config/profileConfig.js";
+import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
 import { resolveTheme, tokensToC }                   from "./config/themes.js";
 import { resolveIcon, ICON_OPTIONS as ICON_REG_OPTIONS } from "./registry/icons.js";
 import { ThemeProvider, useTheme }                   from "./engine/ThemeProvider.jsx";
-import { AIPromptPanel }                              from "./engine/AIPromptPanel.jsx";
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 // C and font are now derived from ThemeProvider at runtime.
@@ -371,7 +370,7 @@ function Sidebar({ activeSectionId, onNavigate, onHome, onSections, onAddSection
 }
 
 // ─── Mobile Top Bar ───────────────────────────────────────────────────────────
-function MobileTopBar({ onHome, profileName, onAIPanel, onOpenSettings }) {
+function MobileTopBar({ onHome, profileName, onOpenSettings }) {
   return (
     <div style={{ display: "flex", alignItems: "center", padding: "8px 14px", gap: 10, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 50, flexShrink: 0 }}>
       <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
@@ -381,12 +380,8 @@ function MobileTopBar({ onHome, profileName, onAIPanel, onOpenSettings }) {
       <div style={{ flex: 1, overflow: "hidden" }}>
         <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profileName}</span>
       </div>
-      {/* Right icons: AI, avatar (→ settings), bell, message, search */}
+      {/* Right icons: avatar (→ settings), bell, message, search */}
       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-        <motion.button whileTap={{ scale: 0.88 }} onClick={onAIPanel}
-          style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(124,77,255,0.15)", border: "1px solid rgba(124,77,255,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-          <Zap size={13} color="#9d71ff" />
-        </motion.button>
         {/* Avatar → opens Settings */}
         <motion.div whileTap={{ scale: 0.88 }} onClick={onOpenSettings}
           style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, border: `1.5px solid ${C.accent}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
@@ -1609,7 +1604,6 @@ function App({ onGoHome, onOpenSettings }) {
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
   const [showAddSection,  setShowAddSection]  = useState(false);
-  const [showAIPanel,       setShowAIPanel]       = useState(false);
   const [fabOpen,           setFabOpen]           = useState(false);
   const [insideThread,      setInsideThread]      = useState(false);
 
@@ -1635,12 +1629,8 @@ function App({ onGoHome, onOpenSettings }) {
   const [followed,        setFollowed]        = useState(false);
   const [subscribed,      setSubscribed]      = useState(false);
 
-  // ── Central profile config — AI modifies this, render engine reads it ──────
+  // ── Central profile config — static source of truth, render engine reads it ──
   const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
-
-  const applyConfig = useCallback((newConfig) => {
-    setProfileConfig(newConfig);
-  }, []);
 
   // Derive runtime data from profileConfig
   const allSections   = useMemo(
@@ -1725,12 +1715,6 @@ function App({ onGoHome, onOpenSettings }) {
 
             {/* Right: actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              {/* AI Studio button */}
-              <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowAIPanel(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 10, border: `1px solid ${showAIPanel ? C.accent + "55" : C.border}`, background: showAIPanel ? `${C.accent}18` : C.card, cursor: "pointer", transition: "all 0.15s" }}>
-                <Zap size={14} color={showAIPanel ? C.accentLight : C.textMuted} />
-                <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: showAIPanel ? C.accentLight : C.textMuted }}>AI Studio</span>
-              </motion.button>
               <IconBtn icon={Search} />
               <IconBtn icon={MessageSquare} />
               <IconBtn icon={Bell} badge />
@@ -1774,16 +1758,6 @@ function App({ onGoHome, onOpenSettings }) {
           </div>
         </div>
       </div>
-
-      <AnimatePresence>
-        {showAIPanel && (
-          <AIPromptPanel
-            currentConfig={profileConfig}
-            onApply={applyConfig}
-            onClose={() => setShowAIPanel(false)}
-          />
-        )}
-      </AnimatePresence>
 
       {/* ── PURPLE FAB — desktop: Post feed ── */}
       {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideThread && (
@@ -1953,7 +1927,6 @@ function App({ onGoHome, onOpenSettings }) {
           <MobileTopBar
             onHome={goHome}
             profileName={profileConfig.identity.name}
-            onAIPanel={() => setShowAIPanel(v => !v)}
             onOpenSettings={onOpenSettings}
           />
         </div>
@@ -2224,17 +2197,6 @@ function App({ onGoHome, onOpenSettings }) {
           <InstagramStoryCreator
             onClose={() => setShowNewStory(false)}
             onPublish={() => { setShowNewStory(false); navigateTo("announcements"); }}
-          />
-        )}
-      </AnimatePresence>
-
-
-      <AnimatePresence>
-        {showAIPanel && (
-          <AIPromptPanel
-            currentConfig={profileConfig}
-            onApply={applyConfig}
-            onClose={() => setShowAIPanel(false)}
           />
         )}
       </AnimatePresence>
