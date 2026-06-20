@@ -191,7 +191,7 @@ function Sidebar({ onBack, onNavigate }) {
 }
 
 // ─── Story Viewer (full-screen) ────────────────────────────────────────────────
-function StoryViewer({ stories, startIndex, onClose, isHost }) {
+export function StoryViewer({ stories, startIndex, onClose, isHost }) {
   const [idx, setIdx] = useState(startIndex);
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -1014,7 +1014,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish, onShowStory, onRegisterAnnStory }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish, onShowStory, onRegisterAnnStory, onShowStoryViewer, onRegisterAnnStories }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -1048,6 +1048,12 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
     return () => { onRegisterAnnStory?.(null); };
   // eslint-disable-next-line
   }, [onRegisterAnnStory]);
+
+  // Keep App in sync with the current stories array so the mobile StoryViewer
+  // (rendered at App's root to escape the transform stacking context) has data to show.
+  useEffect(() => {
+    onRegisterAnnStories?.(stories);
+  }, [stories]); // eslint-disable-line
 
   // ── Load announcements from Supabase ──────────────────────────────────────
   useEffect(() => {
@@ -1105,7 +1111,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: A, boxShadow: `0 0 8px ${A}` }} />
           <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: A, textTransform: "uppercase", letterSpacing: "0.1em" }}>News</span>
         </div>
-        <NewsBar stories={stories} onOpen={i => setViewingStory(i)} onAdd={() => onShowStory ? onShowStory() : setShowUploader(true)} isHost={isHost} />
+        <NewsBar stories={stories} onOpen={i => onShowStoryViewer ? onShowStoryViewer(i) : setViewingStory(i)} onAdd={() => onShowStory ? onShowStory() : setShowUploader(true)} isHost={isHost} />
       </div>
 
       {/* Announcement feed */}
@@ -1141,12 +1147,7 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
 
         <FeedPanel />
 
-        {/* Story viewer */}
-        <AnimatePresence>
-          {viewingStory !== null && (
-            <StoryViewer stories={stories} startIndex={viewingStory} onClose={() => setViewingStory(null)} isHost={isHost} />
-          )}
-        </AnimatePresence>
+        {/* Story viewer — rendered by App.jsx on mobile to escape transform stacking context */}
 
         {/* Story uploader — rendered by App.jsx on mobile to escape transform stacking context */}
         {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
