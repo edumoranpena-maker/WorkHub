@@ -1,10 +1,8 @@
 /**
  * profileConfig.js
  *
- * Single source of truth for everything the AI can control.
+ * Single source of truth for profile appearance and structure.
  * The React render engine reads this config and renders accordingly.
- * The AI only ever modifies this object — never touches JSX or components.
- *
  * Schema is intentionally flat and serializable (JSON-safe, no functions).
  * Icon ids resolve to components via the ICON_REGISTRY in registry/icons.js.
  * Theme palette ids resolve to token sets in config/themes.js.
@@ -123,70 +121,3 @@ export const DEFAULT_PROFILE_CONFIG = {
     },
   ],
 };
-
-/**
- * Merge a partial AI-generated config diff into the current config.
- * The AI returns only the keys it wants to change; this deep-merges safely.
- * Arrays of objects (stats, sections, feedWidgets) are merged by key/id.
- */
-export function mergeProfileConfig(current, diff) {
-  const merged = { ...current };
-
-  if (diff.identity)    merged.identity    = { ...current.identity,    ...diff.identity };
-  if (diff.theme)       merged.theme       = { ...current.theme,       ...diff.theme };
-  if (diff.layout)      merged.layout      = { ...current.layout,      ...diff.layout };
-
-  if (diff.stats) {
-    merged.stats = diff.stats; // AI provides full ordered array
-  }
-
-  if (diff.feedWidgets) {
-    // Merge by id — AI can reorder or toggle visibility
-    const base = [...current.feedWidgets];
-    diff.feedWidgets.forEach(dw => {
-      const idx = base.findIndex(w => w.id === dw.id);
-      if (idx >= 0) base[idx] = { ...base[idx], ...dw };
-      else base.push(dw);
-    });
-    merged.feedWidgets = base.sort((a, b) => a.order - b.order);
-  }
-
-  if (diff.sections) {
-    const base = [...current.sections];
-    diff.sections.forEach(ds => {
-      const idx = base.findIndex(s => s.id === ds.id);
-      if (idx >= 0) base[idx] = { ...base[idx], ...ds };
-      else base.push(ds);
-    });
-    merged.sections = base.sort((a, b) => a.order - b.order);
-  }
-
-  return merged;
-}
-
-/**
- * Validate that a config diff from the AI is within allowed bounds.
- * Prevents the AI from touching things it shouldn't.
- */
-export function validateConfigDiff(diff) {
-  const ALLOWED_KEYS = ["identity", "theme", "layout", "feedWidgets", "sections"];
-  const FORBIDDEN_IDENTITY = ["handle"]; // handle should never be AI-changed
-  const errors = [];
-
-  Object.keys(diff).forEach(k => {
-    if (!ALLOWED_KEYS.includes(k)) errors.push(`Unknown top-level key: ${k}`);
-  });
-
-  if (diff.identity) {
-    FORBIDDEN_IDENTITY.forEach(k => {
-      if (k in diff.identity) errors.push(`Cannot modify identity.${k} via AI`);
-    });
-  }
-
-  if (diff.theme?.fontScale) {
-    const fs = diff.theme.fontScale;
-    if (fs < 0.8 || fs > 1.3) errors.push("fontScale must be between 0.8 and 1.3");
-  }
-
-  return { valid: errors.length === 0, errors };
-}
