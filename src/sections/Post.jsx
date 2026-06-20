@@ -239,8 +239,8 @@ function MonthDivider({ label }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 0 10px" }}>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.border}, transparent)` }} />
-      <div style={{ padding: "5px 14px", borderRadius: 99, background: "rgba(14,14,24,0.85)", backdropFilter: "blur(16px)", border: `1px solid rgba(92,47,255,0.22)`, boxShadow: "0 0 20px rgba(124,77,255,0.1)" }}>
-        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.green, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</span>
+      <div style={{ padding: "5px 14px", borderRadius: 99, background: "rgba(14,14,24,0.85)", backdropFilter: "blur(16px)", border: `1px solid rgba(34,211,160,0.22)`, boxShadow: "0 0 20px rgba(34,211,160,0.1)" }}>
+        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.text, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</span>
       </div>
       <div style={{ flex: 1, height: 1, background: `linear-gradient(270deg, ${C.border}, transparent)` }} />
     </div>
@@ -720,7 +720,7 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
         </div>
 
         {/* Footer: date */}
-        <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.green, fontWeight: 500 }}>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
           {fmtDate(thread.timestamp)}
         </p>
       </div>
@@ -874,7 +874,7 @@ function UpdateBubble({ update, index }) {
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-          <span style={{ fontFamily: font, fontSize: 11, color: C.green }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
+          <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
           <div style={{ flex: 1 }} />
           <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
             style={{ display: "flex", alignItems: "center", gap: 4, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.15s" }}>
@@ -1361,9 +1361,9 @@ function SubtemaCard({ subtema, onClick }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtema.title}</p>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-            <span style={{ fontFamily: font, fontSize: 10, color: C.green }}>{fmtDate(subtema.timestamp)}</span>
+            <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted }}>{fmtDate(subtema.timestamp)}</span>
             <span style={{ color: C.textDim, fontSize: 10 }}>·</span>
-            <span style={{ fontFamily: font, fontSize: 10, color: C.green }}>{fmtTime(subtema.timestamp)}</span>
+            <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted }}>{fmtTime(subtema.timestamp)}</span>
             {subtema.updates?.length > 0 && (
               <>
                 <span style={{ color: C.textDim, fontSize: 10 }}>·</span>
@@ -1415,7 +1415,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             </div>
             <div>
               <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{subtema.author || "Alex H."}</span>
-              <div style={{ fontFamily: font, fontSize: 11, color: C.green }}>
+              <div style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>
                 {fmtDate(subtema.timestamp)} · {fmtTime(subtema.timestamp)}
               </div>
             </div>
@@ -1613,7 +1613,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                       <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
                       <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
                     </div>
-                    <span style={{ fontFamily: font, fontSize: 11, color: C.green }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
+                    <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
                   </div>
                   <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
                 </div>
