@@ -5,6 +5,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
+import { useImageViewer, ExpandImageButton } from "./components/GlobalImageViewer.jsx";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
          MoreHorizontal, X, FileText, Megaphone, Zap, Plus, Mic, Image, Send, ChevronLeft } from "lucide-react";
 
@@ -127,10 +128,36 @@ function PostCard({ post, onProfileClick }) {
   const [comment, setComment] = useState("");
   const [comments, setComments] = useState([]);
   const lastTap = useRef(0);
+  const tapTimer = useRef(null);
+  const { openImage, ViewerPortal } = useImageViewer();
 
   const handleLike = () => { setLiked(v => !v); setLikes(n => liked ? n - 1 : n + 1); };
-  const handleDbl  = () => { const now = Date.now(); if (now - lastTap.current < 350) handleLike(); lastTap.current = now; };
+
+  // Tap disambiguation: a single tap opens the fullscreen viewer; two taps
+  // within 350ms (Instagram's own double-tap window) trigger like instead,
+  // exactly as before. The single-tap action is delayed just long enough
+  // (250ms) to give the second tap a chance to arrive and cancel it.
+  const DOUBLE_TAP_WINDOW = 350;
+  const SINGLE_TAP_DELAY  = 250;
+  const handleImageTap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_WINDOW) {
+      // Second tap arrived in time — cancel the pending single-tap viewer open
+      if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
+      handleLike();
+    } else {
+      // First tap — wait to see if a second one follows before opening the viewer
+      tapTimer.current = setTimeout(() => {
+        openImage(post.image);
+        tapTimer.current = null;
+      }, SINGLE_TAP_DELAY);
+    }
+    lastTap.current = now;
+  };
   const submitCmt  = () => { if (!comment.trim()) return; setComments(c => [...c, { id: Date.now(), author: "You", text: comment.trim() }]); setComment(""); };
+
+  // Clear any pending single-tap timer if the card unmounts mid-window
+  useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current); }, []);
 
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
@@ -149,8 +176,9 @@ function PostCard({ post, onProfileClick }) {
         </div>
         <button style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted }}><MoreHorizontal size={18} /></button>
       </div>
-      <div style={{ width: "100%", aspectRatio: "1/1", overflow: "hidden", background: C.surface }} onClick={handleDbl}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", overflow: "hidden", background: C.surface }} onClick={handleImageTap}>
         <img src={post.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+        <ExpandImageButton onClick={() => openImage(post.image)} />
       </div>
       <div style={{ padding: "10px 14px 6px" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
@@ -186,6 +214,7 @@ function PostCard({ post, onProfileClick }) {
         </AnimatePresence>
         <p style={{ margin: "6px 0 0", fontFamily: font, fontSize: 10, color: C.textMuted }}>{post.time} ago</p>
       </div>
+      <ViewerPortal />
     </motion.div>
   );
 }
