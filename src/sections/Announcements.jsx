@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { InstagramStoryCreator, NewDiffusionSheet } from "../components/Sheets.jsx";
+import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import {
   ChevronLeft, Plus, X, Heart, MessageCircle, Share2, Bookmark,
   Pin, MoreHorizontal, Trash2, Check, Image, Video, Mic, Square,
@@ -579,11 +580,13 @@ function PollPost({ post, onVote }) {
 function RevealPost({ post }) {
   const countdown = useCountdown(post.revealAt);
   const revealed = countdown.done || post.revealed;
+  const { openImage, ViewerPortal } = useImageViewer();
 
   return (
-    <div style={{ position: "relative", marginTop: 12, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.border}` }}>
+    <div style={{ position: "relative", marginTop: 12, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.border}`, cursor: revealed ? "pointer" : "default" }}
+      onClick={() => revealed && openImage(post.media[0].url)}>
       <img src={post.media[0].url} alt="" style={{ width: "100%", display: "block", filter: revealed ? "none" : "blur(18px)", transition: "filter 0.8s ease", aspectRatio: "16/9", objectFit: "cover" }} />
-
+      {revealed && <ExpandImageButton onClick={() => openImage(post.media[0].url)} />}
       {!revealed && (
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}>
           <EyeOff size={24} color="rgba(255,255,255,0.7)" strokeWidth={1.8} style={{ marginBottom: 10 }} />
@@ -615,6 +618,7 @@ function RevealPost({ post }) {
           <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: "#000" }}>Revealed</span>
         </div>
       )}
+      <ViewerPortal />
     </div>
   );
 }
@@ -890,6 +894,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isExpired = post.status === "caducado";
+  const { openImage, ViewerPortal } = useImageViewer();
 
   const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
 
@@ -974,8 +979,10 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 
           {/* Standard image */}
           {post.type === "standard" && post.media?.length > 0 && (
-            <div style={{ marginTop: 12, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ position: "relative", marginTop: 12, borderRadius: 14, overflow: "hidden", cursor: "pointer" }}
+              onClick={() => openImage(post.media[0].url)}>
               <img src={post.media[0].url} alt="" style={{ width: "100%", display: "block", maxHeight: 320, objectFit: "cover" }} />
+              <ExpandImageButton onClick={() => openImage(post.media[0].url)} />
             </div>
           )}
 
@@ -1009,6 +1016,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
           </motion.button>
         </div>
       </motion.article>
+      <ViewerPortal />
     </>
   );
 }

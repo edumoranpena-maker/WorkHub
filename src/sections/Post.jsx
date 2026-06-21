@@ -36,6 +36,7 @@ import {
   fetchThreadComments,
 } from "../lib/recapsApi.js";
 import { uploadFile, storagePath } from "../lib/supabase.js";
+import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -837,6 +838,7 @@ function AudioPlayer({ audio, accentColor }) {
 function UpdateBubble({ update, index }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
+  const { openImage, ViewerPortal } = useImageViewer();
 
   const toggleLike = async () => {
     const next = !liked;
@@ -857,19 +859,11 @@ function UpdateBubble({ update, index }) {
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{update.content}</p>
-        {(() => {
-          // ── LOG 7: what UpdateBubble sees ──────────────────────────────────
-          console.log(`[UpdateBubble id=${update.id}] update.media:`, update.media);
-          if (update.media?.length > 0) {
-            console.log(`[UpdateBubble] will render img src:`, update.media[0].thumb || update.media[0].url);
-          } else {
-            console.log(`[UpdateBubble] update.media empty or missing — no image rendered`);
-          }
-          return null;
-        })()}
         {update.media?.length > 0 && (
-          <div style={{ marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", width: "100%" }}>
+          <div style={{ position: "relative", marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", width: "100%", cursor: "pointer" }}
+            onClick={() => openImage(update.media[0].url)}>
             <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <ExpandImageButton onClick={() => openImage(update.media[0].url)} />
           </div>
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
@@ -882,6 +876,7 @@ function UpdateBubble({ update, index }) {
           </motion.button>
         </div>
       </div>
+      <ViewerPortal />
     </motion.div>
   );
 }
@@ -1112,6 +1107,7 @@ function ComposerSheet({ mode, onSubmit, onClose }) {
   const [pendingAudio, setPendingAudio]     = useState(null);
   const [submitting, setSubmitting]         = useState(false);
   const [expandedLink, setExpandedLink]     = useState(null);
+  const { openImage, ViewerPortal } = useImageViewer();
   const imageRef  = useRef(null);
   const videoRef  = useRef(null);
   const timerRef  = useRef(null);
@@ -1291,6 +1287,7 @@ function ComposerSheet({ mode, onSubmit, onClose }) {
                     {m.type === "image"
                       ? <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       : <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                    {m.type === "image" && <ExpandImageButton onClick={() => openImage(m.url)} size={20} />}
                     <button onClick={() => removeMedia(i)}
                       style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                       <X size={11} />
@@ -1336,6 +1333,7 @@ function ComposerSheet({ mode, onSubmit, onClose }) {
 
       {/* Link expand modal */}
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ViewerPortal />
     </>
   );
 }
@@ -1382,6 +1380,7 @@ function SubtemaCard({ subtema, onClick }) {
 function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer }) {
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
+  const { openImage, ViewerPortal } = useImageViewer();
 
   const handleNewUpdate = async ({ content, audio, media, links }) => {
     const tempId = `u_temp_${Date.now()}`;
@@ -1428,10 +1427,14 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           {subtema.media?.length > 0 && (
             <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
               {subtema.media.map((m, i) => (
-                <div key={i} style={{ flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 140, aspectRatio: "4/3" }}>
+                <div key={i} style={{ position: "relative", flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 140, aspectRatio: "4/3", cursor: m.type === "video" ? "default" : "pointer" }}
+                  onClick={() => m.type !== "video" && openImage(m.url)}>
                   {m.type === "video"
                     ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                    : <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />}
+                    : <>
+                        <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                        <ExpandImageButton onClick={() => openImage(m.url)} size={22} />
+                      </>}
                 </div>
               ))}
             </div>
@@ -1478,6 +1481,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
       </AnimatePresence>
 
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ViewerPortal />
     </div>
   );
 }
@@ -1491,6 +1495,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   const [openSubtema, setOpenSubtema] = useState(null);
   const [subtemaDirection, setSubtemaDirection] = useState(1);
   const [expandedLink, setExpandedLink] = useState(null);
+  const { openImage, ViewerPortal } = useImageViewer();
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1633,10 +1638,14 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                 {thread.media?.length > 0 && (
                   <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12 }}>
                     {thread.media.map((m, i) => (
-                      <div key={i} style={{ flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 160, aspectRatio: "16/10" }}>
+                      <div key={i} style={{ position: "relative", flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 160, aspectRatio: "16/10", cursor: m.type === "video" ? "default" : "pointer" }}
+                        onClick={() => m.type !== "video" && openImage(m.url)}>
                         {m.type === "video"
                           ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                          : <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />}
+                          : <>
+                              <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                              <ExpandImageButton onClick={() => openImage(m.url)} />
+                            </>}
                       </div>
                     ))}
                   </div>
@@ -1734,6 +1743,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
       </AnimatePresence>
 
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ViewerPortal />
     </div>
   );
 }
