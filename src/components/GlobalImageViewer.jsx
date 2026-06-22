@@ -29,9 +29,21 @@ import { X } from "lucide-react";
  * always escapes any ancestor's transform/will-change stacking context,
  * regardless of which component opened it (same fix pattern already used
  * for GreenFAB, NewDiffusionSheet and InstagramStoryCreator).
+ *
+ * Touch events are stopped at this level to prevent them from bubbling up
+ * through React's synthetic event tree to App.jsx's swipe-navigation handlers.
+ * React uses event delegation at the root, so even though the portal renders
+ * inside document.body (outside the scroll container's DOM node), touch events
+ * still bubble up through the React component tree and would otherwise trigger
+ * section changes while the user pans or zooms the image.
  */
 function GlobalImageViewer({ src, onClose }) {
   if (!src) return null;
+
+  // Absorb all touch events so they never reach App's swipe-navigation handlers.
+  // onTouchStart/Move/End cover the section-change swipe.
+  // onPointerDown/Move/Up cover pointer-based gestures (desktop stylus, etc.).
+  const blockSwipe = (e) => e.stopPropagation();
 
   return createPortal(
     <AnimatePresence>
@@ -39,10 +51,17 @@ function GlobalImageViewer({ src, onClose }) {
         key="global-image-viewer-backdrop"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
+        onTouchStart={blockSwipe}
+        onTouchMove={blockSwipe}
+        onTouchEnd={blockSwipe}
+        onPointerDown={blockSwipe}
+        onPointerMove={blockSwipe}
+        onPointerUp={blockSwipe}
         style={{
           position: "fixed", inset: 0, zIndex: 3000,
           background: "rgba(0,0,0,0.92)", backdropFilter: "blur(8px)",
           display: "flex", alignItems: "center", justifyContent: "center",
+          touchAction: "none",  // tell the browser: no default pan/zoom on the backdrop
         }}
       >
         <motion.img
@@ -54,11 +73,16 @@ function GlobalImageViewer({ src, onClose }) {
           exit={{ scale: 0.92, opacity: 0 }}
           transition={{ type: "spring", stiffness: 380, damping: 32 }}
           onClick={e => e.stopPropagation()}
+          onTouchStart={blockSwipe}
+          onTouchMove={blockSwipe}
+          onTouchEnd={blockSwipe}
           style={{
             maxWidth: "94vw", maxHeight: "90vh",
             width: "auto", height: "auto",
             objectFit: "contain", borderRadius: 8,
             boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+            touchAction: "pinch-zoom",  // allow native pinch-zoom on the image itself
+            userSelect: "none",
           }}
         />
         <button
