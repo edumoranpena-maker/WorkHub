@@ -129,8 +129,31 @@ function PostCard({ post, onProfileClick }) {
   const [comment, setComment] = useState("");
   const [comments, setComments] = useState([]);
   const { openImage, ViewerPortal } = useImageViewer();
+  const lastTap  = useRef(0);
+  const tapTimer = useRef(null);
 
   const handleLike = () => { setLiked(v => !v); setLikes(n => liked ? n - 1 : n + 1); };
+
+  // Double-tap disambiguation forwarded through MediaCarousel's onOpenImage.
+  // MediaCarousel calls onOpenImage(url) on every image tap — we intercept that
+  // call to detect double-taps (≤350ms) and route to like, or wait 250ms and
+  // open fullscreen if no second tap follows.
+  const DOUBLE_TAP_MS   = 350;
+  const SINGLE_TAP_WAIT = 250;
+  const handleImageTap = (url) => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
+      handleLike();
+    } else {
+      tapTimer.current = setTimeout(() => { openImage(url); tapTimer.current = null; }, SINGLE_TAP_WAIT);
+    }
+    lastTap.current = now;
+  };
+
+  // Cancel pending single-tap timer if card unmounts mid-window
+  useEffect(() => () => { if (tapTimer.current) clearTimeout(tapTimer.current); }, []);
+
   const submitCmt  = () => { if (!comment.trim()) return; setComments(c => [...c, { id: Date.now(), author: "You", text: comment.trim() }]); setComment(""); };
 
   return (
@@ -152,10 +175,7 @@ function PostCard({ post, onProfileClick }) {
       </div>
       <MediaCarousel
         items={[{ type: "image", url: post.image }]}
-        onOpenImage={(url) => {
-          // Single tap via carousel click → open fullscreen
-          openImage(url);
-        }}
+        onOpenImage={handleImageTap}
         accentColor={C.accent}
       />
       <div style={{ padding: "10px 14px 6px" }}>
