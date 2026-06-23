@@ -37,6 +37,7 @@ import {
 } from "../lib/recapsApi.js";
 import { uploadFile, storagePath } from "../lib/supabase.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
+import MediaCarousel from "../components/MediaCarousel.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -860,10 +861,12 @@ function UpdateBubble({ update, index }) {
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{update.content}</p>
         {update.media?.length > 0 && (
-          <div style={{ position: "relative", marginTop: 10, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", width: "100%", cursor: "pointer" }}
-            onClick={() => openImage(update.media[0].url)}>
-            <img src={update.media[0].thumb || update.media[0].url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            <ExpandImageButton onClick={() => openImage(update.media[0].url)} />
+          <div style={{ marginTop: 10 }}>
+            <MediaCarousel
+              items={update.media}
+              onOpenImage={openImage}
+              accentColor={C.teal}
+            />
           </div>
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
@@ -1425,18 +1428,12 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           )}
 
           {subtema.media?.length > 0 && (
-            <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
-              {subtema.media.map((m, i) => (
-                <div key={i} style={{ position: "relative", flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 140, aspectRatio: "4/3", cursor: m.type === "video" ? "default" : "pointer" }}
-                  onClick={() => m.type !== "video" && openImage(m.url)}>
-                  {m.type === "video"
-                    ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                    : <>
-                        <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                        <ExpandImageButton onClick={() => openImage(m.url)} size={22} />
-                      </>}
-                </div>
-              ))}
+            <div style={{ marginBottom: 12 }}>
+              <MediaCarousel
+                items={subtema.media}
+                onOpenImage={openImage}
+                accentColor={C.teal}
+              />
             </div>
           )}
 
@@ -1636,18 +1633,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                 )}
 
                 {thread.media?.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12 }}>
-                    {thread.media.map((m, i) => (
-                      <div key={i} style={{ position: "relative", flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 160, aspectRatio: "16/10", cursor: m.type === "video" ? "default" : "pointer" }}
-                        onClick={() => m.type !== "video" && openImage(m.url)}>
-                        {m.type === "video"
-                          ? <video src={m.url} controls style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                          : <>
-                              <img src={m.thumb || m.url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                              <ExpandImageButton onClick={() => openImage(m.url)} />
-                            </>}
-                      </div>
-                    ))}
+                  <div style={{ marginTop: 12 }}>
+                    <MediaCarousel
+                      items={thread.media}
+                      onOpenImage={openImage}
+                      accentColor={C.teal}
+                    />
                   </div>
                 )}
 

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { InstagramStoryCreator, NewDiffusionSheet } from "../components/Sheets.jsx";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
+import MediaCarousel from "../components/MediaCarousel.jsx";
 import {
   ChevronLeft, Plus, X, Heart, MessageCircle, Share2, Bookmark,
   Pin, MoreHorizontal, Trash2, Check, Image, Video, Mic, Square,
@@ -583,37 +584,47 @@ function RevealPost({ post }) {
   const { openImage, ViewerPortal } = useImageViewer();
 
   return (
-    <div style={{ position: "relative", marginTop: 12, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.border}`, cursor: revealed ? "pointer" : "default" }}
-      onClick={() => revealed && openImage(post.media[0].url)}>
-      <img src={post.media[0].url} alt="" style={{ width: "100%", display: "block", filter: revealed ? "none" : "blur(18px)", transition: "filter 0.8s ease", aspectRatio: "16/9", objectFit: "cover" }} />
-      {revealed && <ExpandImageButton onClick={() => openImage(post.media[0].url)} />}
-      {!revealed && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}>
-          <EyeOff size={24} color="rgba(255,255,255,0.7)" strokeWidth={1.8} style={{ marginBottom: 10 }} />
-          <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>Reveals in</p>
-          <div style={{ display: "flex", gap: 8 }}>
-            {countdown.d > 0 && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${A}44`, borderRadius: 10, padding: "8px 12px", minWidth: 46 }}>
-                  <p style={{ margin: 0, fontFamily: font, fontSize: 22, fontWeight: 800, color: A }}>{countdown.d}</p>
+    <div style={{ marginTop: 12, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.border}` }}>
+      {revealed ? (
+        /* ── Revealed: show full carousel with fullscreen support ── */
+        <MediaCarousel
+          items={post.media}
+          onOpenImage={openImage}
+          accentColor={A}
+          square={false}
+        />
+      ) : (
+        /* ── Not yet revealed: single blurred image + countdown overlay ── */
+        <div style={{ position: "relative", cursor: "default" }}>
+          <img src={post.media[0].url} alt=""
+            style={{ width: "100%", display: "block", filter: "blur(18px)", transition: "filter 0.8s ease", aspectRatio: "16/9", objectFit: "cover" }} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}>
+            <EyeOff size={24} color="rgba(255,255,255,0.7)" strokeWidth={1.8} style={{ marginBottom: 10 }} />
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>Reveals in</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {countdown.d > 0 && (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${A}44`, borderRadius: 10, padding: "8px 12px", minWidth: 46 }}>
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 22, fontWeight: 800, color: A }}>{countdown.d}</p>
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>DAYS</p>
                 </div>
-                <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>DAYS</p>
-              </div>
-            )}
-            {[{ v: countdown.h, l: "HRS" }, { v: countdown.m, l: "MIN" }, { v: countdown.s, l: "SEC" }].map(({ v, l }) => (
-              <div key={l} style={{ textAlign: "center" }}>
-                <div style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${A}44`, borderRadius: 10, padding: "8px 12px", minWidth: 46 }}>
-                  <p style={{ margin: 0, fontFamily: font, fontSize: 22, fontWeight: 800, color: A }}>{String(v).padStart(2, "0")}</p>
+              )}
+              {[{ v: countdown.h, l: "HRS" }, { v: countdown.m, l: "MIN" }, { v: countdown.s, l: "SEC" }].map(({ v, l }) => (
+                <div key={l} style={{ textAlign: "center" }}>
+                  <div style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${A}44`, borderRadius: 10, padding: "8px 12px", minWidth: 46 }}>
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 22, fontWeight: 800, color: A }}>{String(v).padStart(2, "0")}</p>
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{l}</p>
                 </div>
-                <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{l}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {revealed && (
-        <div style={{ position: "absolute", top: 10, right: 10, display: "flex", alignItems: "center", gap: 5, background: `${A}dd`, borderRadius: 99, padding: "4px 10px" }}>
+        <div style={{ position: "absolute", top: 10, right: 10, display: "flex", alignItems: "center", gap: 5, background: `${A}dd`, borderRadius: 99, padding: "4px 10px", pointerEvents: "none" }}>
           <Eye size={12} color="#000" strokeWidth={2} />
           <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: "#000" }}>Revealed</span>
         </div>
@@ -977,12 +988,14 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
           {post.title && <h3 style={{ margin: "0 0 6px", fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{post.title}</h3>}
           {post.content && <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.6, wordBreak: "break-word", overflowWrap: "break-word" }}>{post.content}</p>}
 
-          {/* Standard image */}
+          {/* Standard image(s) */}
           {post.type === "standard" && post.media?.length > 0 && (
-            <div style={{ position: "relative", marginTop: 12, borderRadius: 14, overflow: "hidden", cursor: "pointer" }}
-              onClick={() => openImage(post.media[0].url)}>
-              <img src={post.media[0].url} alt="" style={{ width: "100%", display: "block", maxHeight: 320, objectFit: "cover" }} />
-              <ExpandImageButton onClick={() => openImage(post.media[0].url)} />
+            <div style={{ marginTop: 12 }}>
+              <MediaCarousel
+                items={post.media}
+                onOpenImage={openImage}
+                accentColor="#f59e0b"
+              />
             </div>
           )}
 
