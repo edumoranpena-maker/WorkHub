@@ -866,6 +866,7 @@ function UpdateBubble({ update, index }) {
               items={update.media}
               onOpenImage={openImage}
               accentColor={C.teal}
+              square={false}
             />
           </div>
         )}
