@@ -581,7 +581,7 @@ function PollPost({ post, onVote }) {
 function RevealPost({ post }) {
   const countdown = useCountdown(post.revealAt);
   const revealed = countdown.done || post.revealed;
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, ViewerPortal } = useImageViewer();
 
   return (
     <div style={{ marginTop: 12, borderRadius: 16, overflow: "hidden", border: `1px solid ${C.border}` }}>
@@ -589,7 +589,7 @@ function RevealPost({ post }) {
         /* ── Revealed: show full carousel with fullscreen support ── */
         <MediaCarousel
           items={post.media}
-          onOpenImage={openImage}
+          onOpenGallery={openGallery}
           accentColor={A}
           square={false}
         />
@@ -905,7 +905,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isExpired = post.status === "caducado";
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, ViewerPortal } = useImageViewer();
 
   const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
 
@@ -993,7 +993,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
             <div style={{ marginTop: 12 }}>
               <MediaCarousel
                 items={post.media}
-                onOpenImage={openImage}
+                onOpenGallery={openGallery}
                 accentColor="#f59e0b"
               />
             </div>

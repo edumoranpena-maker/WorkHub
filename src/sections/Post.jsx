@@ -839,7 +839,7 @@ function AudioPlayer({ audio, accentColor }) {
 function UpdateBubble({ update, index }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, openImage, ViewerPortal } = useImageViewer();
 
   const toggleLike = async () => {
     const next = !liked;
@@ -864,7 +864,7 @@ function UpdateBubble({ update, index }) {
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
               items={update.media}
-              onOpenImage={openImage}
+              onOpenGallery={openGallery}
               accentColor={C.teal}
               square={false}
             />
@@ -1384,7 +1384,7 @@ function SubtemaCard({ subtema, onClick }) {
 function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer }) {
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, openImage, ViewerPortal } = useImageViewer();
 
   const handleNewUpdate = async ({ content, audio, media, links }) => {
     const tempId = `u_temp_${Date.now()}`;
@@ -1432,7 +1432,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <div style={{ marginBottom: 12 }}>
               <MediaCarousel
                 items={subtema.media}
-                onOpenImage={openImage}
+                onOpenGallery={openGallery}
                 accentColor={C.teal}
               />
             </div>
@@ -1493,7 +1493,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   const [openSubtema, setOpenSubtema] = useState(null);
   const [subtemaDirection, setSubtemaDirection] = useState(1);
   const [expandedLink, setExpandedLink] = useState(null);
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, openImage, ViewerPortal } = useImageViewer();
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1637,7 +1637,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                   <div style={{ marginTop: 12 }}>
                     <MediaCarousel
                       items={thread.media}
-                      onOpenImage={openImage}
+                      onOpenGallery={openGallery}
                       accentColor={C.teal}
                     />
                   </div>
