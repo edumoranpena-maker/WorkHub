@@ -128,25 +128,27 @@ function PostCard({ post, onProfileClick }) {
   const [showCmts, setShowCmts] = useState(false);
   const [comment, setComment] = useState("");
   const [comments, setComments] = useState([]);
-  const { openImage, ViewerPortal } = useImageViewer();
+  const { openGallery, ViewerPortal } = useImageViewer();
   const lastTap  = useRef(0);
   const tapTimer = useRef(null);
 
   const handleLike = () => { setLiked(v => !v); setLikes(n => liked ? n - 1 : n + 1); };
 
-  // Double-tap disambiguation forwarded through MediaCarousel's onOpenImage.
-  // MediaCarousel calls onOpenImage(url) on every image tap — we intercept that
-  // call to detect double-taps (≤350ms) and route to like, or wait 250ms and
-  // open fullscreen if no second tap follows.
+  // Double-tap disambiguation via MediaCarousel's onOpenGallery callback.
+  // MediaCarousel now calls onOpenGallery({ items, startIndex }) on every image tap.
+  // ≤350ms between taps → like. Otherwise wait 250ms → open fullscreen gallery.
   const DOUBLE_TAP_MS   = 350;
   const SINGLE_TAP_WAIT = 250;
-  const handleImageTap = (url) => {
+  const handleImageTap = ({ items, startIndex }) => {
     const now = Date.now();
     if (now - lastTap.current < DOUBLE_TAP_MS) {
       if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
       handleLike();
     } else {
-      tapTimer.current = setTimeout(() => { openImage(url); tapTimer.current = null; }, SINGLE_TAP_WAIT);
+      tapTimer.current = setTimeout(() => {
+        openGallery({ items, startIndex });
+        tapTimer.current = null;
+      }, SINGLE_TAP_WAIT);
     }
     lastTap.current = now;
   };
@@ -175,7 +177,7 @@ function PostCard({ post, onProfileClick }) {
       </div>
       <MediaCarousel
         items={[{ type: "image", url: post.image }]}
-        onOpenImage={handleImageTap}
+        onOpenGallery={handleImageTap}
         accentColor={C.accent}
       />
       <div style={{ padding: "10px 14px 6px" }}>
