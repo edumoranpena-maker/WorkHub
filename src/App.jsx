@@ -3,10 +3,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
-  Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil,
+  Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil, CheckSquare,
 } from "lucide-react";
 import HomeFeed      from "./HomeFeed.jsx";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
+import ChecklistBlock   from "./components/ChecklistBlock.jsx";
+import ChecklistEditor  from "./components/ChecklistEditor.jsx";
+import BlockSelector    from "./components/BlockSelector.jsx";
 import Post          from "./sections/Post";
 import Announcements, { StoryViewer } from "./sections/Announcements";
 
@@ -912,38 +915,134 @@ function RoomsContent() {
 }
 
 // ─── Custom Section ──────────────────────────────────────────────────────────
-function CustomSectionContent({ section }) {
+function CustomSectionContent({ section, checklists, onChecklistsChange }) {
   const [posts, setPosts] = useState([]);
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [showSelector, setShowSelector] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingCl, setEditingCl] = useState(null);
+
   const submit = () => {
     if (!text.trim()) return;
     setPosts(p => [{ id: Date.now(), text: text.trim(), author: "You", time: "just now" }, ...p]);
     setText("");
   };
-  const color = section.accentColor || "#7c4dff";
+
+  const color = section.accentColor || C.accent;
+  const sectionChecklists = (checklists || []).filter(cl => cl.sectionId === section.id);
+
+  const handleBlockSelect = (typeId) => {
+    setShowSelector(false);
+    if (typeId === "checklist") { setEditingCl(null); setShowEditor(true); }
+  };
+
+  const handleSaveChecklist = (cl) => {
+    const withSection = { ...cl, sectionId: section.id };
+    if (editingCl) {
+      onChecklistsChange?.(checklists.map(c => c.id === cl.id ? withSection : c));
+    } else {
+      onChecklistsChange?.([...(checklists || []), withSection]);
+    }
+    setShowEditor(false);
+    setEditingCl(null);
+  };
+
+  const handleDeleteChecklist = (id) => {
+    onChecklistsChange?.((checklists || []).filter(c => c.id !== id));
+  };
+
+  const handleChecklistChange = (updated) => {
+    onChecklistsChange?.((checklists || []).map(c => c.id === updated.id ? updated : c));
+  };
+
+  const isEmpty = posts.length === 0 && sectionChecklists.length === 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {posts.length === 0 && (
-          <div style={{ textAlign: "center", padding: "48px 20px" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 16, background: `${color}18`, border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-              <section.icon size={22} color={color} />
-            </div>
-            <p style={{ fontFamily: font, fontSize: 14, color: C.textMuted }}>No posts yet in {section.label}</p>
+      {/* Toolbar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, flex: 1 }}>{section.label}</span>
+        {editMode ? (
+          <>
+            <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowSelector(true)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.teal}40`, background: `${C.teal}0e`, cursor: "pointer" }}>
+              <Plus size={14} color={C.teal} strokeWidth={2.5} />
+              <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.teal }}>Añadir bloque</span>
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.92 }} onClick={() => setEditMode(false)}
+              style={{ padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.textMuted }}>
+              Done
+            </motion.button>
+          </>
+        ) : (
+          <div style={{ display: "flex", gap: 6 }}>
+            <motion.button whileTap={{ scale: 0.92 }} onClick={() => setEditMode(true)}
+              style={{ padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.card, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.textMuted }}>
+              Edit Panel
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.92 }}
+              style={{ padding: "7px 14px", borderRadius: 10, border: `1px solid ${C.accent}30`, background: `${C.accent}0e`, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>
+              AI Designer
+            </motion.button>
           </div>
         )}
-        {posts.map((p, i) => (
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {isEmpty && !editMode && (
+          <div style={{ textAlign: "center", padding: "56px 24px" }}>
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: `${color}18`, border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <section.icon size={24} color={color} />
+            </div>
+            <p style={{ fontFamily: font, fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 8px" }}>
+              ¿Qué tienes planeado hacer aquí?
+            </p>
+            <p style={{ fontFamily: font, fontSize: 13, color: C.textMuted, margin: "0 0 20px", lineHeight: 1.5 }}>
+              Usa el panel de edición para añadir contenido a esta sección.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <motion.button whileTap={{ scale: 0.92 }} onClick={() => setEditMode(true)}
+                style={{ padding: "9px 20px", borderRadius: 12, border: `1px solid ${C.border}`, background: C.card, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>
+                Edit Panel
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.92 }}
+                style={{ padding: "9px 20px", borderRadius: 12, border: `1px solid ${C.accent}35`, background: `${C.accent}12`, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.accentLight }}>
+                AI Designer
+              </motion.button>
+            </div>
+          </div>
+        )}
+
+        {sectionChecklists.map(cl => (
+          <div key={cl.id}>
+            <ChecklistBlock checklist={cl} onChange={handleChecklistChange} accentColor={C.teal} />
+            {editMode && (
+              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                <button onClick={() => { setEditingCl(cl); setShowEditor(true); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, fontWeight: 700, padding: "2px 0" }}>Edit</button>
+                <button onClick={() => handleDeleteChecklist(cl.id)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#ff4f6a", fontFamily: font, fontSize: 11, fontWeight: 700, padding: "2px 0" }}>Delete</button>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {posts.map(p => (
           <motion.div key={p.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{p.author}</span>
-              <span style={{ fontFamily: font, fontSize: 11, color: C.textDim }}>{p.time}</span>
+              <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{p.time}</span>
             </div>
             <p style={{ margin: 0, fontFamily: font, fontSize: 14, color: C.text, lineHeight: 1.55 }}>{p.text}</p>
           </motion.div>
         ))}
       </div>
+
+      {/* Composer */}
       <div style={{ padding: "10px 16px 20px", borderTop: `1px solid ${C.border}`, background: `${C.surface}f4`, backdropFilter: "blur(16px)", flexShrink: 0 }}>
         <div style={{ background: C.card, border: `1.5px solid ${focused ? color + "55" : C.border}`, borderRadius: 14, padding: "0 4px 4px 14px", transition: "border-color 0.2s" }}>
           <textarea value={text} onChange={e => setText(e.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -958,6 +1057,12 @@ function CustomSectionContent({ section }) {
         </div>
       </div>
 
+      <AnimatePresence>
+        {showSelector && <BlockSelector onSelect={handleBlockSelect} onClose={() => setShowSelector(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showEditor && <ChecklistEditor initial={editingCl} onSave={handleSaveChecklist} onClose={() => { setShowEditor(false); setEditingCl(null); }} />}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1224,7 +1329,7 @@ function SettingsPanel({ onClose }) {
 // ─── Root Shell ───────────────────────────────────────────────────────────────
 
 // ─── NewPostSheet — Full Instagram-style post creation ────────────────────────
-function NewPostSheet({ onSubmit, onClose }) {
+function NewPostSheet({ onSubmit, onClose, checklists = [] }) {
   const [title,        setTitle]        = useState("");
   const [description,  setDescription]  = useState("");
   const [status,       setStatus]       = useState("active");
@@ -1239,6 +1344,7 @@ function NewPostSheet({ onSubmit, onClose }) {
   const [showCancel,   setShowCancel]   = useState(false);
   const [publishing,   setPublishing]   = useState(false);
   const [activeTab,    setActiveTab]    = useState("image");
+  const [attachedChecklist, setAttachedChecklist] = useState(null); // independent copy, decoupled from master
 
   const mediaRef   = useRef(null);
   const thumbRef   = useRef(null);
@@ -1317,7 +1423,7 @@ function NewPostSheet({ onSubmit, onClose }) {
     if (!canPublish || publishing) return;
     setPublishing(true);
     try {
-      await onSubmit({ title, description, status, asset, mediaFiles, thumbnail, links, audioBlob });
+      await onSubmit({ title, description, status, asset, mediaFiles, thumbnail, links, audioBlob, attachedChecklist });
     } catch (err) {
       console.error("[NewPostSheet] onSubmit threw:", err);
     } finally {
@@ -1483,6 +1589,50 @@ function NewPostSheet({ onSubmit, onClose }) {
           <ChevronRight size={16} color={C.textMuted} />
         </div>
 
+        {/* Checklist attachment — only shown if the user has at least one master checklist */}
+        {checklists.length > 0 && (
+          <div>
+            <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Añadir Checklist <span style={{ fontWeight: 400, textTransform: "none" }}>(optional)</span>
+            </p>
+            {attachedChecklist ? (
+              <div style={{ background: `${C.teal}08`, border: `1px solid ${C.teal}30`, borderRadius: 12, padding: "10px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <CheckSquare size={14} color={C.teal} strokeWidth={2} />
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{attachedChecklist.name}</span>
+                    <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{attachedChecklist.items.length} items</span>
+                  </div>
+                  <button onClick={() => setAttachedChecklist(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, padding: 2, display: "flex" }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {checklists.map(cl => (
+                  <button key={cl.id} onClick={() => {
+                    // Create an independent deep copy so this post's checklist
+                    // state never mutates the master checklist
+                    setAttachedChecklist({
+                      ...cl,
+                      id: `cl_copy_${Date.now()}`,
+                      items: cl.items.map(it => ({ ...it, checked: false })),
+                    });
+                  }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer", textAlign: "left", width: "100%" }}>
+                    <CheckSquare size={14} color={C.teal} strokeWidth={2} />
+                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: C.text, flex: 1 }}>{cl.name}</span>
+                    <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{cl.items.length} items</span>
+                    <ChevronRight size={14} color={C.textMuted} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Publish */}
         <motion.button whileTap={{ scale: 0.95 }} onClick={publish} disabled={!canPublish || publishing}
           style={{ width: "100%", height: 52, borderRadius: 16, border: "none", cursor: canPublish ? "pointer" : "default", fontFamily: font, fontSize: 16, fontWeight: 800, background: canPublish ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canPublish ? "#fff" : C.textMuted, marginTop: 8 }}>
@@ -1604,6 +1754,7 @@ function App({ onGoHome, onOpenSettings }) {
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
   const [showAddSection,  setShowAddSection]  = useState(false);
+  const [checklists,      setChecklists]      = useState([]); // master checklist store
   const [fabOpen,           setFabOpen]           = useState(false);
   const [insideThread,      setInsideThread]      = useState(false);
 
@@ -1690,7 +1841,7 @@ function App({ onGoHome, onOpenSettings }) {
     if (activeSectionId === "metrics")       return <MetricsContent />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","metrics","rooms"].includes(activeSectionId));
-    if (customSec) return <CustomSectionContent section={customSec} />;
+    if (customSec) return <CustomSectionContent section={customSec} checklists={checklists} onChecklistsChange={setChecklists} />;
     return null;
   }
 
@@ -1819,7 +1970,8 @@ function App({ onGoHome, onOpenSettings }) {
       <AnimatePresence>
         {showFullPostSheet && (
           <NewPostSheet
-            onSubmit={async ({ title, description, status, mediaFiles, audioBlob }) => {
+            checklists={checklists}
+            onSubmit={async ({ title, description, status, mediaFiles, audioBlob, attachedChecklist }) => {
               const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
               const audio    = audioBlob ? { blob: audioBlob } : null;
               const saved = await createRecapThread({
@@ -1834,6 +1986,9 @@ function App({ onGoHome, onOpenSettings }) {
                 return;
               }
               console.info("[App] Post saved to Supabase:", saved.id);
+              // Attach the checklist copy client-side. Not persisted to Supabase
+              // in this first version — lives only in the feed state.
+              if (attachedChecklist) saved.checklist = attachedChecklist;
               if (onPostCreatedRef.current) { onPostCreatedRef.current(saved); }
               setShowFullPostSheet(false);
               navigateTo("recaps");
@@ -2155,7 +2310,8 @@ function App({ onGoHome, onOpenSettings }) {
       <AnimatePresence>
         {showFullPostSheet && (
           <NewPostSheet
-            onSubmit={async ({ title, description, status, mediaFiles, audioBlob }) => {
+            checklists={checklists}
+            onSubmit={async ({ title, description, status, mediaFiles, audioBlob, attachedChecklist }) => {
               // Map NewPostSheet data → createRecapThread params
               const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
               const audio    = audioBlob ? { blob: audioBlob } : null;
@@ -2176,6 +2332,10 @@ function App({ onGoHome, onOpenSettings }) {
               }
 
               console.info("[App] Post saved to Supabase:", saved.id);
+
+              // Attach the checklist copy client-side. Not persisted to Supabase
+              // in this first version — lives only in the feed state.
+              if (attachedChecklist) saved.checklist = attachedChecklist;
 
               // Prepend to feed if Post is currently mounted and registered its callback
               if (onPostCreatedRef.current) {
