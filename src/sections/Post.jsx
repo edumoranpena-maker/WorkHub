@@ -38,6 +38,7 @@ import {
 import { uploadFile, storagePath } from "../lib/supabase.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
+import ChecklistBlock from "../components/ChecklistBlock.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -1628,6 +1629,16 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                 )}
 
                 <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{thread.content}</p>
+
+                {thread.checklist && (
+                  <div style={{ marginTop: 12 }}>
+                    <ChecklistBlock
+                      checklist={thread.checklist}
+                      onChange={(updated) => setThread(t => ({ ...t, checklist: updated }))}
+                      accentColor={C.teal}
+                    />
+                  </div>
+                )}
 
                 {thread.hashtags?.length > 0 && (
                   <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
