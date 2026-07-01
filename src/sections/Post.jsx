@@ -63,7 +63,6 @@ const C = {
   green: "#1ed99a", greenDim: "rgba(30,217,154,0.12)",
   amber: "#f5a623", blue: "#4fa3ff", red: "#ff4f6a",
   teal: "#22d3a0", tealDim: "rgba(34,211,160,0.14)",
-  textDim: "#32324a",
 };
 const font = "'DM Sans', sans-serif";
 
