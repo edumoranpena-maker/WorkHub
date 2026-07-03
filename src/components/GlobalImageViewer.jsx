@@ -1,12 +1,15 @@
 /**
- * GlobalImageViewer.jsx  — v2
+ * GlobalImageViewer.jsx  — v3
  *
  * Fullscreen gallery viewer with:
- *  - Multi-item navigation (swipe horizontal / prev/next)
+ *  - Multi-item navigation (swipe/drag horizontal via Pointer Events — works
+ *    with touch AND mouse, so it's also testable on desktop) / prev/next
  *  - Pinch-to-zoom + pan on images (zoom > 1 locks horizontal nav)
+ *  - Renders image, video, link-preview and generic-file items — matches
+ *    whatever mix MediaCarousel passed in, in the original order
  *  - Temporary position indicator ("2 / 5") that fades in/out
  *  - Viewport zoom lock while open (prevents accidental UI zoom)
- *  - All touch events blocked from bubbling to App's swipe-navigation
+ *  - All swipe events blocked from bubbling to App's swipe-navigation
  *
  * API:
  *   const { openGallery, ViewerPortal } = useImageViewer();
@@ -24,7 +27,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { X } from "lucide-react";
+import { X, File as FileIcon, ExternalLink, Download } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SWIPE_MIN       = 50;   // px to count as a swipe between items
@@ -70,6 +73,58 @@ function PositionIndicator({ current, total, visible }) {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// ── Link pane — shown when the viewer swipes to a link-preview item ───────────
+function LinkPane({ item }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, maxWidth: "88vw" }}>
+      {(item.thumb || item.url) && (
+        <img
+          src={item.thumb || item.url}
+          alt=""
+          draggable={false}
+          style={{ maxWidth: "88vw", maxHeight: "62vh", width: "auto", height: "auto", objectFit: "contain", borderRadius: 12, boxShadow: "0 24px 80px rgba(0,0,0,0.6)", userSelect: "none" }}
+        />
+      )}
+      <div style={{ textAlign: "center", padding: "0 16px" }}>
+        <p style={{ margin: "0 0 12px", fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>{item.title || "Enlace"}</p>
+        <a
+          href={item.linkUrl || item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 20px", borderRadius: 99, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, textDecoration: "none" }}
+        >
+          <ExternalLink size={14} /> Abrir enlace
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── File pane — shown when the viewer swipes to a generic-file item ───────────
+function FilePane({ item }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, padding: "0 24px" }}>
+      <div style={{ width: 96, height: 96, borderRadius: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <FileIcon size={38} color="#fff" strokeWidth={1.4} />
+      </div>
+      <p style={{ margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 600, color: "#fff", maxWidth: "80vw", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {item.name || "Archivo"}
+      </p>
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        download={item.name || undefined}
+        onClick={e => e.stopPropagation()}
+        style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 20px", borderRadius: 99, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, textDecoration: "none" }}
+      >
+        <Download size={14} /> Abrir archivo
+      </a>
+    </div>
   );
 }
 
@@ -182,6 +237,8 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
   const [indicatorVisible, setIndicatorVisible] = useState(true);
   const indicatorTimer          = useRef(null);
   const touchRef                = useRef(null);
+  const mouseRef                = useRef(null);
+  const didDragRef              = useRef(false);
   const count                   = items.length;
   const current                 = items[idx] ?? items[0];
 
@@ -241,8 +298,50 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
     touchRef.current = null;
   };
 
-  // Backdrop click = close (only if not zoomed)
-  const handleBackdropClick = () => { if (zoomScale <= 1.05) onClose(); };
+  // Backdrop click = close (only if not zoomed, and not the tail end of a mouse-drag swipe)
+  const handleBackdropClick = () => {
+    if (didDragRef.current) { didDragRef.current = false; return; }
+    if (zoomScale <= 1.05) onClose();
+  };
+
+  // Mouse drag — same swipe-between-items behaviour as touch, so the viewer
+  // is also fully navigable with a mouse (desktop/preview testing).
+  // Real touch keeps using onTouchStart/Move/End above, untouched.
+  const onPointerDown = (e) => {
+    e.stopPropagation();
+    if (e.pointerType !== "mouse") return;
+    if (zoomScale > 1.05) return;
+    mouseRef.current = { x: e.clientX, y: e.clientY, locked: null };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e) => {
+    e.stopPropagation();
+    if (e.pointerType !== "mouse") return;
+    const s = mouseRef.current;
+    if (!s || zoomScale > 1.05) return;
+    const dx = Math.abs(e.clientX - s.x);
+    const dy = Math.abs(e.clientY - s.y);
+    if (!s.locked && (dx > LOCK_PX || dy > LOCK_PX)) {
+      s.locked = dx > dy * SWIPE_RATIO ? "h" : "v";
+    }
+  };
+
+  const onPointerUp = (e) => {
+    e.stopPropagation();
+    if (e.pointerType !== "mouse") return;
+    const s = mouseRef.current;
+    if (!s || zoomScale > 1.05) { mouseRef.current = null; return; }
+    if (s.locked) didDragRef.current = true; // suppress the native click that follows a real drag
+    if (s.locked === "h") {
+      const dx = e.clientX - s.x;
+      if (Math.abs(dx) >= SWIPE_MIN) {
+        dx < 0 ? goTo(idx + 1, 1) : goTo(idx - 1, -1);
+      }
+    }
+    mouseRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
 
   const variants = {
     enter:  (d) => ({ x: d >= 0 ? "100%" : "-100%", opacity: 0 }),
@@ -261,9 +360,10 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         style={{
           position: "fixed", inset: 0, zIndex: 3000,
           background: "rgba(0,0,0,0.95)", backdropFilter: "blur(8px)",
@@ -311,6 +411,10 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
                   touchAction: "none",
                 }}
               />
+            ) : current.type === "link" ? (
+              <LinkPane item={current} />
+            ) : current.type === "file" ? (
+              <FilePane item={current} />
             ) : (
               <ZoomableImage
                 src={current.url}

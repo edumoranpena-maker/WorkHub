@@ -14,7 +14,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, File as FileIcon } from "lucide-react";
 import { ExpandImageButton } from "./GlobalImageViewer.jsx";
 
 const SWIPE_MIN_PX  = 40;
@@ -105,32 +105,46 @@ export default function MediaCarousel({ items = [], onOpenGallery, accentColor =
             style={{ position: "absolute", inset: 0 }}
           >
             {current.type === "video" ? (
-              <video
-                src={current.url}
-                controls
-                playsInline
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              />
-            ) : current.type === "link" ? (
-              <a
-                href={current.linkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: "block", width: "100%", height: "100%", position: "relative" }}
-              >
-                <img
-                  src={current.thumb || current.url}
-                  alt=""
+              <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                <video
+                  src={current.url}
+                  controls
+                  playsInline
                   style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
-                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75), transparent 45%)" }} />
-                <div style={{ position: "absolute", left: 10, bottom: 10, right: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                  <ExternalLink size={12} color="#fff" style={{ flexShrink: 0 }} />
-                  <span style={{ color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {current.title || "Enlace"}
-                  </span>
-                </div>
-              </a>
+                {onOpenGallery && <ExpandImageButton onClick={openGallery} />}
+              </div>
+            ) : current.type === "file" ? (
+              <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#12121c", cursor: onOpenGallery ? "pointer" : "default" }}
+                onClick={openGallery}>
+                <FileIcon size={30} color="#8e8e8e" strokeWidth={1.5} />
+                <span style={{ color: "#c8c8d4", fontSize: 12, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", maxWidth: "80%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {current.name || "Archivo"}
+                </span>
+              </div>
+            ) : current.type === "link" ? (
+              <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                <a
+                  href={current.linkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: "block", width: "100%", height: "100%", position: "relative" }}
+                >
+                  <img
+                    src={current.thumb || current.url}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                  <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75), transparent 45%)" }} />
+                  <div style={{ position: "absolute", left: 10, bottom: 10, right: onOpenGallery ? 40 : 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <ExternalLink size={12} color="#fff" style={{ flexShrink: 0 }} />
+                    <span style={{ color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {current.title || "Enlace"}
+                    </span>
+                  </div>
+                </a>
+                {onOpenGallery && <ExpandImageButton onClick={openGallery} />}
+              </div>
             ) : (
               <>
                 <img
