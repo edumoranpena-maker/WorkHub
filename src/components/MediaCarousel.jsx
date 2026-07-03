@@ -14,6 +14,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ExternalLink } from "lucide-react";
 import { ExpandImageButton } from "./GlobalImageViewer.jsx";
 
 const SWIPE_MIN_PX  = 40;
@@ -110,6 +111,26 @@ export default function MediaCarousel({ items = [], onOpenGallery, accentColor =
                 playsInline
                 style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               />
+            ) : current.type === "link" ? (
+              <a
+                href={current.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "block", width: "100%", height: "100%", position: "relative" }}
+              >
+                <img
+                  src={current.thumb || current.url}
+                  alt=""
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75), transparent 45%)" }} />
+                <div style={{ position: "absolute", left: 10, bottom: 10, right: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <ExternalLink size={12} color="#fff" style={{ flexShrink: 0 }} />
+                  <span style={{ color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {current.title || "Enlace"}
+                  </span>
+                </div>
+              </a>
             ) : (
               <>
                 <img
