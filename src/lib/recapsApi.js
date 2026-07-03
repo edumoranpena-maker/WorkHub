@@ -373,8 +373,65 @@ export async function updateThreadStatus(threadId, status) {
   return !error;
 }
 
-/** Delete a thread and clean up storage. */
+/**
+ * Best-effort Storage cleanup. DB rows never end up orphaned regardless of
+ * whether this succeeds — thread_media, update_media, thread_updates,
+ * comments and likes all use ON DELETE CASCADE on thread_id/update_id in
+ * the schema, so the actual DB delete below is what guarantees no orphan
+ * rows. This only prevents orphan *files* left behind in Storage buckets.
+ *
+ * NOTE: audio (recap_threads.audio_url / thread_updates.audio_url) has no
+ * storage_path column in this schema, so it can't be targeted safely here
+ * without fragile URL parsing — audio files are left in Storage (unused but
+ * harmless) until a storage_path column is added for them too.
+ */
+async function removeStorageObjects(rows) {
+  const byBucket = {};
+  for (const r of rows) {
+    if (!r.storage_path) continue;
+    const bucket = r.type === "video" ? "videos" : "images";
+    (byBucket[bucket] ??= []).push(r.storage_path);
+  }
+  await Promise.all(
+    Object.entries(byBucket).map(([bucket, paths]) =>
+      supabase.storage.from(bucket).remove(paths).catch(e => console.error(`[recapsApi] storage cleanup (${bucket}):`, e.message))
+    )
+  );
+}
+
+async function purgeThreadStorage(threadId) {
+  try {
+    const { data: media } = await supabase.from("thread_media").select("type, storage_path").eq("thread_id", threadId);
+    const { data: updates } = await supabase.from("thread_updates").select("id").eq("thread_id", threadId);
+    const updateIds = (updates || []).map(u => u.id);
+    let updateMedia = [];
+    if (updateIds.length) {
+      const { data } = await supabase.from("update_media").select("type, storage_path").in("update_id", updateIds);
+      updateMedia = data || [];
+    }
+    await removeStorageObjects([...(media || []), ...updateMedia]);
+  } catch (err) {
+    console.error("[recapsApi] purgeThreadStorage (non-blocking):", err.message);
+  }
+}
+
+async function purgeUpdateStorage(updateId) {
+  try {
+    const { data } = await supabase.from("update_media").select("type, storage_path").eq("update_id", updateId);
+    await removeStorageObjects(data || []);
+  } catch (err) {
+    console.error("[recapsApi] purgeUpdateStorage (non-blocking):", err.message);
+  }
+}
+
+/**
+ * Delete a thread. thread_media / thread_updates / update_media / comments /
+ * likes all cascade automatically at the DB level (ON DELETE CASCADE on
+ * thread_id — see supabase-schema.sql), so this one delete is enough to
+ * leave zero orphan rows. Storage files are purged best-effort first.
+ */
 export async function deleteRecapThread(threadId) {
+  await purgeThreadStorage(threadId);
   const { error } = await supabase.from("recap_threads").delete().eq("id", threadId);
   if (error) console.error("[recapsApi] deleteRecapThread:", error.message);
   return !error;
@@ -405,9 +462,11 @@ export async function updateThreadUpdate(updateId, { content }) {
 }
 
 /**
- * Delete a thread update.
+ * Delete a thread update. update_media / likes cascade automatically at the
+ * DB level (ON DELETE CASCADE on update_id). Storage files purged best-effort first.
  */
 export async function deleteThreadUpdate(updateId) {
+  await purgeUpdateStorage(updateId);
   const { error } = await supabase.from("thread_updates").delete().eq("id", updateId);
   if (error) console.error("[recapsApi] deleteThreadUpdate:", error.message);
   return !error;
