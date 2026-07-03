@@ -22,6 +22,7 @@ import {
   Send, Mic, Square, Image, Video,
   Loader, FileText, Check, ChevronRight,
   Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
+  Pencil, Flag,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -33,12 +34,17 @@ import {
   updateThreadStatus,
   deleteRecapThread,
   updateRecapThread,
+  updateThreadUpdate,
   fetchThreadComments,
 } from "../lib/recapsApi.js";
-import { uploadFile, storagePath } from "../lib/supabase.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
+import PostComposer from "../components/PostComposer.jsx";
+import PostOptionsMenu from "../components/PostOptionsMenu.jsx";
+import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, mergeLinksIntoMedia } from "../lib/linkPreview.js";
+import { PrivacyIcon } from "../lib/visibility.js";
+import { usePublishQueue } from "../lib/publishQueue.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -642,10 +648,16 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, onClick }) {
+const PostCard = memo(function PostCard({ thread, onClick, onEdit, onShare, onReport }) {
   const [hov, setHov] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
   const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
+
+  const menuActions = [
+    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => onEdit?.(thread) },
+    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => onShare?.(thread) },
+    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => onReport?.(thread), danger: true },
+  ];
 
   return (
     <motion.div
@@ -691,10 +703,15 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
 
         {/* New updates badge */}
         {thread.newUpdates > 0 && (
-          <div style={{ position: "absolute", top: 8, right: 8, background: C.teal, borderRadius: 99, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, boxShadow: `0 0 10px ${C.teal}80` }}>
+          <div style={{ position: "absolute", top: 8, right: 40, background: C.teal, borderRadius: 99, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, boxShadow: `0 0 10px ${C.teal}80` }}>
             <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, color: "#000" }}>+{thread.newUpdates}</span>
           </div>
         )}
+
+        {/* 3-dot options — top-right corner */}
+        <div style={{ position: "absolute", top: 6, right: 6 }}>
+          <PostOptionsMenu actions={menuActions} size={26} />
+        </div>
 
         {/* Title overlay on image */}
         {thumb && (
@@ -708,23 +725,29 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
 
       {/* Card body */}
       <div style={{ padding: "10px 12px 12px" }}>
-        {/* Title (when no image) */}
-        {!thumb && (
-          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-            {thread.title || "Untitled"}
-          </p>
-        )}
-
-        {/* Status chip */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
-          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+        {/* Title + status, same line (image-less cards only — thumbnail cards show title over the image) */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+          {!thumb ? (
+            <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
+              {thread.title || "Untitled"}
+            </p>
+          ) : <div />}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}` }} />
+            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+          </div>
         </div>
 
-        {/* Footer: date */}
-        <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
-          {fmtDate(thread.timestamp)}
-        </p>
+        {/* Footer: date + privacy + edited */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
+            {fmtDate(thread.timestamp)}
+          </p>
+          <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
+          {thread.edited && (
+            <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -732,7 +755,7 @@ const PostCard = memo(function PostCard({ thread, onClick }) {
 
 // ─── PostFeed — stable grid, filters applied only on committed search + filter changes ──
 // searchQuery: committed on button press only. filters: { statuses, fromDate }
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread, onEditThread, onShareThread, onReportThread }) {
   const filtered = useMemo(() => {
     let list = [...threads];
 
@@ -783,7 +806,8 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenT
           <MonthDivider label={month} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
             {items.map(t => (
-              <PostCard key={t.id} thread={t} onClick={() => onOpenThread(t)} />
+              <PostCard key={t.id} thread={t} onClick={() => onOpenThread(t)}
+                onEdit={onEditThread} onShare={onShareThread} onReport={onReportThread} />
             ))}
           </div>
         </div>
@@ -836,10 +860,13 @@ function AudioPlayer({ audio, accentColor }) {
 }
 
 // ─── UpdateBubble ──────────────────────────────────────────────────────────────
-function UpdateBubble({ update, index }) {
+function UpdateBubble({ update, index, visibility, onEdit, onShare, onReport }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
+  const [expandedLink, setExpandedLink] = useState(null);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
+  const links = useLinkPreviews(update.content);
+  const mediaWithLinks = mergeLinksIntoMedia(update.media, links);
 
   const toggleLike = async () => {
     const next = !liked;
@@ -847,6 +874,12 @@ function UpdateBubble({ update, index }) {
     setLikeCount(c => next ? c + 1 : c - 1);
     await toggleUpdateLike(update.id);
   };
+
+  const menuActions = [
+    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => onEdit?.(update) },
+    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => onShare?.(update) },
+    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => onReport?.(update), danger: true },
+  ];
 
   return (
     <motion.div
@@ -860,10 +893,10 @@ function UpdateBubble({ update, index }) {
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{update.content}</p>
-        {update.media?.length > 0 && (
+        {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
-              items={update.media}
+              items={mediaWithLinks}
               onOpenGallery={openGallery}
               accentColor={C.teal}
               square={false}
@@ -871,15 +904,19 @@ function UpdateBubble({ update, index }) {
           </div>
         )}
         {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
           <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
+          <PrivacyIcon visibility={visibility} size={10} color={C.textMuted} />
+          {update.edited && <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>}
           <div style={{ flex: 1 }} />
           <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
             style={{ display: "flex", alignItems: "center", gap: 4, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.15s" }}>
             <Heart size={12} fill={liked ? C.red : "none"} /> {likeCount}
           </motion.button>
+          <PostOptionsMenu actions={menuActions} size={26} />
         </div>
       </div>
+      <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
       <ViewerPortal />
     </motion.div>
   );
@@ -994,354 +1031,6 @@ function CommentsSheet({ threadId, onClose }) {
 }
 
 
-// ─── useLinkPreviews — detects URLs in text, fetches OG meta via allorigins ───
-function useLinkPreviews(text) {
-  const [previews, setPreviews] = useState([]);
-  const cache = useRef({});
-
-  useEffect(() => {
-    const URL_RE = /https?:\/\/[^\s"<>]+/g;
-    const urls = [...new Set(text.match(URL_RE) || [])].slice(0, 5);
-    if (!urls.length) { setPreviews([]); return; }
-
-    let cancelled = false;
-    Promise.all(urls.map(async url => {
-      if (cache.current[url]) return cache.current[url];
-      try {
-        // Use allorigins to bypass CORS
-        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const res = await fetch(proxy, { signal: AbortSignal.timeout(4000) });
-        const { contents } = await res.json();
-        const doc = new DOMParser().parseFromString(contents, "text/html");
-        const m = (prop) =>
-          doc.querySelector(`meta[property="${prop}"]`)?.content ||
-          doc.querySelector(`meta[name="${prop}"]`)?.content || "";
-        const preview = {
-          url,
-          title: m("og:title") || doc.title || url,
-          desc: m("og:description") || m("description") || "",
-          image: m("og:image") || "",
-          site: new URL(url).hostname.replace("www.", ""),
-        };
-        cache.current[url] = preview;
-        return preview;
-      } catch {
-        const preview = { url, title: url, desc: "", image: "", site: new URL(url).hostname.replace("www.", "") };
-        cache.current[url] = preview;
-        return preview;
-      }
-    })).then(results => {
-      if (!cancelled) setPreviews(results.filter(Boolean));
-    });
-    return () => { cancelled = true; };
-  }, [text]);
-
-  return previews;
-}
-
-// ─── LinkPreviewCard ──────────────────────────────────────────────────────────
-function LinkPreviewCard({ preview, onExpand }) {
-  return (
-    <motion.div whileTap={{ scale: 0.97 }} onClick={() => onExpand(preview)}
-      style={{ flexShrink: 0, width: 220, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
-      {preview.image ? (
-        <img src={preview.image} alt="" style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
-          onError={e => { e.currentTarget.style.display = "none"; }} />
-      ) : (
-        <div style={{ width: "100%", height: 60, background: `${C.teal}10`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Link size={22} color={C.teal} strokeWidth={1.5} />
-        </div>
-      )}
-      <div style={{ padding: "9px 11px 10px" }}>
-        <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.35 }}>{preview.title}</p>
-        {preview.desc && <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 10, color: C.textMuted, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.4 }}>{preview.desc}</p>}
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <ExternalLink size={9} color={C.teal} />
-          <span style={{ fontFamily: font, fontSize: 10, color: C.teal, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview.site}</span>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── LinkExpandModal ──────────────────────────────────────────────────────────
-function LinkExpandModal({ preview, onClose }) {
-  return (
-    <AnimatePresence>
-      {preview && (
-        <>
-          <motion.div key="overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)" }} />
-          <motion.div key="card" initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            style={{ position: "fixed", inset: "auto 16px", top: "50%", transform: "translateY(-50%)", zIndex: 2001, background: C.card, borderRadius: 22, border: `1px solid ${C.border}`, overflow: "hidden", maxWidth: 480, margin: "0 auto", boxShadow: "0 24px 80px rgba(0,0,0,0.7)" }}>
-            {preview.image && (
-              <img src={preview.image} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover", display: "block" }}
-                onError={e => { e.currentTarget.style.display = "none"; }} />
-            )}
-            <div style={{ padding: "16px 18px 20px" }}>
-              <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, lineHeight: 1.35 }}>{preview.title}</p>
-              {preview.desc && <p style={{ margin: "0 0 14px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>{preview.desc}</p>}
-              <div style={{ display: "flex", gap: 8 }}>
-                <a href={preview.url} target="_blank" rel="noopener noreferrer"
-                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, height: 42, borderRadius: 12, background: `linear-gradient(135deg, ${C.teal}, #0ea876)`, color: "#000", fontFamily: font, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
-                  <ExternalLink size={14} /> Abrir enlace
-                </a>
-                <button onClick={onClose}
-                  style={{ width: 42, height: 42, borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <X size={15} />
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-}
-
-// ─── ComposerSheet — shared base for Update and Subtema composers ─────────────
-// mode: "update" (no title) | "subtema" (has title field)
-function ComposerSheet({ mode, onSubmit, onClose }) {
-  const [title, setTitle]         = useState("");
-  const [content, setContent]     = useState("");
-  const [mediaFiles, setMediaFiles] = useState([]);      // [{type,url,file}]
-  const [recording, setRecording] = useState(false);
-  const [recordSecs, setRecordSecs] = useState(0);
-  const [uploadingAudio, setUploadingAudio] = useState(false);
-  const [pendingAudio, setPendingAudio]     = useState(null);
-  const [submitting, setSubmitting]         = useState(false);
-  const [expandedLink, setExpandedLink]     = useState(null);
-  const { openImage, ViewerPortal } = useImageViewer();
-  const imageRef  = useRef(null);
-  const videoRef  = useRef(null);
-  const timerRef  = useRef(null);
-  const secsRef   = useRef(0);
-  const mediaRecRef = useRef(null);
-  const chunksRef   = useRef([]);
-
-  const previews = useLinkPreviews(content);
-
-  useEffect(() => { secsRef.current = recordSecs; }, [recordSecs]);
-
-  // ── Audio recording ─────────────────────────────────────────────────────────
-  const startRecord = () => {
-    navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
-      const mr = new MediaRecorder(stream);
-      mediaRecRef.current = mr;
-      chunksRef.current = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const dur = secsRef.current;
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const wf = Array.from({ length: 28 }, () => Math.random() * 0.75 + 0.25);
-        setRecording(false); setUploadingAudio(true);
-        try {
-          const path = storagePath("updates/audio", "recording.webm");
-          const url = await uploadFile("audio", blob, path).catch(() => URL.createObjectURL(blob));
-          setPendingAudio({ url, duration: dur, waveform: wf });
-        } finally { setUploadingAudio(false); }
-        setRecordSecs(0);
-      };
-      mr.start();
-      setRecording(true); setRecordSecs(0);
-      timerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000);
-    }).catch(() => alert("Microphone access denied"));
-  };
-
-  const stopRecord = () => {
-    clearInterval(timerRef.current);
-    if (mediaRecRef.current?.state !== "inactive") mediaRecRef.current.stop();
-  };
-
-  // ── Media picking ────────────────────────────────────────────────────────────
-  const pickMedia = (type) => {
-    const ref = type === "image" ? imageRef : videoRef;
-    ref.current?.click();
-  };
-
-  const handleFileChange = (e, type) => {
-    const files = Array.from(e.target.files || []);
-    const newMedia = files.map(f => ({ type, url: URL.createObjectURL(f), file: f, name: f.name }));
-    setMediaFiles(prev => [...prev, ...newMedia]);
-    e.target.value = "";
-  };
-
-  const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
-
-  // ── Submit ───────────────────────────────────────────────────────────────────
-  const canSubmit = mode === "subtema" ? title.trim().length > 0 : (content.trim().length > 0 || mediaFiles.length > 0 || pendingAudio);
-
-  const submit = async () => {
-    if (!canSubmit || submitting) return;
-    setSubmitting(true);
-    try {
-      await onSubmit({
-        title: title.trim(),
-        content: content.trim(),
-        media: mediaFiles,
-        audio: pendingAudio,
-        links: previews,
-      });
-      onClose();
-    } catch(e) {
-      console.error(e);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const isUpdate = mode === "update";
-  const accent = C.green;
-  const label = isUpdate ? "Publicar Update" : "Crear Subtema";
-  const headerLabel = isUpdate ? "Nuevo Update" : "Crear Subtema";
-  const HeaderIcon = isUpdate ? Plus : Layers;
-
-  return (
-    <>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={e => e.target === e.currentTarget && onClose()}
-        style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(14px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-
-        <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-          transition={{ type: "spring", stiffness: 380, damping: 38 }}
-          onClick={e => e.stopPropagation()}
-          style={{ width: "100%", maxWidth: 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${accent}28`, borderBottom: "none", padding: "0 0 36px", display: "flex", flexDirection: "column", maxHeight: "92vh", overflow: "hidden" }}>
-
-          {/* Drag handle */}
-          <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4, flexShrink: 0 }}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
-          </div>
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 18px 14px", flexShrink: 0, borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: `${accent}20`, border: `1px solid ${accent}35`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <HeaderIcon size={15} color={accent} />
-              </div>
-              <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>{headerLabel}</span>
-            </div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <X size={14} />
-            </button>
-          </div>
-
-          {/* Scrollable body */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 0" }}>
-
-            {/* Title (Subtema only) */}
-            {!isUpdate && (
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del subtema…" autoFocus={!isUpdate}
-                style={{ width: "100%", boxSizing: "border-box", background: C.surface, border: `1.5px solid ${title ? accent + "55" : C.border}`, borderRadius: 14, padding: "11px 14px", color: C.text, fontFamily: font, fontSize: 14, fontWeight: 700, outline: "none", marginBottom: 12, transition: "border-color 0.2s" }} />
-            )}
-
-            {/* Textarea with integrated mic button */}
-            <div style={{ position: "relative", marginBottom: 10 }}>
-              {recording ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: `${C.red}12`, border: `1.5px solid ${C.red}40`, borderRadius: 16 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, boxShadow: `0 0 8px ${C.red}`, animation: "pulse-dot 1s infinite", flexShrink: 0 }} />
-                  <span style={{ fontFamily: font, fontSize: 14, color: C.red, fontWeight: 600, flex: 1 }}>Grabando… {fmtAudio(recordSecs)}</span>
-                  <button onClick={stopRecord} style={{ display: "flex", alignItems: "center", gap: 6, background: C.red, border: "none", borderRadius: 10, padding: "7px 14px", cursor: "pointer", color: "#fff", fontFamily: font, fontSize: 13, fontWeight: 600 }}>
-                    <Square size={12} fill="#fff" /> Detener
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <textarea value={content} onChange={e => setContent(e.target.value)}
-                    placeholder={isUpdate ? "Comparte una actualización…" : "Descripción (opcional)…"}
-                    rows={isUpdate ? 5 : 4} autoFocus={isUpdate}
-                    style={{ width: "100%", boxSizing: "border-box", resize: "none", background: C.surface, border: `1.5px solid ${content.trim() ? accent + "44" : C.border}`, borderRadius: 16, padding: "12px 48px 38px 14px", color: C.text, fontFamily: font, fontSize: 14, lineHeight: 1.65, outline: "none", transition: "border-color 0.2s", caretColor: accent }} />
-                  {/* Mic button — bottom-right inside textarea */}
-                  <motion.button whileTap={{ scale: 0.88 }} onClick={startRecord}
-                    style={{ position: "absolute", bottom: 10, right: 10, width: 34, height: 34, borderRadius: 10, background: uploadingAudio ? `${C.teal}20` : `${C.teal}15`, border: `1px solid ${C.teal}35`, color: C.teal, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    {uploadingAudio ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Mic size={15} strokeWidth={2} />}
-                  </motion.button>
-                </>
-              )}
-            </div>
-
-            {/* Pending audio preview */}
-            {pendingAudio && (
-              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ flex: 1 }}><AudioPlayer audio={pendingAudio} accentColor={C.teal} /></div>
-                <button onClick={() => setPendingAudio(null)} style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 4 }}><X size={14} /></button>
-              </div>
-            )}
-
-            {/* Media chips */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
-              <motion.button whileTap={{ scale: 0.93 }} onClick={() => pickMedia("image")}
-                style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 99, padding: "7px 14px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-                📷 Imagen
-              </motion.button>
-              <motion.button whileTap={{ scale: 0.93 }} onClick={() => pickMedia("video")}
-                style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 99, padding: "7px 14px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
-                🎥 Video
-              </motion.button>
-              {/* Hidden file inputs */}
-              <input ref={imageRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => handleFileChange(e, "image")} />
-              <input ref={videoRef} type="file" accept="video/*" multiple style={{ display: "none" }} onChange={e => handleFileChange(e, "video")} />
-            </div>
-
-            {/* Media previews */}
-            {mediaFiles.length > 0 && (
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
-                {mediaFiles.map((m, i) => (
-                  <div key={i} style={{ flexShrink: 0, position: "relative", width: 90, height: 90, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
-                    {m.type === "image"
-                      ? <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                    {m.type === "image" && <ExpandImageButton onClick={() => openImage(m.url)} size={20} />}
-                    <button onClick={() => removeMedia(i)}
-                      style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Link previews carousel */}
-            {previews.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
-                  Links detectados
-                </p>
-                <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
-                  {previews.map((p, i) => (
-                    <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ height: 8 }} />
-          </div>
-
-          {/* Footer actions */}
-          <div style={{ padding: "12px 18px 0", flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={onClose}
-                style={{ flex: 1, height: 46, borderRadius: 14, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>
-                Cancelar
-              </button>
-              <motion.button whileTap={{ scale: 0.95 }} onClick={submit} disabled={!canSubmit || submitting}
-                style={{ flex: 2, height: 46, borderRadius: 14, border: "none", cursor: canSubmit ? "pointer" : "default", fontFamily: font, fontSize: 14, fontWeight: 800, background: canSubmit ? `linear-gradient(135deg, ${accent}, #0ea876)` : C.border, color: canSubmit ? "#000" : C.textMuted, transition: "all 0.2s" }}>
-                {submitting ? "Publicando…" : label}
-              </motion.button>
-            </div>
-          </div>
-
-        </motion.div>
-      </motion.div>
-
-      {/* Link expand modal */}
-      <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
-      <ViewerPortal />
-    </>
-  );
-}
-
 // ─── SubtemaCard — compact card shown inside ThreadView ───────────────────────
 function SubtemaCard({ subtema, onClick }) {
   const [hov, setHov] = useState(false);
@@ -1381,20 +1070,42 @@ function SubtemaCard({ subtema, onClick }) {
 }
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
-function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer }) {
+function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited }) {
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
+  const [editingSubtema, setEditingSubtema] = useState(false);
+  const [editingUpdate, setEditingUpdate] = useState(null);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
+  const { enqueue } = usePublishQueue();
+  const subtemaLinks = useLinkPreviews(subtema.content);
+  const subtemaMedia = mergeLinksIntoMedia(subtema.media, subtemaLinks);
 
-  const handleNewUpdate = async ({ content, audio, media, links }) => {
-    const tempId = `u_temp_${Date.now()}`;
-    const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
-    setSubtema(s => ({ ...s, updates: [...(s.updates || []), temp] }));
-    try {
-      const saved = await addThreadUpdate(subtema.id, { content, audio });
-      if (saved) setSubtema(s => ({ ...s, updates: s.updates.map(u => u.id === tempId ? saved : u) }));
-    } catch {}
+  const handleNewUpdate = ({ content, audio, mediaFiles }) => {
+    const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+    enqueue("Publicando update…", async () => {
+      const saved = await addThreadUpdate(subtema.id, { content, audio, mediaFiles: rawFiles });
+      if (saved) setSubtema(s => ({ ...s, updates: [...(s.updates || []), saved] }));
+    });
   };
+
+  const handleEditSubtema = ({ title, content, mediaFiles, audio }) => {
+    setSubtema(s => ({ ...s, title, content, media: mediaFiles, audio, edited: true }));
+    onSubtemaEdited?.(subtema.id, { title, content, media: mediaFiles, audio, edited: true });
+    // NOTE: subtemas are client-side only today (never persisted to Supabase),
+    // matching how they're created — so edits here only update local state.
+  };
+
+  const handleEditUpdate = ({ content }) => {
+    const target = editingUpdate;
+    setSubtema(s => ({ ...s, updates: s.updates.map(u => u.id === target.id ? { ...u, content, edited: true } : u) }));
+    enqueue("Guardando cambios…", async () => { await updateThreadUpdate(target.id, { content }); });
+  };
+
+  const menuActions = [
+    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => setEditingSubtema(true) },
+    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => {} },
+    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => {}, danger: true },
+  ];
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
@@ -1416,22 +1127,25 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.teal}18`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Layers size={14} color={C.teal} />
             </div>
-            <div>
+            <div style={{ flex: 1 }}>
               <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{subtema.author || "Alex H."}</span>
-              <div style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>
-                {fmtDate(subtema.timestamp)} · {fmtTime(subtema.timestamp)}
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(subtema.timestamp)} · {fmtTime(subtema.timestamp)}</span>
+                <PrivacyIcon visibility={parentVisibility} size={10} color={C.textMuted} />
+                {subtema.edited && <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>}
               </div>
             </div>
+            {isHost && <PostOptionsMenu actions={menuActions} />}
           </div>
 
           {subtema.content && (
             <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{subtema.content}</p>
           )}
 
-          {subtema.media?.length > 0 && (
+          {subtemaMedia.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <MediaCarousel
-                items={subtema.media}
+                items={subtemaMedia}
                 onOpenGallery={openGallery}
                 accentColor={C.teal}
               />
@@ -1439,14 +1153,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           )}
 
           {subtema.audio && <AudioPlayer audio={subtema.audio} accentColor={C.teal} />}
-
-          {subtema.links?.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
-                {subtema.links.map((p, i) => <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />)}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Updates */}
@@ -1461,7 +1167,10 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             </div>
           )}
           <div style={{ paddingLeft: 4 }}>
-            {(subtema.updates || []).map((u, i) => <UpdateBubble key={u.id} update={u} index={i} />)}
+            {(subtema.updates || []).map((u, i) => (
+              <UpdateBubble key={u.id} update={u} index={i} visibility={parentVisibility}
+                onEdit={() => setEditingUpdate(u)} onShare={() => {}} onReport={() => {}} />
+            ))}
           </div>
           {(!subtema.updates || subtema.updates.length === 0) && !isHost && (
             <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
@@ -1469,12 +1178,32 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
         </div>
       </div>
 
-      {/* Composer overlay */}
+      {/* Composer overlay — create update */}
       <AnimatePresence>
         {showComposer && (
-          <ComposerSheet mode="update"
-            onSubmit={async (data) => { await handleNewUpdate(data); onHideComposer(); }}
+          <PostComposer mode="update"
+            onSubmit={handleNewUpdate}
             onClose={onHideComposer} />
+        )}
+      </AnimatePresence>
+
+      {/* Composer overlay — edit subtema */}
+      <AnimatePresence>
+        {editingSubtema && (
+          <PostComposer mode="subtema" isEditing
+            initial={{ title: subtema.title, content: subtema.content, mediaFiles: subtema.media, audio: subtema.audio }}
+            onSubmit={handleEditSubtema}
+            onClose={() => setEditingSubtema(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Composer overlay — edit update */}
+      <AnimatePresence>
+        {editingUpdate && (
+          <PostComposer mode="update" isEditing
+            initial={{ content: editingUpdate.content, mediaFiles: editingUpdate.media, audio: editingUpdate.audio }}
+            onSubmit={handleEditUpdate}
+            onClose={() => setEditingUpdate(null)} />
         )}
       </AnimatePresence>
 
@@ -1485,7 +1214,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 }
 
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
   const [thread, setThread] = useState(initialThread);
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1493,7 +1222,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   const [openSubtema, setOpenSubtema] = useState(null);
   const [subtemaDirection, setSubtemaDirection] = useState(1);
   const [expandedLink, setExpandedLink] = useState(null);
+  const [editingThread, setEditingThread] = useState(false);
+  const [editingUpdate, setEditingUpdate] = useState(null);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
+  const { enqueue } = usePublishQueue();
+  const threadLinks = useLinkPreviews(thread.content);
+  const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1502,74 +1236,40 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
     await toggleThreadLike(thread.id);
   };
 
-  const handleNewUpdate = async ({ content, audio, media, links }) => {
-    // ── LOG 1: what ComposerSheet sent ────────────────────────────────────────
-    console.group("[handleNewUpdate] called");
-    console.log("media value:", media);
-    console.log("media length:", media?.length ?? 0);
-    if (media?.length) {
-      media.forEach((m, i) => {
-        console.log(`  media[${i}]:`, {
-          type:     m.type,
-          url:      m.url,
-          name:     m.name,
-          fileType: m.file?.type,
-          fileSize: m.file?.size,
-          fileRef:  m.file instanceof File ? "✅ File object" : "❌ NOT a File",
-        });
-      });
-    }
-
-    const rawFiles = (media || []).map(m => m.file).filter(Boolean);
-
-    // ── LOG 2: rawFiles after extraction ──────────────────────────────────────
-    console.log("rawFiles length:", rawFiles.length);
-    rawFiles.forEach((f, i) => {
-      console.log(`  rawFiles[${i}]:`, { name: f.name, type: f.type, size: f.size });
-    });
-    if ((media || []).length > 0 && rawFiles.length === 0) {
-      console.warn("[handleNewUpdate] ⚠️ media items present but rawFiles is empty — m.file may be undefined");
-      (media || []).forEach((m, i) => console.warn(`  media[${i}].file =`, m.file));
-    }
-    console.groupEnd();
-
-    const tempId = `u_temp_${Date.now()}`;
-    const temp = { id: tempId, content, timestamp: new Date(), likes: 0, liked: false, media: media || [], audio: audio || null, links: links || [] };
-    setThread(t => ({ ...t, updates: [...t.updates, temp] }));
-    try {
+  const handleNewUpdate = ({ content, audio, mediaFiles }) => {
+    const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+    enqueue("Publicando update…", async () => {
       const saved = await addThreadUpdate(thread.id, { content, audio, mediaFiles: rawFiles });
-
-      // ── LOG 3: what came back from addThreadUpdate ─────────────────────────
-      console.group("[handleNewUpdate] addThreadUpdate returned");
-      console.log("saved:", saved);
-      console.log("saved.media:", saved?.media);
-      console.log("saved.media length:", saved?.media?.length ?? "null/undefined");
-      if (saved?.media?.length === 0) {
-        console.warn("[handleNewUpdate] ⚠️ saved.media is EMPTY — images will be lost when temp is replaced");
-      }
-      console.groupEnd();
-
-      if (saved) {
-        setThread(t => ({ ...t, updates: t.updates.map(u => u.id === tempId ? saved : u) }));
-      } else {
-        console.error("[Post] addThreadUpdate returned null — update was NOT saved");
-        setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== tempId) }));
-      }
-    } catch (err) {
-      console.error("[Post] handleNewUpdate threw:", err);
-      setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== tempId) }));
-    }
+      if (saved) setThread(t => ({ ...t, updates: [...t.updates, saved] }));
+    });
   };
 
-  const handleAddSubtema = async ({ title, content, media, audio, links }) => {
-    const newSub = {
-      id: `sub_${Date.now()}`,
-      title, content, media: media || [], audio: audio || null, links: links || [],
-      author: "Alex H.", timestamp: new Date(),
-      updates: [],
-    };
-    setThread(t => ({ ...t, subtemas: [...(t.subtemas || []), newSub] }));
-    onAddSubtema?.(thread.id, newSub);
+  const handleAddSubtema = ({ title, content, mediaFiles, audio }) => {
+    // NOTE: subtemas are client-side only (no Supabase table today) — matches
+    // the existing behaviour, so this resolves immediately but still shows
+    // the same "Publicando…" bar for a consistent feel.
+    enqueue("Publicando subtema…", async () => {
+      const newSub = {
+        id: `sub_${Date.now()}`,
+        title, content, media: mediaFiles || [], audio: audio || null,
+        author: "Alex H.", timestamp: new Date(),
+        updates: [],
+      };
+      setThread(t => ({ ...t, subtemas: [...(t.subtemas || []), newSub] }));
+      onAddSubtema?.(thread.id, newSub);
+    });
+  };
+
+  const handleEditThread = ({ title, content, visibility }) => {
+    setThread(t => ({ ...t, title, content, visibility, edited: true }));
+    onThreadEdited?.(thread.id, { title, content, visibility, edited: true });
+    enqueue("Guardando cambios…", async () => { await updateRecapThread(thread.id, { title, content, visibility }); });
+  };
+
+  const handleEditUpdate = ({ content }) => {
+    const target = editingUpdate;
+    setThread(t => ({ ...t, updates: t.updates.map(u => u.id === target.id ? { ...u, content, edited: true } : u) }));
+    enqueue("Guardando cambios…", async () => { await updateThreadUpdate(target.id, { content }); });
   };
 
   const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); onSubtemaChange?.(true); };
@@ -1585,6 +1285,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
   // Which composer to show inside this view
   const showUpdateComposer = showComposer && composerMode === "update" && !openSubtema;
   const showSubtemaComposer = showComposer && composerMode === "subtema" && !openSubtema;
+
+  const menuActions = [
+    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => setEditingThread(true) },
+    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => {} },
+    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => {}, danger: true },
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, position: "relative" }}>
@@ -1616,14 +1322,21 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                       <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
                       <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
                     </div>
-                    <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
+                      <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
+                      {thread.edited && <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>}
+                    </div>
                   </div>
-                  <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
+                  {isHost && <PostOptionsMenu actions={menuActions} />}
                 </div>
 
                 {thread.title && (
-                  <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 10 }}>
-                    <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px" }}>
+                      <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
+                    </div>
+                    <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
                   </div>
                 )}
 
@@ -1643,10 +1356,10 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                   <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
                 )}
 
-                {thread.media?.length > 0 && (
+                {threadMedia.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     <MediaCarousel
-                      items={thread.media}
+                      items={threadMedia}
                       onOpenGallery={openGallery}
                       accentColor={C.teal}
                     />
@@ -1654,14 +1367,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                 )}
 
                 {thread.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={thread.audio} accentColor={C.teal} /></div>}
-
-                {thread.links?.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
-                      {thread.links.map((p, i) => <LinkPreviewCard key={i} preview={p} onExpand={setExpandedLink} />)}
-                    </div>
-                  </div>
-                )}
 
                 <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
                   <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
@@ -1690,7 +1395,10 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
                   </div>
                 )}
                 <div style={{ paddingLeft: 4 }}>
-                  {thread.updates.map((u, i) => <UpdateBubble key={u.id} update={u} index={i} />)}
+                  {thread.updates.map((u, i) => (
+                    <UpdateBubble key={u.id} update={u} index={i} visibility={thread.visibility}
+                      onEdit={() => setEditingUpdate(u)} onShare={() => {}} onReport={() => {}} />
+                  ))}
                 </div>
                 {thread.updates.length === 0 && !isHost && (
                   <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
@@ -1722,6 +1430,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
             initial="enter" animate="center" exit="exit" transition={springTrans}
             style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
+              parentVisibility={thread.visibility}
+              onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
               showComposer={showComposer && composerMode === "update"}
               onHideComposer={onHideComposer} />
           </motion.div>
@@ -1731,16 +1441,36 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, sho
       {/* Composers for thread-level actions */}
       <AnimatePresence>
         {showUpdateComposer && (
-          <ComposerSheet mode="update"
-            onSubmit={async (data) => { await handleNewUpdate(data); onHideComposer(); }}
+          <PostComposer mode="update"
+            onSubmit={handleNewUpdate}
             onClose={onHideComposer} />
         )}
       </AnimatePresence>
       <AnimatePresence>
         {showSubtemaComposer && (
-          <ComposerSheet mode="subtema"
-            onSubmit={async (data) => { await handleAddSubtema(data); onHideComposer(); }}
+          <PostComposer mode="subtema"
+            onSubmit={handleAddSubtema}
             onClose={onHideComposer} />
+        )}
+      </AnimatePresence>
+
+      {/* Edit thread */}
+      <AnimatePresence>
+        {editingThread && (
+          <PostComposer mode="post" isEditing
+            initial={{ title: thread.title, content: thread.content, visibility: thread.visibility, mediaFiles: thread.media, thumbnail: null }}
+            onSubmit={handleEditThread}
+            onClose={() => setEditingThread(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Edit a thread-level update */}
+      <AnimatePresence>
+        {editingUpdate && (
+          <PostComposer mode="update" isEditing
+            initial={{ content: editingUpdate.content, mediaFiles: editingUpdate.media, audio: editingUpdate.audio }}
+            onSubmit={handleEditUpdate}
+            onClose={() => setEditingUpdate(null)} />
         )}
       </AnimatePresence>
 
@@ -1913,6 +1643,20 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     await updateThreadStatus(threadId, newStatus);
   }, []);
 
+  const handleThreadEdited = useCallback((threadId, patch) => {
+    setThreads(prev => prev.map(t => t.id === threadId ? { ...t, ...patch } : t));
+    setOpenThread(t => t?.id === threadId ? { ...t, ...patch } : t);
+  }, []);
+
+  // Feed-level edit (triggered from the 3-dot menu on a PostCard, without opening the thread first)
+  const [editingFeedThread, setEditingFeedThread] = useState(null);
+  const { enqueue: enqueueFeedPublish } = usePublishQueue();
+  const handleFeedEditSubmit = useCallback(({ title, content, visibility }) => {
+    const threadId = editingFeedThread.id;
+    handleThreadEdited(threadId, { title, content, visibility, edited: true });
+    enqueueFeedPublish("Guardando cambios…", async () => { await updateRecapThread(threadId, { title, content, visibility }); });
+  }, [editingFeedThread, handleThreadEdited, enqueueFeedPublish]);
+
   const handleCreateSubtema = useCallback((data) => {
     const newThread = {
       id: `t${Date.now()}`, planningPostId: null,
@@ -2001,7 +1745,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                           <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
                         </div>
                       ) : (
-                        <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
+                        <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
+                          onEditThread={setEditingFeedThread} onShareThread={() => {}} onReportThread={() => {}} />
                       )}
                     </div>
                   </motion.div>
@@ -2011,6 +1756,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                     style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
                     <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
                       onStatusChange={handleStatusChange}
+                      onThreadEdited={handleThreadEdited}
                       showComposer={activeComposer !== null}
                       composerMode={activeComposer}
                       onHideComposer={closeComposer}
@@ -2024,6 +1770,12 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           </div>
         </div>
         {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
+        {editingFeedThread && (
+          <PostComposer mode="post" isEditing
+            initial={{ title: editingFeedThread.title, content: editingFeedThread.content, visibility: editingFeedThread.visibility, mediaFiles: editingFeedThread.media }}
+            onSubmit={handleFeedEditSubmit}
+            onClose={() => setEditingFeedThread(null)} />
+        )}
       </div>
     );
   }
@@ -2050,7 +1802,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                   <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
                 </div>
               ) : (
-                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView} />
+                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
+                          onEditThread={setEditingFeedThread} onShareThread={() => {}} onReportThread={() => {}} />
               )}
             </div>
           </>
@@ -2058,6 +1811,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           <div style={{ background: C.surface, height: "100vh", display: "flex", flexDirection: "column" }}>
             <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
               onStatusChange={handleStatusChange}
+              onThreadEdited={handleThreadEdited}
               showComposer={activeComposer !== null}
               composerMode={activeComposer}
               onHideComposer={closeComposer}
@@ -2068,6 +1822,12 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         )}
       </div>
       {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
+      {editingFeedThread && (
+        <PostComposer mode="post" isEditing
+          initial={{ title: editingFeedThread.title, content: editingFeedThread.content, visibility: editingFeedThread.visibility, mediaFiles: editingFeedThread.media }}
+          onSubmit={handleFeedEditSubmit}
+          onClose={() => setEditingFeedThread(null)} />
+      )}
     </>
   );
 }
