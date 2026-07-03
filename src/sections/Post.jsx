@@ -22,7 +22,6 @@ import {
   Send, Mic, Square, Image, Video,
   Loader, FileText, Check, ChevronRight,
   Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
-  Pencil, Flag,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -33,6 +32,7 @@ import {
   addThreadComment,
   updateThreadStatus,
   deleteRecapThread,
+  deleteThreadUpdate,
   updateRecapThread,
   updateThreadUpdate,
   fetchThreadComments,
@@ -41,7 +41,8 @@ import { useImageViewer, ExpandImageButton } from "../components/GlobalImageView
 import MediaCarousel from "../components/MediaCarousel.jsx";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
-import PostOptionsMenu from "../components/PostOptionsMenu.jsx";
+import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
@@ -648,18 +649,21 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, onClick, onEdit, onShare, onReport }) {
+const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onShare, onReport }) {
   const [hov, setHov] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
   const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
 
-  const menuActions = [
-    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => onEdit?.(thread) },
-    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => onShare?.(thread) },
-    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => onReport?.(thread), danger: true },
-  ];
+  const menuActions = buildContentMenuActions({
+    onEdit:   onEdit   && (() => onEdit(thread)),
+    onDelete: onDelete && (() => setConfirmDelete(true)),
+    onShare:  onShare  && (() => onShare(thread)),
+    onReport: onReport && (() => onReport(thread)),
+  });
 
   return (
+    <>
     <motion.div
       whileTap={{ scale: 0.97 }}
       onMouseEnter={() => setHov(true)}
@@ -750,12 +754,20 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onShare, onRe
         </div>
       </div>
     </motion.div>
+    <ConfirmDialog
+      open={confirmDelete}
+      title="¿Eliminar esta publicación?"
+      subtitle="Esta acción no se puede deshacer."
+      onCancel={() => setConfirmDelete(false)}
+      onConfirm={() => { setConfirmDelete(false); onDelete?.(thread); }}
+    />
+    </>
   );
 });
 
 // ─── PostFeed — stable grid, filters applied only on committed search + filter changes ──
 // searchQuery: committed on button press only. filters: { statuses, fromDate }
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread, onEditThread, onShareThread, onReportThread }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread }) {
   const filtered = useMemo(() => {
     let list = [...threads];
 
@@ -807,7 +819,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenT
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
             {items.map(t => (
               <PostCard key={t.id} thread={t} onClick={() => onOpenThread(t)}
-                onEdit={onEditThread} onShare={onShareThread} onReport={onReportThread} />
+                onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread} />
             ))}
           </div>
         </div>
@@ -860,10 +872,11 @@ function AudioPlayer({ audio, accentColor }) {
 }
 
 // ─── UpdateBubble ──────────────────────────────────────────────────────────────
-function UpdateBubble({ update, index, visibility, onEdit, onShare, onReport }) {
+function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, onReport }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
   const [expandedLink, setExpandedLink] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const links = useLinkPreviews(update.content);
   const mediaWithLinks = mergeLinksIntoMedia(update.media, links);
@@ -875,11 +888,12 @@ function UpdateBubble({ update, index, visibility, onEdit, onShare, onReport }) 
     await toggleUpdateLike(update.id);
   };
 
-  const menuActions = [
-    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => onEdit?.(update) },
-    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => onShare?.(update) },
-    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => onReport?.(update), danger: true },
-  ];
+  const menuActions = buildContentMenuActions({
+    onEdit:   onEdit   && (() => onEdit(update)),
+    onDelete: onDelete && (() => setConfirmDelete(true)),
+    onShare:  onShare  && (() => onShare(update)),
+    onReport: onReport && (() => onReport(update)),
+  });
 
   return (
     <motion.div
@@ -917,6 +931,13 @@ function UpdateBubble({ update, index, visibility, onEdit, onShare, onReport }) 
         </div>
       </div>
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="¿Eliminar este update?"
+        subtitle="Esta acción no se puede deshacer."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); onDelete?.(update); }}
+      />
       <ViewerPortal />
     </motion.div>
   );
@@ -1070,11 +1091,12 @@ function SubtemaCard({ subtema, onClick }) {
 }
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
-function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited }) {
+function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted }) {
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingSubtema, setEditingSubtema] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
+  const [confirmDeleteSubtema, setConfirmDeleteSubtema] = useState(false);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const subtemaLinks = useLinkPreviews(subtema.content);
@@ -1095,17 +1117,29 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
     // matching how they're created — so edits here only update local state.
   };
 
+  const handleDeleteSubtema = () => {
+    // Client-side only, same reasoning as above — no Supabase row to delete.
+    onSubtemaDeleted?.(subtema.id);
+    onBack?.();
+  };
+
   const handleEditUpdate = ({ content }) => {
     const target = editingUpdate;
     setSubtema(s => ({ ...s, updates: s.updates.map(u => u.id === target.id ? { ...u, content, edited: true } : u) }));
     enqueue("Guardando cambios…", async () => { await updateThreadUpdate(target.id, { content }); });
   };
 
-  const menuActions = [
-    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => setEditingSubtema(true) },
-    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => {} },
-    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => {}, danger: true },
-  ];
+  const handleDeleteUpdate = (update) => {
+    setSubtema(s => ({ ...s, updates: s.updates.filter(u => u.id !== update.id) }));
+    enqueue("Eliminando update…", async () => { await deleteThreadUpdate(update.id); });
+  };
+
+  const menuActions = buildContentMenuActions({
+    onEdit:   () => setEditingSubtema(true),
+    onDelete: () => setConfirmDeleteSubtema(true),
+    onShare:  () => {},
+    onReport: () => {},
+  });
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
@@ -1169,7 +1203,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           <div style={{ paddingLeft: 4 }}>
             {(subtema.updates || []).map((u, i) => (
               <UpdateBubble key={u.id} update={u} index={i} visibility={parentVisibility}
-                onEdit={() => setEditingUpdate(u)} onShare={() => {}} onReport={() => {}} />
+                onEdit={() => setEditingUpdate(u)} onDelete={handleDeleteUpdate} onShare={() => {}} onReport={() => {}} />
             ))}
           </div>
           {(!subtema.updates || subtema.updates.length === 0) && !isHost && (
@@ -1208,13 +1242,19 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
       </AnimatePresence>
 
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ConfirmDialog
+        open={confirmDeleteSubtema}
+        title="¿Eliminar este subtema?"
+        subtitle="Esta acción no se puede deshacer."
+        onCancel={() => setConfirmDeleteSubtema(false)}
+        onConfirm={() => { setConfirmDeleteSubtema(false); handleDeleteSubtema(); }}
+      />
       <ViewerPortal />
     </div>
   );
 }
-
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
   const [thread, setThread] = useState(initialThread);
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1224,6 +1264,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingThread, setEditingThread] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
+  const [confirmDeleteThread, setConfirmDeleteThread] = useState(false);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const threadLinks = useLinkPreviews(thread.content);
@@ -1266,10 +1307,20 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     enqueue("Guardando cambios…", async () => { await updateRecapThread(thread.id, { title, content, visibility }); });
   };
 
+  const handleDeleteThread = () => {
+    onThreadDeleted?.(thread);
+    onBack?.();
+  };
+
   const handleEditUpdate = ({ content }) => {
     const target = editingUpdate;
     setThread(t => ({ ...t, updates: t.updates.map(u => u.id === target.id ? { ...u, content, edited: true } : u) }));
     enqueue("Guardando cambios…", async () => { await updateThreadUpdate(target.id, { content }); });
+  };
+
+  const handleDeleteUpdate = (update) => {
+    setThread(t => ({ ...t, updates: t.updates.filter(u => u.id !== update.id) }));
+    enqueue("Eliminando update…", async () => { await deleteThreadUpdate(update.id); });
   };
 
   const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); onSubtemaChange?.(true); };
@@ -1286,11 +1337,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const showUpdateComposer = showComposer && composerMode === "update" && !openSubtema;
   const showSubtemaComposer = showComposer && composerMode === "subtema" && !openSubtema;
 
-  const menuActions = [
-    { id: "edit",   label: "Editar",    icon: Pencil, onSelect: () => setEditingThread(true) },
-    { id: "share",  label: "Compartir", icon: Share2, onSelect: () => {} },
-    { id: "report", label: "Reportar",  icon: Flag,   onSelect: () => {}, danger: true },
-  ];
+  const menuActions = buildContentMenuActions({
+    onEdit:   () => setEditingThread(true),
+    onDelete: () => setConfirmDeleteThread(true),
+    onShare:  () => {},
+    onReport: () => {},
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, position: "relative" }}>
@@ -1397,7 +1449,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                 <div style={{ paddingLeft: 4 }}>
                   {thread.updates.map((u, i) => (
                     <UpdateBubble key={u.id} update={u} index={i} visibility={thread.visibility}
-                      onEdit={() => setEditingUpdate(u)} onShare={() => {}} onReport={() => {}} />
+                      onEdit={() => setEditingUpdate(u)} onDelete={handleDeleteUpdate} onShare={() => {}} onReport={() => {}} />
                   ))}
                 </div>
                 {thread.updates.length === 0 && !isHost && (
@@ -1432,6 +1484,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
               parentVisibility={thread.visibility}
               onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
+              onSubtemaDeleted={(subId) => setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) }))}
               showComposer={showComposer && composerMode === "update"}
               onHideComposer={onHideComposer} />
           </motion.div>
@@ -1475,6 +1528,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       </AnimatePresence>
 
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ConfirmDialog
+        open={confirmDeleteThread}
+        title="¿Eliminar esta publicación?"
+        subtitle="Esta acción no se puede deshacer."
+        onCancel={() => setConfirmDeleteThread(false)}
+        onConfirm={() => { setConfirmDeleteThread(false); handleDeleteThread(); }}
+      />
       <ViewerPortal />
     </div>
   );
@@ -1648,9 +1708,19 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     setOpenThread(t => t?.id === threadId ? { ...t, ...patch } : t);
   }, []);
 
+  // Delete a thread (Post). DB cascade (ON DELETE CASCADE on thread_id) already
+  // takes care of thread_media/thread_updates/update_media/comments/likes —
+  // see supabase-schema.sql. UI updates immediately; the actual delete runs
+  // in the background via the publish queue.
+  const { enqueue: enqueueFeedPublish } = usePublishQueue();
+  const handleDeleteThread = useCallback((thread) => {
+    setThreads(prev => prev.filter(t => t.id !== thread.id));
+    setOpenThread(t => t?.id === thread.id ? null : t);
+    enqueueFeedPublish("Eliminando post…", async () => { await deleteRecapThread(thread.id); });
+  }, [enqueueFeedPublish]);
+
   // Feed-level edit (triggered from the 3-dot menu on a PostCard, without opening the thread first)
   const [editingFeedThread, setEditingFeedThread] = useState(null);
-  const { enqueue: enqueueFeedPublish } = usePublishQueue();
   const handleFeedEditSubmit = useCallback(({ title, content, visibility }) => {
     const threadId = editingFeedThread.id;
     handleThreadEdited(threadId, { title, content, visibility, edited: true });
@@ -1746,7 +1816,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                         </div>
                       ) : (
                         <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onShareThread={() => {}} onReportThread={() => {}} />
+                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}} />
                       )}
                     </div>
                   </motion.div>
@@ -1757,6 +1827,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                     <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
                       onStatusChange={handleStatusChange}
                       onThreadEdited={handleThreadEdited}
+                      onThreadDeleted={handleDeleteThread}
                       showComposer={activeComposer !== null}
                       composerMode={activeComposer}
                       onHideComposer={closeComposer}
@@ -1803,7 +1874,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 </div>
               ) : (
                 <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onShareThread={() => {}} onReportThread={() => {}} />
+                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}} />
               )}
             </div>
           </>
@@ -1812,6 +1883,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
               onStatusChange={handleStatusChange}
               onThreadEdited={handleThreadEdited}
+              onThreadDeleted={handleDeleteThread}
               showComposer={activeComposer !== null}
               composerMode={activeComposer}
               onHideComposer={closeComposer}
