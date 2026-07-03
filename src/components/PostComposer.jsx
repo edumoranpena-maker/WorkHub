@@ -36,8 +36,8 @@ import {
   ChevronLeft, X, Plus, Mic, Loader, Layers, CheckSquare, ChevronRight,
   Image as ImageIcon, Video as VideoIcon, Paperclip, ImagePlus, File as FileIcon,
 } from "lucide-react";
-import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.js";
-import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.js";
+import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.jsx";
+import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
