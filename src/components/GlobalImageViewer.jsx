@@ -147,11 +147,11 @@ function ZoomableImage({ src, onZoomChange }) {
   const reset = () => { setScale(1); setOffset({ x: 0, y: 0 }); };
 
   const handleTouchStart = (e) => {
-    e.stopPropagation();
     if (e.touches.length === 1) {
       // detect double-tap-to-zoom
       const now = Date.now();
       if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+        e.stopPropagation();
         if (scale > 1) { reset(); }
         else { setScale(2.5); }
         lastTapRef.current = 0;
@@ -164,7 +164,11 @@ function ZoomableImage({ src, onZoomChange }) {
         startX: e.touches[0].clientX - offset.x,
         startY: e.touches[0].clientY - offset.y,
       };
+      // Only claim this gesture if we're actually zoomed in (panning).
+      // At scale=1 let it bubble up — the backdrop needs it to drive swipe-to-navigate.
+      if (scale > 1.05) e.stopPropagation();
     } else if (e.touches.length === 2) {
+      e.stopPropagation(); // pinch always claims the gesture
       const dx = e.touches[1].clientX - e.touches[0].clientX;
       const dy = e.touches[1].clientY - e.touches[0].clientY;
       gestureRef.current = {
@@ -179,15 +183,16 @@ function ZoomableImage({ src, onZoomChange }) {
   };
 
   const handleTouchMove = (e) => {
-    e.stopPropagation();
     const g = gestureRef.current;
     if (!g) return;
     if (g.type === "pan" && scale > 1) {
+      e.stopPropagation();
       const el = e.currentTarget;
       const ox = e.touches[0].clientX - g.startX;
       const oy = e.touches[0].clientY - g.startY;
       setOffset(clampOffset(ox, oy, scale, el.offsetWidth, el.offsetHeight));
     } else if (g.type === "pinch" && e.touches.length === 2) {
+      e.stopPropagation();
       const dx = e.touches[1].clientX - e.touches[0].clientX;
       const dy = e.touches[1].clientY - e.touches[0].clientY;
       const dist = Math.hypot(dx, dy);
@@ -195,10 +200,12 @@ function ZoomableImage({ src, onZoomChange }) {
       setScale(newScale);
       if (newScale <= 1) setOffset({ x: 0, y: 0 });
     }
+    // else: single-finger touch at scale=1 — don't stop propagation,
+    // let the backdrop track it for horizontal swipe-to-navigate.
   };
 
   const handleTouchEnd = (e) => {
-    e.stopPropagation();
+    if (scale > 1.05 || gestureRef.current?.type === "pinch") e.stopPropagation();
     if (scale < 1.05) reset();
     gestureRef.current = null;
   };
