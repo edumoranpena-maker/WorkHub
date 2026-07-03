@@ -42,8 +42,8 @@ import MediaCarousel from "../components/MediaCarousel.jsx";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu from "../components/PostOptionsMenu.jsx";
-import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, mergeLinksIntoMedia } from "../lib/linkPreview.js";
-import { PrivacyIcon } from "../lib/visibility.js";
+import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
+import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
