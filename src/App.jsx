@@ -18,6 +18,7 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
+import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
@@ -1356,6 +1357,7 @@ export default function RootShell() {
 
   return (
     <PublishQueueProvider>
+    <ComposerLockProvider>
       <div style={{ width: "100vw", height: "100vh", background: "#08080e" }}>
         {showHome ? (
           <HomeFeed onEnterProfile={() => setShowHome(false)} />
@@ -1372,13 +1374,21 @@ export default function RootShell() {
         </AnimatePresence>
         <PublishProgressBar />
       </div>
+    </ComposerLockProvider>
     </PublishQueueProvider>
   );
 }
 
 // ─── Workspace App ────────────────────────────────────────────────────────────
 function App({ onGoHome, onOpenSettings }) {
-  const [activeSectionId, setActiveSectionId] = useState(null); // null = Perfil
+  const [activeSectionId, _setActiveSectionId] = useState(null); // null = Perfil
+  const { locked: navLocked } = useComposerLock();
+  // Guarded setter: while an Update/Subtema composer is open, every navigation
+  // entry point (chips, sidebar, mobile swipe) becomes a no-op automatically.
+  const setActiveSectionId = useCallback((id) => {
+    if (navLocked) return;
+    _setActiveSectionId(id);
+  }, [navLocked]);
   const [direction,       setDirection]       = useState(1);
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
@@ -1458,11 +1468,12 @@ function App({ onGoHome, onOpenSettings }) {
   }, []);
 
   const navigate = useCallback((sectionId) => {
+    if (navLocked) return;
     if (sectionId === activeSectionId) return;
     setOpenThreadId(null);
     setDirection(activeSectionId === null ? 1 : 1);
     setActiveSectionId(sectionId);
-  }, [activeSectionId]);
+  }, [activeSectionId, navLocked]);
 
   const navigateTo = useCallback((sectionId, threadId) => {
     setOpenThreadId(threadId || null);
@@ -1471,6 +1482,7 @@ function App({ onGoHome, onOpenSettings }) {
   }, []);
 
   const goHome = useCallback(() => {
+    if (navLocked) return;
     // If we're in a section, first go to Perfil tab
     if (activeSectionId) {
       setOpenThreadId(null);
@@ -1480,7 +1492,7 @@ function App({ onGoHome, onOpenSettings }) {
     }
     // If already on Perfil tab, go back to HomeFeed
     if (onGoHome) onGoHome();
-  }, [activeSectionId, onGoHome]);
+  }, [activeSectionId, onGoHome, navLocked]);
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
