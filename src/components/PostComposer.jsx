@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.jsx";
 import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
+import { useComposerNavLock } from "../lib/composerLock.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -79,6 +80,30 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const mediaRecRef = useRef(null);
 
   const previews = useLinkPreviews(`${title}\n${content}`);
+
+  // Block section navigation (chips/sidebar/swipe) while an Update or Subtema
+  // composer is open — create or edit. Post composer is a fullscreen overlay
+  // and isn't part of this lock (per product decision).
+  useComposerNavLock(!isPost);
+
+  // ── Dirty-check → only ask for discard confirmation if there's something to lose ──
+  const isDirty = isEditing
+    ? (
+        title !== (initial?.title || "") ||
+        content !== (initial?.content || "") ||
+        mediaFiles.length !== (initial?.mediaFiles?.length || 0) ||
+        thumbnail !== (initial?.thumbnail || null) ||
+        !!audioBlob || audioRemoved
+      )
+    : (
+        title.trim().length > 0 ||
+        content.trim().length > 0 ||
+        mediaFiles.length > 0 ||
+        !!audioURL ||
+        recording
+      );
+
+  const requestClose = () => { isDirty ? setShowCancel(true) : onClose(); };
 
   // ── Media handling ──────────────────────────────────────────────────────────
   const hasType = (kind) => kind === "thumbnail" ? !!thumbnail : mediaFiles.some(m => m.type === kind);
@@ -306,6 +331,20 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
     </div>
   );
 
+  const DiscardConfirmDialog = () => (
+    showCancel && (
+      <div style={{ position: "fixed", inset: 0, zIndex: 2600, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCancel(false)}>
+        <div onClick={e => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, width: 280 }}>
+          <p style={{ margin: "0 0 16px", fontFamily: font, fontSize: 14, color: C.text }}>¿Descartar {isEditing ? "los cambios" : "esta publicación"}?</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setShowCancel(false)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.text, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 600 }}>Seguir editando</button>
+            <button onClick={onClose} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
   // ── mode="post" → fullscreen sheet (matches old NewPostSheet layout) ─────────
   if (isPost) {
     return (
@@ -313,7 +352,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
         style={{ position: "fixed", inset: 0, zIndex: 2000, background: C.bg, display: "flex", flexDirection: "column", overflowY: "auto" }}>
 
         <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface, position: "sticky", top: 0, zIndex: 10 }}>
-          <motion.button whileTap={{ scale: 0.9 }} onClick={() => (title || content || mediaFiles.length) ? setShowCancel(true) : onClose()}
+          <motion.button whileTap={{ scale: 0.9 }} onClick={requestClose}
             style={{ background: "none", border: "none", cursor: "pointer", color: C.accentLight, marginRight: 12, display: "flex", alignItems: "center" }}>
             <ChevronLeft size={24} strokeWidth={2.4} />
           </motion.button>
@@ -358,17 +397,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
           <ChecklistAttach />
         </div>
 
-        {showCancel && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCancel(false)}>
-            <div onClick={e => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, width: 280 }}>
-              <p style={{ margin: "0 0 16px", fontFamily: font, fontSize: 14, color: C.text }}>¿Descartar {isEditing ? "los cambios" : "esta publicación"}?</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setShowCancel(false)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.text, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 600 }}>Seguir editando</button>
-                <button onClick={onClose} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
-              </div>
-            </div>
-          </div>
-        )}
+        <DiscardConfirmDialog />
 
         <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
       </motion.div>
@@ -382,7 +411,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={e => e.target === e.currentTarget && onClose()}
+        onClick={e => e.target === e.currentTarget && requestClose()}
         style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(8,8,14,0.88)", backdropFilter: "blur(14px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
 
         <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
@@ -401,7 +430,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
               </div>
               <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>{labels.header}</span>
             </div>
-            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={requestClose} style={{ width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <X size={14} />
             </button>
           </div>
@@ -449,7 +478,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
 
           <div style={{ padding: "12px 18px 0", flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={onClose}
+              <button onClick={requestClose}
                 style={{ flex: 1, height: 46, borderRadius: 14, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 600 }}>
                 Cancelar
               </button>
@@ -462,6 +491,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
         </motion.div>
       </motion.div>
 
+      <DiscardConfirmDialog />
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
     </>
   );
