@@ -7,6 +7,13 @@ import { supabase, uploadFile, storagePath, deleteFile } from "./supabase.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// A row counts as "edited" if it was updated meaningfully after creation.
+// 5s buffer absorbs clock skew between the insert and Postgres's default now().
+function wasEdited(row) {
+  if (!row.updated_at || !row.created_at) return false;
+  return new Date(row.updated_at).getTime() - new Date(row.created_at).getTime() > 5000;
+}
+
 function rowToThread(row, media = [], updates = []) {
   return {
     id: row.id,
@@ -16,6 +23,7 @@ function rowToThread(row, media = [], updates = []) {
     hashtags: row.hashtags ?? [],
     status: row.status,
     visibility: row.visibility,
+    edited: wasEdited(row),
     author: row.author,
     authorRole: row.author_role,
     timestamp: new Date(row.created_at),
@@ -35,6 +43,7 @@ function rowToUpdate(row, media = []) {
   return {
     id: row.id,
     content: row.content,
+    edited: wasEdited(row),
     timestamp: new Date(row.created_at),
     likes: row.likes_count ?? 0,
     liked: false,
@@ -174,7 +183,7 @@ export async function createRecapThread({ title, content, privacy, audio, mediaF
       planning_post_id: planningPostId || null,
       title: title || null,
       content,
-      visibility: privacy ?? "members",
+      visibility: privacy ?? "public",
       author,
       audio_url: audioUrl,
       audio_duration: audioDuration || null,
