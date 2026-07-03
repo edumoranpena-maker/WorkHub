@@ -18,12 +18,35 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical } from "lucide-react";
+import { Pencil, Trash2, Share2, Flag } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const C = {
   card: "#13131f", surface: "#0e0e18", border: "#1c1c2e",
   text: "#fafafa", textMuted: "#8e8e8e", red: "#ff4f6a",
 };
+
+/**
+ * Standard Editar/Eliminar/Compartir/Reportar action list for a piece of
+ * content (Post, Update or Subtema).
+ *
+ * `roles` on each action is NOT enforced anywhere yet (no role system wired
+ * up per product decision) — it's there so that later, filtering by the
+ * current user's role is a one-line change wherever this is called:
+ *
+ *   buildContentMenuActions({...}).filter(a => a.roles.includes(currentUserRole))
+ *
+ * Only pass the callbacks that make sense for the calling context — an
+ * action is included only if its onSelect was actually provided.
+ */
+export function buildContentMenuActions({ onEdit, onDelete, onShare, onReport }) {
+  return [
+    { id: "edit",   label: "Editar",    icon: Pencil, roles: ["host"],           onSelect: onEdit },
+    { id: "delete", label: "Eliminar",  icon: Trash2, roles: ["host"],           onSelect: onDelete, danger: true },
+    { id: "share",  label: "Compartir", icon: Share2, roles: ["host", "member"], onSelect: onShare },
+    { id: "report", label: "Reportar",  icon: Flag,   roles: ["host", "member"], onSelect: onReport, danger: true },
+  ].filter(a => typeof a.onSelect === "function");
+}
 
 export default function PostOptionsMenu({ actions = [], size = 30, align = "right" }) {
   const [open, setOpen] = useState(false);

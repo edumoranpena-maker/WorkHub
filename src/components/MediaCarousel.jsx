@@ -105,15 +105,12 @@ export default function MediaCarousel({ items = [], onOpenGallery, accentColor =
             style={{ position: "absolute", inset: 0 }}
           >
             {current.type === "video" ? (
-              <div style={{ position: "relative", width: "100%", height: "100%" }}>
-                <video
-                  src={current.url}
-                  controls
-                  playsInline
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-                {onOpenGallery && <ExpandImageButton onClick={openGallery} />}
-              </div>
+              <video
+                src={current.url}
+                controls
+                playsInline
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
             ) : current.type === "file" ? (
               <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, background: "#12121c", cursor: onOpenGallery ? "pointer" : "default" }}
                 onClick={openGallery}>
