@@ -247,12 +247,8 @@ function Avatar({ name, size = 32 }) {
 // ─── MonthDivider ──────────────────────────────────────────────────────────────
 function MonthDivider({ label }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 0 10px" }}>
-      <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.border}, transparent)` }} />
-      <div style={{ padding: "5px 14px", borderRadius: 99, background: "rgba(14,14,24,0.85)", backdropFilter: "blur(16px)", border: `1px solid rgba(34,211,160,0.22)`, boxShadow: "0 0 20px rgba(34,211,160,0.1)" }}>
-        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.text, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</span>
-      </div>
-      <div style={{ flex: 1, height: 1, background: `linear-gradient(270deg, ${C.border}, transparent)` }} />
+    <div style={{ padding: "18px 0 8px" }}>
+      <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
     </div>
   );
 }
@@ -349,11 +345,11 @@ const STATUS_FILTER = [
   { id: "closed",      label: "Closed",      color: C.textMuted, bg: "rgba(106,106,130,0.10)" },
 ];
 
-const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
-  const [inputVal, setInputVal]         = useState("");
+const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFilterChange }) {
+  const [inputVal, setInputVal]         = useState(searchQuery || "");
   const [filterOpen, setFilterOpen]     = useState(false);
-  const [activeStatuses, setActiveStatuses] = useState([]);
-  const [fromDate, setFromDate]         = useState(null);
+  const [activeStatuses, setActiveStatuses] = useState(filters?.statuses || []);
+  const [fromDate, setFromDate]         = useState(filters?.fromDate || null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const containerRef = useRef(null);
 
@@ -381,6 +377,8 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
       onFilterChange({ statuses: next, fromDate });
       return next;
     });
+    setFilterOpen(false);
+    setShowDatePicker(false);
   };
 
   const removeStatus = (id) => {
@@ -392,6 +390,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
   const handleFromDate = (d) => {
     setFromDate(d);
     setShowDatePicker(false);
+    setFilterOpen(false);
     onFilterChange({ statuses: activeStatuses, fromDate: d });
   };
 
@@ -905,7 +904,7 @@ function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, on
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}60`, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
-        <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}><LinkifiedText text={update.content} /></p>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}><LinkifiedText text={update.content} /></p>
         {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
@@ -1172,7 +1171,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </div>
 
           {subtema.content && (
-            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}><LinkifiedText text={subtema.content} /></p>
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={subtema.content} /></p>
           )}
 
           {subtemaMedia.length > 0 && (
@@ -1277,9 +1276,7 @@ function AdjacentThreadPeek({ thread }) {
         </div>
 
         {thread.title && (
-          <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 10 }}>
-            <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
-          </div>
+          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 15, fontWeight: 800, color: C.accentLight, lineHeight: 1.35 }}>{thread.title}</p>
         )}
 
         <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{thread.content}</p>
@@ -1508,15 +1505,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                 </div>
 
                 {thread.title && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                    <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px" }}>
-                      <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
-                    </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.accentLight, lineHeight: 1.35 }}>{thread.title}</span>
                     <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
                   </div>
                 )}
 
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}><LinkifiedText text={thread.content} /></p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={thread.content} /></p>
 
                 {thread.checklist && (
                   <div style={{ marginTop: 12 }}>
@@ -1982,7 +1977,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 {!openThread ? (
                   <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
                     <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
-                      <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
+                      <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
                     </div>
                     <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
                       {loadingThreads ? (
@@ -2041,7 +2036,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           <>
             {/* Filter bar */}
             <div style={{ padding: "12px 14px 10px" }}>
-              <FilterBar onSearch={handleSearch} onFilterChange={handleFilterChange} />
+              <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
             </div>
 
             {/* Posts list — flows naturally */}
