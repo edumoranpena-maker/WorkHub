@@ -1253,7 +1253,46 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   );
 }
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent }) {
+// ─── AdjacentThreadPeek — lightweight preview shown while dragging past an edge ──
+function AdjacentThreadPeek({ thread }) {
+  if (!thread) return null;
+  const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
+  const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
+  return (
+    <div style={{ height: "100%", background: C.surface, overflow: "hidden" }}>
+      <div style={{ background: `${C.teal}08`, padding: "20px 16px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <Avatar name={thread.author} size={36} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
+              <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
+            </div>
+          </div>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
+          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+        </div>
+
+        {thread.title && (
+          <div style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg, rgba(124,77,255,0.2), rgba(157,113,255,0.12))", border: "1px solid rgba(124,77,255,0.35)", borderRadius: 999, padding: "5px 14px", marginBottom: 10 }}>
+            <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.accentLight }}>{thread.title}</span>
+          </div>
+        )}
+
+        <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{thread.content}</p>
+
+        {thumb && (
+          <img src={thumb} alt="" style={{ width: "100%", maxHeight: 160, objectFit: "cover", borderRadius: 12, marginTop: 12 }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
   const [thread, setThread] = useState(initialThread);
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1269,23 +1308,33 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const threadLinks = useLinkPreviews(thread.content);
   const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
 
-  // ── Edge resistance + "second gesture" navigation to the adjacent post ──────
-  // First pull past an edge just snaps back (feels like hitting a limit).
-  // A second pull past the SAME edge within ARM_WINDOW_MS actually navigates.
-  const scrollElRef  = useRef(null);
-  const pullGesture   = useRef(null); // { startY, atTop, atBottom } while finger is down
-  const armedEdge     = useRef(null); // { edge: 'top'|'bottom', time } after a first completed pull
-  const [pullY, setPullY] = useState(0);
-  const PULL_TRIGGER_PX = 64;
-  const PULL_MAX_PX     = 90;
-  const PULL_DAMPING    = 0.4;
-  const ARM_WINDOW_MS   = 1600;
+  // ── Continuous peek-and-commit navigation (Telegram-style) ───────────────────
+  // One continuous drag: strong resistance for the first ~50px, then the
+  // adjacent post progressively peeks in — the further you pull, the more of
+  // it becomes visible. Release past the distance threshold (or a fast flick)
+  // completes the transition; otherwise everything snaps back elastically.
+  const scrollElRef = useRef(null);
+  const pullGesture  = useRef(null); // { startY, startT, atTop, atBottom, lastY, lastT }
+  const [peek, setPeek] = useState({ active: false, edge: null, display: 0, animating: false });
+
+  const RESIST_ZONE_PX = 50;    // pure-resistance distance before reveal starts easing up
+  const RUBBER_COEFF   = 0.55;  // lower = more resistance overall
+  const COMMIT_PX      = 130;   // raw drag distance that guarantees a commit
+  const FLICK_MIN_PX   = 46;    // minimum drag before a fast flick can also commit
+  const FLICK_VELOCITY = 0.55;  // px/ms
+
+  // Classic UIScrollView-style rubber band: resistance is strong near 0 and
+  // eases off continuously as the drag grows, asymptotically approaching `dim`
+  // (the full reveal) — never overshoots it.
+  const rubberBand = (raw, dim) => (dim * raw * RUBBER_COEFF) / (dim + RUBBER_COEFF * raw);
 
   const handleScrollTouchStart = (e) => {
+    if (peek.animating) return;
     const el = scrollElRef.current;
     if (!el) return;
+    const y = e.touches[0].clientY;
     pullGesture.current = {
-      startY: e.touches[0].clientY,
+      startY: y, startT: Date.now(), lastY: y, lastT: Date.now(),
       atTop: el.scrollTop <= 0,
       atBottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
     };
@@ -1293,30 +1342,49 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
 
   const handleScrollTouchMove = (e) => {
     const g = pullGesture.current;
-    if (!g) return;
-    const dy = e.touches[0].clientY - g.startY;
-    if (g.atTop && dy > 0) {
-      setPullY(Math.min(PULL_MAX_PX, dy * PULL_DAMPING));
-    } else if (g.atBottom && dy < 0) {
-      setPullY(Math.max(-PULL_MAX_PX, dy * PULL_DAMPING));
-    } else if (pullY !== 0) {
-      setPullY(0);
+    if (!g || peek.animating) return;
+    const el = scrollElRef.current;
+    const y = e.touches[0].clientY;
+    const dy = y - g.startY;
+    g.lastY = y; g.lastT = Date.now();
+
+    let edge = null, raw = 0;
+    if (g.atTop && dy > 0 && adjacentThreads?.newer) { edge = "top"; raw = dy; }
+    else if (g.atBottom && dy < 0 && adjacentThreads?.older) { edge = "bottom"; raw = -dy; }
+
+    if (edge) {
+      if (raw > 4 && e.cancelable) e.preventDefault(); // suppress native bounce while we drive our own
+      const dim = el?.clientHeight || 600;
+      // First RESIST_ZONE_PX of raw drag gets heavy damping (the "hitting a limit"
+      // feeling); beyond that the rubber-band formula eases off progressively.
+      const eased = raw <= RESIST_ZONE_PX
+        ? raw * 0.28
+        : RESIST_ZONE_PX * 0.28 + rubberBand(raw - RESIST_ZONE_PX, dim * 0.92);
+      setPeek({ active: true, edge, display: Math.min(dim, eased), animating: false });
+    } else if (peek.active) {
+      setPeek({ active: false, edge: null, display: 0, animating: false });
     }
   };
 
   const handleScrollTouchEnd = () => {
+    const g = pullGesture.current;
     pullGesture.current = null;
-    const pulled = pullY;
-    setPullY(0); // always spring back visually — the pull itself never scrolls, just resists
-    if (Math.abs(pulled) < PULL_TRIGGER_PX) return;
-    const edge = pulled > 0 ? "top" : "bottom";
-    const now = Date.now();
-    const armed = armedEdge.current;
-    if (armed && armed.edge === edge && (now - armed.time) < ARM_WINDOW_MS) {
-      armedEdge.current = null;
-      onNavigateAdjacent?.(edge === "top" ? "newer" : "older");
+    if (!g || !peek.active) return;
+
+    const rawDelta = Math.abs(g.lastY - g.startY);
+    const dt = Math.max(1, g.lastT - g.startT);
+    const velocity = rawDelta / dt;
+    const commit = rawDelta > COMMIT_PX || (rawDelta > FLICK_MIN_PX && velocity > FLICK_VELOCITY);
+    const el = scrollElRef.current;
+    const dim = el?.clientHeight || 600;
+    const edge = peek.edge;
+
+    if (commit) {
+      setPeek(p => ({ ...p, display: dim, animating: true }));
+      setTimeout(() => { onNavigateAdjacent?.(edge === "top" ? "newer" : "older"); }, 240);
     } else {
-      armedEdge.current = { edge, time: now };
+      setPeek(p => ({ ...p, display: 0, animating: true }));
+      setTimeout(() => setPeek({ active: false, edge: null, display: 0, animating: false }), 340);
     }
   };
 
@@ -1403,9 +1471,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
           <motion.div key="thread-main" initial={{ opacity: 1 }} animate={{ opacity: 1 }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-            <div ref={scrollElRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain" }}
+            <div ref={scrollElRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", position: "relative" }}
               onTouchStart={handleScrollTouchStart} onTouchMove={handleScrollTouchMove} onTouchEnd={handleScrollTouchEnd} onTouchCancel={handleScrollTouchEnd}>
-              <div style={{ transform: pullY ? `translateY(${pullY}px)` : "none", transition: pullY ? "none" : "transform 0.28s cubic-bezier(0.22,1,0.36,1)" }}>
+              <div style={{
+                transform: peek.active ? `scale(${1 - Math.min(0.06, (peek.display / (scrollElRef.current?.clientHeight || 600)) * 0.06)})` : "none",
+                opacity: peek.active ? 1 - Math.min(0.4, (peek.display / (scrollElRef.current?.clientHeight || 600)) * 0.4) : 1,
+                transition: peek.animating ? "transform 0.24s cubic-bezier(0.22,1,0.36,1), opacity 0.24s ease" : "none",
+              }}>
               {/* TopBar */}
               <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
                 style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
@@ -1528,6 +1600,24 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
 
               <div style={{ height: 90 }} />
               </div>
+
+              {peek.active && (
+                <div style={{
+                  position: "absolute", left: 0, right: 0,
+                  top: peek.edge === "top" ? 0 : "auto",
+                  bottom: peek.edge === "bottom" ? 0 : "auto",
+                  height: `${peek.display}px`,
+                  overflow: "hidden",
+                  zIndex: 40,
+                  boxShadow: peek.edge === "bottom" ? "0 -10px 30px rgba(0,0,0,0.4)" : "0 10px 30px rgba(0,0,0,0.4)",
+                  transition: peek.animating ? "height 0.24s cubic-bezier(0.22,1,0.36,1)" : "none",
+                  pointerEvents: "none",
+                }}>
+                  <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: scrollElRef.current?.clientHeight || "100%" }}>
+                    <AdjacentThreadPeek thread={peek.edge === "bottom" ? adjacentThreads?.older : adjacentThreads?.newer} />
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         ) : (
@@ -1823,6 +1913,15 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     openThreadView(target);
   }, [openThread, feedOrder, openThreadView]);
 
+  // The actual neighbor objects, so ThreadView can render a real peek preview
+  // during the drag and knows when an edge has nothing left to reveal.
+  const adjacentThreads = useMemo(() => {
+    if (!openThread) return { older: null, newer: null };
+    const idx = feedOrder.findIndex(t => t.id === openThread.id);
+    if (idx === -1) return { older: null, newer: null };
+    return { older: feedOrder[idx + 1] || null, newer: feedOrder[idx - 1] || null };
+  }, [openThread, feedOrder]);
+
   const closeThread = useCallback(() => {
     setDirection(-1); setOpenThread(null); setSubtemaOpen(false);
   }, []);
@@ -1904,6 +2003,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                     style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
                     <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
                       onNavigateAdjacent={navigateAdjacentThread}
+                      adjacentThreads={adjacentThreads}
                       onStatusChange={handleStatusChange}
                       onThreadEdited={handleThreadEdited}
                       onThreadDeleted={handleDeleteThread}
@@ -1962,6 +2062,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           <div style={{ background: C.surface, height: "100%", display: "flex", flexDirection: "column", overscrollBehavior: "contain" }}>
             <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
                       onNavigateAdjacent={navigateAdjacentThread}
+                      adjacentThreads={adjacentThreads}
               onStatusChange={handleStatusChange}
               onThreadEdited={handleThreadEdited}
               onThreadDeleted={handleDeleteThread}
