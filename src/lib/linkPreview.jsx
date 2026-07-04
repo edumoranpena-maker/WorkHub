@@ -8,11 +8,13 @@
  *
  * Exports:
  *   useLinkPreviews(text) -> Array<{ url, title, desc, image, site }>
+ *   LinkifiedText({ text })              -> renders text with clickable <a> links
  *   LinkPreviewCard({ preview, onExpand })
  *   LinkExpandModal({ preview, onClose })
+ *   mergeLinksIntoMedia(media, links)
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Link, X } from "lucide-react";
 
@@ -22,13 +24,44 @@ const C = {
   text: "#fafafa", textMuted: "#8e8e8e", teal: "#22d3a0",
 };
 
+const URL_RE = /https?:\/\/[^\s"<>]+/g;
+
+// ─── LinkifiedText — renders plain text with URLs turned into clickable links ─
+// This is the piece that was missing: useLinkPreviews/mergeLinksIntoMedia only
+// ever fed the media carousel — the actual <p>{content}</p> shown in Posts,
+// Updates and Subtemas was still a plain, unclickable text node.
+export function LinkifiedText({ text, linkColor = C.teal }) {
+  if (!text) return null;
+  const parts = text.split(URL_RE);
+  const urls = text.match(URL_RE) || [];
+  return (
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          {urls[i] && (
+            <a
+              href={urls[i]}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              style={{ color: linkColor, textDecoration: "underline", textUnderlineOffset: 2, wordBreak: "break-all" }}
+            >
+              {urls[i]}
+            </a>
+          )}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 // ─── useLinkPreviews — detects URLs in text, fetches OG meta via allorigins ───
 export function useLinkPreviews(text) {
   const [previews, setPreviews] = useState([]);
   const cache = useRef({});
 
   useEffect(() => {
-    const URL_RE = /https?:\/\/[^\s"<>]+/g;
     const urls = [...new Set((text || "").match(URL_RE) || [])].slice(0, 5);
     if (!urls.length) { setPreviews([]); return; }
 
@@ -128,13 +161,14 @@ export function LinkExpandModal({ preview, onClose }) {
 }
 
 /**
- * Merge link previews that have an image into a media array so they can be
- * shown inside MediaCarousel as extra slides (type: "link").
+ * Merge link previews into a media array so they can be shown inside
+ * MediaCarousel as extra slides (type: "link") — with or without an image;
+ * MediaCarousel/GlobalImageViewer both fall back to a plain title+domain
+ * card when there's no og:image.
  * Used by ThreadView / UpdateBubble / PostCard when rendering saved content.
  */
 export function mergeLinksIntoMedia(media = [], links = []) {
   const linkSlides = (links || [])
-    .filter(l => l.image)
-    .map(l => ({ type: "link", url: l.image, thumb: l.image, linkUrl: l.url, title: l.title }));
+    .map(l => ({ type: "link", url: l.image || "", thumb: l.image || "", linkUrl: l.url, title: l.title, site: l.site }));
   return [...(media || []), ...linkSlides];
 }
