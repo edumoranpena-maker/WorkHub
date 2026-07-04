@@ -31,7 +31,7 @@ const STORIES = [
 ];
 
 const POSTS = [
-  { id: 1, user: { name: "Alex Herrera", handle: "alexherrera.trades", initials: "AH", color: "#f97316", verified: true },
+  { id: 1, user: { name: "Luis Morp", handle: "alexherrera.trades", initials: "AH", color: "#f97316", verified: true },
     image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
     caption: "Major confluence zones aligning across DXY and XAUUSD. Expecting a corrective move before continuation. 📊",
     tags: ["#XAUUSD", "#DXY", "#Trading"], likes: 284, comments: 42, time: "2h", liked: false, saved: false },
@@ -43,7 +43,7 @@ const POSTS = [
     image: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=800&q=80",
     caption: "Weekend recap is live! 5 setups reviewed, 4 winners. Consistency > perfection 💪",
     tags: ["#WeeklyRecap", "#TradingJournal"], likes: 312, comments: 57, time: "6h", liked: false, saved: true },
-  { id: 4, user: { name: "Alex Herrera", handle: "alexherrera.trades", initials: "AH", color: "#f97316", verified: true },
+  { id: 4, user: { name: "Luis Morp", handle: "alexherrera.trades", initials: "AH", color: "#f97316", verified: true },
     image: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=80",
     caption: "NQ tapping into a premium array. Watching for a displacement + BOS to confirm the short. 🧠",
     tags: ["#NQ", "#ICT", "#SmartMoney"], likes: 891, comments: 134, time: "1d", liked: false, saved: false },
