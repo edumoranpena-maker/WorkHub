@@ -44,7 +44,7 @@ import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
-import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
+import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, LinkifiedText, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 
@@ -902,7 +902,7 @@ function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, on
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}60`, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
-        <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{update.content}</p>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}><LinkifiedText text={update.content} /></p>
         {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
@@ -1169,7 +1169,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </div>
 
           {subtema.content && (
-            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{subtema.content}</p>
+            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}><LinkifiedText text={subtema.content} /></p>
           )}
 
           {subtemaMedia.length > 0 && (
@@ -1388,7 +1388,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                   </div>
                 )}
 
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}>{thread.content}</p>
+                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text }}><LinkifiedText text={thread.content} /></p>
 
                 {thread.checklist && (
                   <div style={{ marginTop: 12 }}>
