@@ -145,7 +145,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
           {/* Name + verified + handle — below the avatar */}
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 2 }}>
-              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Alex Herrera"}</h2>
+              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
               <div style={{ width: 14, height: 14, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <span style={{ fontSize: 8, color: "#fff" }}>✓</span>
               </div>
@@ -1166,7 +1166,7 @@ function AddSectionModal({ onAdd, onClose }) {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 function SettingsPanel({ onClose }) {
-  const [username,   setUsername]   = useState("Alex Herrera");
+  const [username,   setUsername]   = useState("Luis Morp");
   const [handle,     setHandle]     = useState("alexherrera.trades");
   const [privacy,    setPrivacy]    = useState("members");
   const [saved,      setSaved]      = useState(false);
@@ -1246,7 +1246,7 @@ function SettingsPanel({ onClose }) {
               {/* Switch account */}
               <div style={{ marginTop: 4 }}>
                 <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Accounts</p>
-                {["Alex Herrera", "Trading Alt"].map((acc, i) => (
+                {["Luis Morp", "Trading Alt"].map((acc, i) => (
                   <motion.div key={acc} whileTap={{ scale: 0.97 }}
                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 14, background: i === 0 ? `${C.accent}12` : "transparent", border: `1px solid ${i === 0 ? C.accent + "30" : C.border}`, marginBottom: 8, cursor: "pointer" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: i === 0 ? `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)` : C.card, border: `2px solid ${i === 0 ? C.accent + "44" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
