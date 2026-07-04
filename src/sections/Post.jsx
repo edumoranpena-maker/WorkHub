@@ -763,38 +763,41 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
 
 // ─── PostFeed — stable grid, filters applied only on committed search + filter changes ──
 // searchQuery: committed on button press only. filters: { statuses, fromDate }
+// Shared by PostFeed (rendering) and the Thread's edge-swipe navigation
+// (prev/next post) — both must agree on the exact same visible order.
+function getFilteredThreads(threads, searchQuery, filters) {
+  let list = [...threads];
+
+  if (filters.statuses && filters.statuses.length > 0) {
+    list = list.filter(t => filters.statuses.includes(t.status));
+  }
+
+  if (filters.fromDate) {
+    const from = new Date(filters.fromDate);
+    from.setHours(0, 0, 0, 0);
+    list = list.filter(t => t.timestamp >= from);
+    list.sort((a, b) => a.timestamp - b.timestamp);
+  } else {
+    list.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    list = list.filter(t =>
+      t.title?.toLowerCase().includes(q) ||
+      t.content?.toLowerCase().includes(q) ||
+      t.hashtags?.some(h => h.toLowerCase().includes(q))
+    );
+  }
+
+  return list;
+}
+
 const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread }) {
-  const filtered = useMemo(() => {
-    let list = [...threads];
-
-    // 1. Status filter
-    if (filters.statuses && filters.statuses.length > 0) {
-      list = list.filter(t => filters.statuses.includes(t.status));
-    }
-
-    // 2. From-date filter — hide everything before fromDate, ascending order
-    if (filters.fromDate) {
-      const from = new Date(filters.fromDate);
-      from.setHours(0, 0, 0, 0);
-      list = list.filter(t => t.timestamp >= from);
-      list.sort((a, b) => a.timestamp - b.timestamp);
-    } else {
-      // Default: newest first
-      list.sort((a, b) => b.timestamp - a.timestamp);
-    }
-
-    // 3. Search query filter (committed on button press)
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(t =>
-        t.title?.toLowerCase().includes(q) ||
-        t.content?.toLowerCase().includes(q) ||
-        t.hashtags?.some(h => h.toLowerCase().includes(q))
-      );
-    }
-
-    return list;
-  }, [threads, searchQuery, filters]);
+  const filtered = useMemo(
+    () => getFilteredThreads(threads, searchQuery, filters),
+    [threads, searchQuery, filters]
+  );
 
   const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
 
@@ -1139,7 +1142,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain" }}>
         {/* TopBar */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
@@ -1250,7 +1253,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   );
 }
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange }) {
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent }) {
   const [thread, setThread] = useState(initialThread);
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1265,6 +1268,57 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const { enqueue } = usePublishQueue();
   const threadLinks = useLinkPreviews(thread.content);
   const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
+
+  // ── Edge resistance + "second gesture" navigation to the adjacent post ──────
+  // First pull past an edge just snaps back (feels like hitting a limit).
+  // A second pull past the SAME edge within ARM_WINDOW_MS actually navigates.
+  const scrollElRef  = useRef(null);
+  const pullGesture   = useRef(null); // { startY, atTop, atBottom } while finger is down
+  const armedEdge     = useRef(null); // { edge: 'top'|'bottom', time } after a first completed pull
+  const [pullY, setPullY] = useState(0);
+  const PULL_TRIGGER_PX = 64;
+  const PULL_MAX_PX     = 90;
+  const PULL_DAMPING    = 0.4;
+  const ARM_WINDOW_MS   = 1600;
+
+  const handleScrollTouchStart = (e) => {
+    const el = scrollElRef.current;
+    if (!el) return;
+    pullGesture.current = {
+      startY: e.touches[0].clientY,
+      atTop: el.scrollTop <= 0,
+      atBottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
+    };
+  };
+
+  const handleScrollTouchMove = (e) => {
+    const g = pullGesture.current;
+    if (!g) return;
+    const dy = e.touches[0].clientY - g.startY;
+    if (g.atTop && dy > 0) {
+      setPullY(Math.min(PULL_MAX_PX, dy * PULL_DAMPING));
+    } else if (g.atBottom && dy < 0) {
+      setPullY(Math.max(-PULL_MAX_PX, dy * PULL_DAMPING));
+    } else if (pullY !== 0) {
+      setPullY(0);
+    }
+  };
+
+  const handleScrollTouchEnd = () => {
+    pullGesture.current = null;
+    const pulled = pullY;
+    setPullY(0); // always spring back visually — the pull itself never scrolls, just resists
+    if (Math.abs(pulled) < PULL_TRIGGER_PX) return;
+    const edge = pulled > 0 ? "top" : "bottom";
+    const now = Date.now();
+    const armed = armedEdge.current;
+    if (armed && armed.edge === edge && (now - armed.time) < ARM_WINDOW_MS) {
+      armedEdge.current = null;
+      onNavigateAdjacent?.(edge === "top" ? "newer" : "older");
+    } else {
+      armedEdge.current = { edge, time: now };
+    }
+  };
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1349,7 +1403,9 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
           <motion.div key="thread-main" initial={{ opacity: 1 }} animate={{ opacity: 1 }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+            <div ref={scrollElRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain" }}
+              onTouchStart={handleScrollTouchStart} onTouchMove={handleScrollTouchMove} onTouchEnd={handleScrollTouchEnd} onTouchCancel={handleScrollTouchEnd}>
+              <div style={{ transform: pullY ? `translateY(${pullY}px)` : "none", transition: pullY ? "none" : "transform 0.28s cubic-bezier(0.22,1,0.36,1)" }}>
               {/* TopBar */}
               <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
                 style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
@@ -1471,6 +1527,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               )}
 
               <div style={{ height: 90 }} />
+              </div>
             </div>
           </motion.div>
         ) : (
@@ -1749,6 +1806,23 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     resetThreadNewUpdates(thread.id);
   }, []);
 
+  // Same visible order PostFeed renders — needed so "next/prev post" from
+  // inside a Thread matches what the user would actually see in the feed.
+  const feedOrder = useMemo(
+    () => getFilteredThreads(threads, searchQuery, filters),
+    [threads, searchQuery, filters]
+  );
+
+  // direction: "older" (edge = bottom/end of thread) or "newer" (edge = top/start of thread)
+  const navigateAdjacentThread = useCallback((direction) => {
+    if (!openThread) return;
+    const idx = feedOrder.findIndex(t => t.id === openThread.id);
+    if (idx === -1) return;
+    const target = direction === "older" ? feedOrder[idx + 1] : feedOrder[idx - 1];
+    if (!target) return; // already at the first/last post in the feed — nothing to navigate to
+    openThreadView(target);
+  }, [openThread, feedOrder, openThreadView]);
+
   const closeThread = useCallback(() => {
     setDirection(-1); setOpenThread(null); setSubtemaOpen(false);
   }, []);
@@ -1828,7 +1902,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                   <motion.div key={openThread.id} custom={direction} variants={slideVariants}
                     initial="enter" animate="center" exit="exit" transition={springTrans}
                     style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
-                    <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+                    <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+                      onNavigateAdjacent={navigateAdjacentThread}
                       onStatusChange={handleStatusChange}
                       onThreadEdited={handleThreadEdited}
                       onThreadDeleted={handleDeleteThread}
@@ -1861,7 +1936,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // change between renders, which would unmount ThreadView and wipe its state.
   return (
     <>
-      <div style={{ background: C.surface, minHeight: 400 }}>
+      <div style={openThread ? { background: C.surface, height: "100%", display: "flex", flexDirection: "column" } : { background: C.surface, minHeight: 400 }}>
         {!openThread ? (
           <>
             {/* Filter bar */}
@@ -1884,8 +1959,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             </div>
           </>
         ) : (
-          <div style={{ background: C.surface, height: "100vh", display: "flex", flexDirection: "column" }}>
-            <ThreadView thread={openThread} onBack={closeThread} isHost={isHost}
+          <div style={{ background: C.surface, height: "100%", display: "flex", flexDirection: "column", overscrollBehavior: "contain" }}>
+            <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+                      onNavigateAdjacent={navigateAdjacentThread}
               onStatusChange={handleStatusChange}
               onThreadEdited={handleThreadEdited}
               onThreadDeleted={handleDeleteThread}
