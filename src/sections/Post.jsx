@@ -650,7 +650,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, hasUnseen, onClick, onEdit, onDelete, onShare, onReport }) {
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -682,9 +682,11 @@ const PostCard = memo(function PostCard({ thread, hasUnseen, onClick, onEdit, on
         position: "relative",
       }}
     >
-      {/* Unread dot — top-right corner of the card, only for unseen new content */}
-      {hasUnseen && (
-        <span style={{ position: "absolute", top: 8, right: 8, zIndex: 5, width: 10, height: 10, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}90`, border: `2px solid ${C.card}` }} />
+      {/* Unread badge — original look (teal pill, +N), top-right corner, only for unseen new content */}
+      {unseenCount > 0 && (
+        <div style={{ position: "absolute", top: 8, right: 8, zIndex: 5, background: C.teal, borderRadius: 99, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, boxShadow: `0 0 10px ${C.teal}80` }}>
+          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, color: "#000" }}>+{unseenCount}</span>
+        </div>
       )}
 
       {/* Thumbnail area */}
@@ -728,13 +730,15 @@ const PostCard = memo(function PostCard({ thread, hasUnseen, onClick, onEdit, on
           </p>
         )}
 
-        {/* Status — own row, above date/visibility for a cleaner hierarchy */}
+        {/* Status + 3-dot menu, same line, menu pinned to the right margin */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}` }} />
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
           <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+          <div style={{ flex: 1 }} />
+          <PostOptionsMenu actions={menuActions} size={24} />
         </div>
 
-        {/* Footer: date + privacy + edited ... 3-dot menu, bottom-right */}
+        {/* Footer: date + privacy + edited */}
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
             {fmtDate(thread.timestamp)}
@@ -743,8 +747,6 @@ const PostCard = memo(function PostCard({ thread, hasUnseen, onClick, onEdit, on
           {thread.edited && (
             <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>
           )}
-          <div style={{ flex: 1 }} />
-          <PostOptionsMenu actions={menuActions} size={24} />
         </div>
       </div>
     </motion.div>
@@ -812,7 +814,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
           <MonthDivider label={month} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
             {items.map(t => (
-              <PostCard key={t.id} thread={t} hasUnseen={t.newUpdates > 0 || !!unseenSubtemas?.[t.id]} onClick={() => onOpenThread(t)}
+              <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
                 onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread} />
             ))}
           </div>
