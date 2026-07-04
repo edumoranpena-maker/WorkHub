@@ -31,6 +31,7 @@ import {
   toggleUpdateLike,
   addThreadComment,
   updateThreadStatus,
+  resetThreadNewUpdates,
   deleteRecapThread,
   deleteThreadUpdate,
   updateRecapThread,
@@ -649,7 +650,7 @@ const FilterBar = memo(function FilterBar({ onSearch, onFilterChange }) {
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onShare, onReport }) {
+const PostCard = memo(function PostCard({ thread, hasUnseen, onClick, onEdit, onDelete, onShare, onReport }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -681,15 +682,18 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onS
         position: "relative",
       }}
     >
+      {/* Unread dot — top-right corner of the card, only for unseen new content */}
+      {hasUnseen && (
+        <span style={{ position: "absolute", top: 8, right: 8, zIndex: 5, width: 10, height: 10, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}90`, border: `2px solid ${C.card}` }} />
+      )}
+
       {/* Thumbnail area */}
       <div style={{ position: "relative", aspectRatio: "16/9", background: thumb ? "transparent" : `linear-gradient(135deg, ${C.accentDim}44, ${C.tealDim})`, overflow: "hidden" }}>
         {thumb ? (
           <img
             src={thumb}
             alt=""
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
-              filter: hov ? "brightness(0.75)" : "brightness(0.65)",
-              transition: "filter 0.25s" }}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : (
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -697,25 +701,13 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onS
           </div>
         )}
 
-        {/* Blur overlay at bottom */}
+        {/* Localized gradient behind the title only — rest of the thumbnail keeps its true colors */}
         {thumb && (
           <div style={{
-            position: "absolute", inset: 0,
-            background: "linear-gradient(to top, rgba(8,8,14,0.92) 0%, rgba(8,8,14,0.4) 50%, transparent 100%)",
+            position: "absolute", left: 0, right: 0, bottom: 0, height: "52%", pointerEvents: "none",
+            background: "linear-gradient(to top, rgba(8,8,14,0.85) 0%, rgba(8,8,14,0.35) 65%, transparent 100%)",
           }} />
         )}
-
-        {/* New updates badge */}
-        {thread.newUpdates > 0 && (
-          <div style={{ position: "absolute", top: 8, right: 40, background: C.teal, borderRadius: 99, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, boxShadow: `0 0 10px ${C.teal}80` }}>
-            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, color: "#000" }}>+{thread.newUpdates}</span>
-          </div>
-        )}
-
-        {/* 3-dot options — top-right corner */}
-        <div style={{ position: "absolute", top: 6, right: 6 }}>
-          <PostOptionsMenu actions={menuActions} size={26} />
-        </div>
 
         {/* Title overlay on image */}
         {thumb && (
@@ -729,20 +721,20 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onS
 
       {/* Card body */}
       <div style={{ padding: "10px 12px 12px" }}>
-        {/* Title + status, same line (image-less cards only — thumbnail cards show title over the image) */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-          {!thumb ? (
-            <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
-              {thread.title || "Untitled"}
-            </p>
-          ) : <div />}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}` }} />
-            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
-          </div>
+        {/* Title (image-less cards only — thumbnail cards show title over the image) */}
+        {!thumb && (
+          <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+            {thread.title || "Untitled"}
+          </p>
+        )}
+
+        {/* Status — own row, above date/visibility for a cleaner hierarchy */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}` }} />
+          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
         </div>
 
-        {/* Footer: date + privacy + edited */}
+        {/* Footer: date + privacy + edited ... 3-dot menu, bottom-right */}
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
             {fmtDate(thread.timestamp)}
@@ -751,6 +743,8 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onS
           {thread.edited && (
             <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>
           )}
+          <div style={{ flex: 1 }} />
+          <PostOptionsMenu actions={menuActions} size={24} />
         </div>
       </div>
     </motion.div>
@@ -767,7 +761,7 @@ const PostCard = memo(function PostCard({ thread, onClick, onEdit, onDelete, onS
 
 // ─── PostFeed — stable grid, filters applied only on committed search + filter changes ──
 // searchQuery: committed on button press only. filters: { statuses, fromDate }
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread }) {
   const filtered = useMemo(() => {
     let list = [...threads];
 
@@ -818,7 +812,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, onOpenT
           <MonthDivider label={month} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
             {items.map(t => (
-              <PostCard key={t.id} thread={t} onClick={() => onOpenThread(t)}
+              <PostCard key={t.id} thread={t} hasUnseen={t.newUpdates > 0 || !!unseenSubtemas?.[t.id]} onClick={() => onOpenThread(t)}
                 onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread} />
             ))}
           </div>
@@ -1645,6 +1639,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
 
   // ── Navigation state ───────────────────────────────────────────────────────
   const [openThread, setOpenThread] = useState(null);
+  // Subtemas are client-side only (no DB row), so unlike new_updates_count
+  // this unseen-tracking lives purely in memory for the session.
+  const [unseenSubtemas, setUnseenSubtemas] = useState({}); // { [threadId]: boolean }
   const [direction, setDirection] = useState(1);
   const feedScrollRef = useRef(0);
   const feedContainerRef = useRef(null);
@@ -1744,6 +1741,10 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const openThreadView = useCallback((thread) => {
     if (feedContainerRef.current) feedScrollRef.current = feedContainerRef.current.scrollTop;
     setDirection(1); setOpenThread(thread);
+    // Mark as seen: clear the dot immediately, then persist in the background.
+    setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, newUpdates: 0 } : t));
+    setUnseenSubtemas(prev => ({ ...prev, [thread.id]: false }));
+    resetThreadNewUpdates(thread.id);
   }, []);
 
   const closeThread = useCallback(() => {
@@ -1816,7 +1817,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                         </div>
                       ) : (
                         <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}} />
+                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                          unseenSubtemas={unseenSubtemas} />
                       )}
                     </div>
                   </motion.div>
@@ -1832,7 +1834,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                       composerMode={activeComposer}
                       onHideComposer={closeComposer}
                       onSubtemaChange={setSubtemaOpen}
-                      onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+                      onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
                     />
                   </motion.div>
                 )}
@@ -1874,7 +1876,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 </div>
               ) : (
                 <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}} />
+                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                          unseenSubtemas={unseenSubtemas} />
               )}
             </div>
           </>
@@ -1888,7 +1891,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               composerMode={activeComposer}
               onHideComposer={closeComposer}
               onSubtemaChange={setSubtemaOpen}
-              onAddSubtema={(threadId, sub) => setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t))}
+              onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
             />
           </div>
         )}
