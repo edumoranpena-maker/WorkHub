@@ -145,7 +145,7 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
           {/* Name + verified + handle — below the avatar */}
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 2 }}>
-              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
+              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Alex Herrera"}</h2>
               <div style={{ width: 14, height: 14, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <span style={{ fontSize: 8, color: "#fff" }}>✓</span>
               </div>
@@ -1166,7 +1166,7 @@ function AddSectionModal({ onAdd, onClose }) {
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 function SettingsPanel({ onClose }) {
-  const [username,   setUsername]   = useState("Luis Morp");
+  const [username,   setUsername]   = useState("Alex Herrera");
   const [handle,     setHandle]     = useState("alexherrera.trades");
   const [privacy,    setPrivacy]    = useState("members");
   const [saved,      setSaved]      = useState(false);
@@ -1246,7 +1246,7 @@ function SettingsPanel({ onClose }) {
               {/* Switch account */}
               <div style={{ marginTop: 4 }}>
                 <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Accounts</p>
-                {["Luis Morp", "Trading Alt"].map((acc, i) => (
+                {["Alex Herrera", "Trading Alt"].map((acc, i) => (
                   <motion.div key={acc} whileTap={{ scale: 0.97 }}
                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 14, background: i === 0 ? `${C.accent}12` : "transparent", border: `1px solid ${i === 0 ? C.accent + "30" : C.border}`, marginBottom: 8, cursor: "pointer" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: i === 0 ? `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)` : C.card, border: `2px solid ${i === 0 ? C.accent + "44" : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -1653,39 +1653,54 @@ function App({ onGoHome, onOpenSettings }) {
   // Swipe horizontal — deliberate (Twitter/Whop style): vertical always wins
   const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
 
-  // ── UNIFIED SCROLL (Instagram-style) ────────────────────────────────────────
-  // Single scroll container holds ProfileCard + Chips + Feed as one document.
-  // ProfileCard disappears naturally as part of the flow — no JS translateY needed.
-  // Chips are position:sticky so they lock below the topbar automatically.
-  // No flickering because there's only ONE scroll context.
-  const unifiedScrollRef = useRef(null);
-  const savedScrollTop   = useRef({});   // persist scroll position per section
-  const preThreadScrollTop = useRef(0);  // exact scroll position from right before a thread was opened
+  // ── DECOUPLED SCROLL ─────────────────────────────────────────────────────────
+  // ProfileCard's "hidden amount" is now independent, global state — it is
+  // NOT derived from the scrollTop of a document that also contains section
+  // content (that was the bug: a short section's content would make the
+  // browser clamp scrollTop back down, un-hiding the profile). Instead:
+  //   - profileHiddenPx persists across section switches, updated only by the
+  //     scroll DELTA of whichever section is currently visible.
+  //   - The content area is its own scroll container and is explicitly reset
+  //     to scrollTop 0 every time the section changes.
+  const PROFILE_MAX_COLLAPSE = 260; // generous cap; ProfileCard's real height is usually less, extra just clamps harmlessly
+  const [profileHiddenPx, setProfileHiddenPx] = useState(0);
+  const [profileNaturalHeight, setProfileNaturalHeight] = useState(PROFILE_MAX_COLLAPSE);
+  const profileMeasureRef = useRef(null);
+  const contentScrollRef = useRef(null);
+  const lastContentScrollTop = useRef(0);
 
-  // Thread reading-mode: hide ProfileCard, freeze the background scroll,
-  // and restore the exact prior scroll position on exit.
+  // Measure ProfileCard's real height so the collapsing wrapper can shrink
+  // by an actual amount (not just visually translate — the layout below,
+  // i.e. the Chips, needs to actually move up to fill the vacated space).
   useEffect(() => {
-    const el = unifiedScrollRef.current;
-    if (!el) return;
-    if (insideThread) {
-      preThreadScrollTop.current = el.scrollTop;
-      el.scrollTop = 0; // ProfileCard is about to unmount — chips should sit pinned at the very top, not wherever they were stuck before
-    } else {
-      el.scrollTop = preThreadScrollTop.current;
-    }
-  }, [insideThread]);
+    const el = profileMeasureRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      if (h > 0) setProfileNaturalHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  // When section changes, restore saved scroll position
-  const onSectionChange = useCallback((id) => {
-    // Save current scroll
-    if (unifiedScrollRef.current) {
-      savedScrollTop.current[activeSectionId ?? "perfil"] = unifiedScrollRef.current.scrollTop;
-    }
+  // Every section switch: content always starts from the top. ProfileCard's
+  // hidden state is deliberately left untouched here.
+  useEffect(() => {
+    if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+    lastContentScrollTop.current = 0;
   }, [activeSectionId]);
 
+  const handleContentScroll = useCallback(() => {
+    if (insideThread) return; // Thread has its own independent scroll (unaffected by header collapse)
+    const el = contentScrollRef.current;
+    if (!el) return;
+    const delta = el.scrollTop - lastContentScrollTop.current;
+    lastContentScrollTop.current = el.scrollTop;
+    setProfileHiddenPx(p => Math.min(profileNaturalHeight, Math.max(0, p + delta)));
+  }, [insideThread, profileNaturalHeight]);
+
   // scrollProps is kept for passing to child sections that have own scroll containers
-  // For sections that DON'T have their own scroll (Perfil), the unified container handles it
-  const handleFeedScroll = useCallback(() => {}, []); // no-op: unified scroll handles everything
+  const handleFeedScroll = useCallback(() => {}, []); // no-op: content scroll handles everything
   const handleTouchStart = (e) => {
     swipeState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
@@ -1718,7 +1733,7 @@ function App({ onGoHome, onOpenSettings }) {
 
   // Render del feed móvil según sección activa — sin navegar a página nueva
   function renderMobileFeed() {
-    // No scrollProps — unified scroll container handles scrolling for all sections
+    // No scrollProps — content scroll container handles scrolling for all sections
     if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />;
@@ -1745,61 +1760,64 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
 
         {/*
-          ── SINGLE SCROLL CONTAINER — never remounts ─────────────────────────
-          ProfileCard and Chips live here permanently.
-          Only the feed content area transitions between sections.
+          ── DECOUPLED LAYOUT ──────────────────────────────────────────────────
+          Header (ProfileCard + Chips) never remounts and never scrolls itself —
+          its collapse amount is independent global state. Only the content
+          region below transitions between sections and always starts at 0.
         */}
-        <div
-          ref={unifiedScrollRef}
-          style={{
-            flex: 1, overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface,
-            overflowY: insideThread ? "hidden" : "auto",
-            ...(insideThread ? { display: "flex", flexDirection: "column" } : {}),
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* 1. ProfileCard — hidden completely while reading a Thread (independent reading mode) */}
-          {!insideThread && (
-            <ProfileCard
-              onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-              profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-              onEditAvatar={onOpenSettings}
-              followed={followed}
-              onToggleFollow={() => setFollowed(f => !f)}
-              subscribed={subscribed}
-              onToggleSubscribe={() => setSubscribed(s => !s)}
-            />
-          )}
-          {/* 2. Chips — sticky, always mounted, never animates */}
-          <div style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 25,
-            flexShrink: 0,
-            background: `${C.surface}fd`,
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            borderBottom: `1px solid ${C.border}`,
-          }}>
-            <div style={{ padding: "6px 14px 8px" }}>
-              <SectionChips
-                activeSectionId={activeSectionId}
-                onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
-                onSections={allSections}
-                onAddSection={() => setShowAddSection(true)}
-              />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", zIndex: 1 }}>
+
+          {/* Header: ProfileCard (collapsible) + Chips — fixed, never scrolls */}
+          <div style={{ flexShrink: 0, background: C.surface }}>
+            {!insideThread && (
+              <div style={{ height: Math.max(0, profileNaturalHeight - profileHiddenPx), overflow: "hidden" }}>
+                <div ref={profileMeasureRef} style={{ transform: `translateY(-${profileHiddenPx}px)` }}>
+                  <ProfileCard
+                    onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+                    profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                    onEditAvatar={onOpenSettings}
+                    followed={followed}
+                    onToggleFollow={() => setFollowed(f => !f)}
+                    subscribed={subscribed}
+                    onToggleSubscribe={() => setSubscribed(s => !s)}
+                  />
+                </div>
+              </div>
+            )}
+            <div style={{
+              zIndex: 25,
+              background: `${C.surface}fd`,
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ padding: "6px 14px 8px" }}>
+                <SectionChips
+                  activeSectionId={activeSectionId}
+                  onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                  onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+                  onSections={allSections}
+                  onAddSection={() => setShowAddSection(true)}
+                />
+              </div>
             </div>
           </div>
 
-          {/* 3. Feed — only this area transitions. Bounded height while inside a
-              Thread so its own internal scroll becomes the ONLY scrollable region
-              (this is what stops scroll-chaining back into the ProfileCard). */}
-          <div style={insideThread
-            ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
-            : { position: "relative", background: C.bg, minHeight: "50vh" }}>
+          {/* Content — its own scroll, always resets to top on section change.
+              Bounded height while inside a Thread so ThreadView's internal
+              scroll becomes the ONLY scrollable region. */}
+          <div
+            ref={contentScrollRef}
+            onScroll={handleContentScroll}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            style={{
+              flex: 1, overflowX: "hidden", background: C.bg,
+              overflowY: insideThread ? "hidden" : "auto",
+              ...(insideThread ? { display: "flex", flexDirection: "column" } : {}),
+            }}
+          >
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={activeSectionId ?? "perfil"}
@@ -1809,7 +1827,7 @@ function App({ onGoHome, onOpenSettings }) {
                 animate="center"
                 exit="exit"
                 transition={feedTrans}
-                style={insideThread ? { willChange: "opacity, transform", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : { willChange: "opacity, transform" }}
+                style={insideThread ? { willChange: "opacity, transform", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : { willChange: "opacity, transform", minHeight: "100%" }}
               >
                 {renderMobileFeed()}
                 {!insideThread && <div style={{ height: 40 }} />}
@@ -1818,6 +1836,7 @@ function App({ onGoHome, onOpenSettings }) {
           </div>
 
         </div>
+
 
         {/* Role toggle */}
         <div style={{ position: "fixed", bottom: 20, right: 16, zIndex: 9998, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 4px 4px 10px", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}>
