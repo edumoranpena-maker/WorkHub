@@ -12,7 +12,7 @@ export const DEFAULT_PROFILE_CONFIG = {
 
   // ── Identity ────────────────────────────────────────────────────────────────
   identity: {
-    name:       "Alex Herrera",
+    name:       "Luis Morp",
     handle:     "@alexherrera.trades",
     initials:   "A",
     avatarUrl:  null,          // null = use initials fallback
