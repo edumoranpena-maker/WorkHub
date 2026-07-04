@@ -263,10 +263,11 @@ export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [
   }
   console.log("[addThreadUpdate] thread_updates INSERT ok, update.id:", update.id);
 
-  // 3. Increment new_updates_count on thread
+  // 3. Increment new_updates_count on thread (not an edit of the post's own
+  //    content, so updated_at is deliberately left untouched here)
   await supabase.from("recap_threads").select("new_updates_count").eq("id", threadId).single()
     .then(({ data: t }) => t && supabase.from("recap_threads")
-      .update({ new_updates_count: (t.new_updates_count ?? 0) + 1, updated_at: new Date().toISOString() })
+      .update({ new_updates_count: (t.new_updates_count ?? 0) + 1 })
       .eq("id", threadId));
 
   // 4. Upload media
@@ -366,10 +367,19 @@ export async function addThreadComment(threadId, { author, text }) {
   return { id: data.id, author: data.author, avatar: data.avatar, text: data.text, likes: 0, liked: false, time: data.created_at };
 }
 
-/** Update thread status. */
+/** Update thread status. Doesn't touch updated_at — a status change isn't a
+ *  content edit, so it shouldn't trigger the "Editado" indicator. */
 export async function updateThreadStatus(threadId, status) {
-  const { error } = await supabase.from("recap_threads").update({ status, updated_at: new Date().toISOString() }).eq("id", threadId);
+  const { error } = await supabase.from("recap_threads").update({ status }).eq("id", threadId);
   if (error) console.error("[recapsApi] updateThreadStatus:", error.message);
+  return !error;
+}
+
+/** Reset the unseen-updates counter for a thread (called when it's opened/viewed).
+ *  Doesn't touch updated_at for the same reason as above. */
+export async function resetThreadNewUpdates(threadId) {
+  const { error } = await supabase.from("recap_threads").update({ new_updates_count: 0 }).eq("id", threadId);
+  if (error) console.error("[recapsApi] resetThreadNewUpdates:", error.message);
   return !error;
 }
 
