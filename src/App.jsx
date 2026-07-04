@@ -1660,6 +1660,20 @@ function App({ onGoHome, onOpenSettings }) {
   // No flickering because there's only ONE scroll context.
   const unifiedScrollRef = useRef(null);
   const savedScrollTop   = useRef({});   // persist scroll position per section
+  const preThreadScrollTop = useRef(0);  // exact scroll position from right before a thread was opened
+
+  // Thread reading-mode: hide ProfileCard, freeze the background scroll,
+  // and restore the exact prior scroll position on exit.
+  useEffect(() => {
+    const el = unifiedScrollRef.current;
+    if (!el) return;
+    if (insideThread) {
+      preThreadScrollTop.current = el.scrollTop;
+      el.scrollTop = 0; // ProfileCard is about to unmount — chips should sit pinned at the very top, not wherever they were stuck before
+    } else {
+      el.scrollTop = preThreadScrollTop.current;
+    }
+  }, [insideThread]);
 
   // When section changes, restore saved scroll position
   const onSectionChange = useCallback((id) => {
@@ -1737,27 +1751,33 @@ function App({ onGoHome, onOpenSettings }) {
         */}
         <div
           ref={unifiedScrollRef}
-          style={{ flex: 1, overflowY: "auto", overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface }}
+          style={{
+            flex: 1, overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface,
+            overflowY: insideThread ? "hidden" : "auto",
+            ...(insideThread ? { display: "flex", flexDirection: "column" } : {}),
+          }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* 1. ProfileCard — always mounted, scrolls away naturally */}
-          <ProfileCard
-            onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-            profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-            onEditAvatar={onOpenSettings}
-            followed={followed}
-            onToggleFollow={() => setFollowed(f => !f)}
-            subscribed={subscribed}
-            onToggleSubscribe={() => setSubscribed(s => !s)}
-          />
-
+          {/* 1. ProfileCard — hidden completely while reading a Thread (independent reading mode) */}
+          {!insideThread && (
+            <ProfileCard
+              onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+              profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+              onEditAvatar={onOpenSettings}
+              followed={followed}
+              onToggleFollow={() => setFollowed(f => !f)}
+              subscribed={subscribed}
+              onToggleSubscribe={() => setSubscribed(s => !s)}
+            />
+          )}
           {/* 2. Chips — sticky, always mounted, never animates */}
           <div style={{
             position: "sticky",
             top: 0,
             zIndex: 25,
+            flexShrink: 0,
             background: `${C.surface}fd`,
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
@@ -1774,8 +1794,12 @@ function App({ onGoHome, onOpenSettings }) {
             </div>
           </div>
 
-          {/* 3. Feed — only this area transitions. No overflow:hidden so Post can flow. */}
-          <div style={{ position: "relative", background: C.bg, minHeight: "50vh" }}>
+          {/* 3. Feed — only this area transitions. Bounded height while inside a
+              Thread so its own internal scroll becomes the ONLY scrollable region
+              (this is what stops scroll-chaining back into the ProfileCard). */}
+          <div style={insideThread
+            ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
+            : { position: "relative", background: C.bg, minHeight: "50vh" }}>
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={activeSectionId ?? "perfil"}
@@ -1785,10 +1809,10 @@ function App({ onGoHome, onOpenSettings }) {
                 animate="center"
                 exit="exit"
                 transition={feedTrans}
-                style={{ willChange: "opacity, transform" }}
+                style={insideThread ? { willChange: "opacity, transform", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : { willChange: "opacity, transform" }}
               >
                 {renderMobileFeed()}
-                <div style={{ height: 40 }} />
+                {!insideThread && <div style={{ height: 40 }} />}
               </motion.div>
             </AnimatePresence>
           </div>
