@@ -12,7 +12,7 @@ export const DEFAULT_PROFILE_CONFIG = {
 
   // ── Identity ────────────────────────────────────────────────────────────────
   identity: {
-    name:       "Luis Morp",
+    name:       "Alex Herrera",
     handle:     "@alexherrera.trades",
     initials:   "A",
     avatarUrl:  null,          // null = use initials fallback
@@ -20,16 +20,19 @@ export const DEFAULT_PROFILE_CONFIG = {
     bioHighlight: "XAUUSD · DXY · EURUSD",
     verified:   true,
     liveNow:    true,
-    rating:     4.9,
-    ratingCount: 147,
   },
+
+  // ── Social links shown as a row of icons below the bio. Empty by default —
+  // ready for the user to connect accounts; each entry needs { platform, url }.
+  // platform resolves to an icon via SOCIAL_ICON_MAP in App.jsx (falls back to
+  // a generic Globe icon for anything not explicitly mapped yet).
+  socials: [],
 
   // ── Stats shown in profile header (order = display order) ──────────────────
   stats: [
     { key: "followers",  label: "Followers",   value: "12.4k" },
-    { key: "trades",     label: "Trades",      value: "147"   },
-    { key: "winrate",    label: "Winrate",      value: "68%"  },
-    { key: "ev",         label: "Exp. Value",   value: "2.8R" },
+    { key: "posts",      label: "Posts",        value: "86"    },
+    { key: "ev",         label: "Exp Value",    value: "2.8R"  },
   ],
 
   // ── Theme ───────────────────────────────────────────────────────────────────
@@ -39,14 +42,14 @@ export const DEFAULT_PROFILE_CONFIG = {
     borderRadius:   "rounded",       // "sharp" | "rounded" | "pill"
     fontScale:      1.0,             // 0.85–1.2
     density:        "comfortable",   // "compact" | "comfortable" | "spacious"
-    glowEffects:    true,
+    glowEffects:    false,
     animationSpeed: "normal",        // "reduced" | "normal" | "expressive"
   },
 
   // ── Profile layout ──────────────────────────────────────────────────────────
   layout: {
-    profileTemplate: "avatar-left",  // "avatar-left" | "centered" | "banner"
-    showRating:      true,
+    profileTemplate: "centered",     // "avatar-left" | "centered" | "banner"
+    showRating:      false,
     showLiveDot:     true,
     showBio:         true,
     showStats:       true,

@@ -16,8 +16,8 @@ export const THEME_REGISTRY = {
     description: "Deep space with electric violet — the default",
     preview: ["#08080e", "#7c4dff", "#22d3a0"],
     tokens: {
-      bg:          "#08080e",
-      surface:     "#0e0e18",
+      bg:          "#000000",
+      surface:     "#0a0a0a",
       card:        "#13131f",
       cardHover:   "#19192a",
       border:      "#1c1c2e",
