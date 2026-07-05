@@ -4,6 +4,7 @@ import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
   Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil, CheckSquare,
+  Globe, Instagram, Youtube, Twitter, Linkedin, Github, Link as LinkIcon,
 } from "lucide-react";
 import HomeFeed      from "./HomeFeed.jsx";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
@@ -103,124 +104,145 @@ function IconBtn({ icon: Icon, badge, onClick }) {
 // ─── Premium Profile Card ─────────────────────────────────────────────────────
 // State (followed/subscribed) is owned by App so it survives section changes.
 // ProfileCard is purely presentational for those toggles.
-function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
+// Maps a social platform id to an icon. Falls back to a generic globe icon for
+// anything not explicitly listed yet — new platforms can be added here later
+// without touching the rendering logic below.
+const SOCIAL_ICON_MAP = {
+  instagram: Instagram,
+  x:         Twitter,
+  twitter:   Twitter,
+  youtube:   Youtube,
+  linkedin:  Linkedin,
+  github:    Github,
+  website:   Globe,
+};
+
+function ProfileHeader({ onNavigate, hideButtons, profile, onEditAvatar,
                        followed, onToggleFollow, subscribed, onToggleSubscribe }) {
+  const stats = profile?.stats ?? [
+    { key: "followers", label: "Followers", value: "12.4k" },
+    { key: "posts",      label: "Posts",     value: "86" },
+    { key: "ev",         label: "Exp Value", value: "2.8R" },
+  ];
+  const socials = profile?.socials ?? [];
+
   return (
     <motion.div
       data-profile-card="1"
       initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "22px 18px 0" }}>
+      style={{ padding: "28px 20px 0" }}>
 
-      {/* ── Row: avatar column + divider + bio ── */}
-      <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-
-        {/* Left column: avatar ring + name/handle/verified below */}
-        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-          {/* Avatar with orange story ring + pencil edit button */}
-          <div style={{ position: "relative" }}>
-            <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
-              <div style={{
-                width: 80, height: 80, borderRadius: "50%",
-                background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
-                padding: 3,
-                boxShadow: `0 0 18px ${C.orange}55, 0 0 6px ${C.orange}40`,
-              }}>
-                <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.card}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontFamily: font, fontSize: 26, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
-                </div>
+      {/* Avatar + name + handle — centered, like the leading social apps */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
+            <div style={{
+              width: 84, height: 84, borderRadius: "50%",
+              background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
+              padding: 3,
+              boxShadow: `0 0 10px ${C.orange}30`,
+            }}>
+              <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.bg}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontFamily: font, fontSize: 28, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
               </div>
-            </div>
-            {/* Live dot */}
-            <div style={{ position: "absolute", bottom: 4, right: 4, width: 14, height: 14, borderRadius: "50%", background: C.green, border: `2px solid ${C.card}`, boxShadow: `0 0 8px ${C.green}` }} />
-            {/* Pencil edit button */}
-            {onEditAvatar && (
-              <motion.button whileTap={{ scale: 0.88 }} onClick={onEditAvatar}
-                style={{ position: "absolute", bottom: 0, left: 0, width: 24, height: 24, borderRadius: "50%", background: C.accent, border: `2px solid ${C.card}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 2px 8px ${C.accent}60` }}>
-                <Pencil size={11} color="#fff" strokeWidth={2.5} />
-              </motion.button>
-            )}
-          </div>
-
-          {/* Name + verified + handle — below the avatar */}
-          <div style={{ textAlign: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 2 }}>
-              <h2 style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
-              <div style={{ width: 14, height: 14, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 8, color: "#fff" }}>✓</span>
-              </div>
-            </div>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@alexherrera.trades"}</p>
-            {/* Rating */}
-            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5 }}>
-              <div style={{ display: "flex", gap: 1 }}>
-                {[...Array(5)].map((_, i) => <Star key={i} size={9} color={C.gold} fill={C.gold} />)}
-              </div>
-              {(profile?.showRating !== false) && <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: C.goldLight }}>{profile?.rating ?? 4.9}</span>}
             </div>
           </div>
+          {profile?.showLiveDot !== false && (
+            <div style={{ position: "absolute", bottom: 5, right: 5, width: 14, height: 14, borderRadius: "50%", background: C.green, border: `2px solid ${C.bg}`, boxShadow: `0 0 6px ${C.green}70` }} />
+          )}
+          {onEditAvatar && (
+            <motion.button whileTap={{ scale: 0.88 }} onClick={onEditAvatar}
+              style={{ position: "absolute", bottom: 0, left: 0, width: 25, height: 25, borderRadius: "50%", background: C.accent, border: `2px solid ${C.bg}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <Pencil size={11} color="#fff" strokeWidth={2.5} />
+            </motion.button>
+          )}
         </div>
 
-        {/* Vertical divider */}
-        <div style={{ width: 1, background: `linear-gradient(to bottom, transparent, ${C.border} 20%, ${C.border} 80%, transparent)`, flexShrink: 0, alignSelf: "stretch" }} />
-
-        {/* Bio + stats — right of divider */}
-        <div style={{ flex: 1, paddingTop: 2 }}>
-          {(profile?.showBio !== false) && <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6 }}>
-            {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
-            {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
-          </p>}
-
-          {(profile?.showStats !== false) && <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
-            {(profile?.stats ?? [{value:"12.4k",label:"Followers"},{value:"147",label:"Trades"},{value:"68%",label:"Winrate"},{value:"2.8R",label:"Exp. Value"}]).map((s) => (
-              <div key={s.label}>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, fontWeight: 800, color: C.text }}>{s.value}</p>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 10, color: C.textMuted }}>{s.label}</p>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            <h2 style={{ margin: 0, fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
+            {profile?.verified && (
+              <div style={{ width: 15, height: 15, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 9, color: "#fff" }}>✓</span>
               </div>
-            ))}
-          </div>}
+            )}
+          </div>
+          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 12, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@alexherrera.trades"}</p>
         </div>
       </div>
 
-      {/* ── Action buttons ── */}
-      {!hideButtons && <div style={{ display: "flex", gap: 9, marginTop: 18, paddingBottom: 18 }}>
+      {/* Stats — the main information block, full width, plenty of room */}
+      {(profile?.showStats !== false) && (
+        <div style={{ display: "flex", marginTop: 20 }}>
+          {stats.map((s, i) => (
+            <div key={s.label} style={{
+              flex: 1, textAlign: "center", padding: "0 8px",
+              borderLeft: i > 0 ? `1px solid ${C.border}` : "none",
+            }}>
+              <p style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>{s.value}</p>
+              <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 11, color: C.textMuted }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {/* Follow — platform purple */}
+      {/* Bio */}
+      {(profile?.showBio !== false) && (
+        <p style={{ margin: "18px 0 0", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, textAlign: "center" }}>
+          {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
+          {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
+        </p>
+      )}
+
+      {/* Social links — ready for future integrations; empty by default, renders nothing until connected */}
+      {socials.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 14 }}>
+          {socials.map((s) => {
+            const Icon = SOCIAL_ICON_MAP[s.platform] ?? LinkIcon;
+            return (
+              <motion.a key={s.platform + s.url} href={s.url} target="_blank" rel="noopener noreferrer" whileTap={{ scale: 0.88 }}
+                style={{ width: 34, height: 34, borderRadius: "50%", background: C.card, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, cursor: "pointer" }}>
+                <Icon size={15} strokeWidth={2} />
+              </motion.a>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Action buttons — same functions, much quieter presentation */}
+      {!hideButtons && <div style={{ display: "flex", gap: 9, marginTop: 20, paddingBottom: 18 }}>
+
         <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleFollow}
           style={{
-            flex: 1, height: 34, borderRadius: 22, cursor: "pointer",
+            flex: 1, height: 36, borderRadius: 22, cursor: "pointer",
             fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em",
-            background: followed ? "transparent" : `linear-gradient(135deg, ${C.accent} 0%, #5c2fff 100%)`,
+            background: followed ? "transparent" : C.accent,
             border: followed ? `1.5px solid ${C.accent}` : "none",
             color: followed ? C.accent : "#fff",
-            boxShadow: followed ? "none" : `0 4px 18px ${C.accent}50`,
             transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)",
           }}>
           {followed ? "Following" : "Follow"}
         </motion.button>
 
-        {/* Subscribe — gold exclusive */}
         <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleSubscribe}
           style={{
-            flex: 1, height: 34, borderRadius: 22, cursor: "pointer",
+            flex: 1, height: 36, borderRadius: 22, cursor: "pointer",
             fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em",
-            background: subscribed ? "transparent" : `linear-gradient(135deg, ${C.gold} 0%, ${C.goldLight} 50%, ${C.gold} 100%)`,
+            background: subscribed ? "transparent" : C.gold,
             border: subscribed ? `1.5px solid ${C.gold}` : "none",
             color: subscribed ? C.gold : "#1a0f00",
-            boxShadow: subscribed ? "none" : `0 4px 20px ${C.gold}45`,
             transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)",
           }}>
           {subscribed ? "Subscribed" : "Subscribe"}
         </motion.button>
 
-        {/* Message — modern blue with text */}
         <motion.button whileTap={{ scale: 0.95 }}
           style={{
-            flex: 1, height: 34, borderRadius: 22, border: "none", cursor: "pointer",
+            flex: 1, height: 36, borderRadius: 22, border: "none", cursor: "pointer",
             fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em",
-            background: `linear-gradient(135deg, ${C.blue} 0%, #2563eb 100%)`,
+            background: C.blue,
             color: "#fff",
-            boxShadow: `0 4px 16px ${C.blue}40`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
           Message
@@ -229,6 +251,9 @@ function ProfileCard({ onNavigate, hideButtons, profile, onEditAvatar,
     </motion.div>
   );
 }
+// Backward-compatible alias — "Profile Card" no longer exists as a concept,
+// this is now an integrated page header (see ProfileHeader above).
+const ProfileCard = ProfileHeader;
 
 // ─── Section Chips ─────────────────────────────────────────────────────────────
 // Shared logic, used by both mobile and desktop chip bars
@@ -1340,7 +1365,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ background: "#08080e", color: "#ff4f6a", fontFamily: "monospace", padding: 24, height: "100vh" }}>
+        <div style={{ background: "#000000", color: "#ff4f6a", fontFamily: "monospace", padding: 24, height: "100vh" }}>
           <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Render Error (check console):</p>
           <pre style={{ fontSize: 12, whiteSpace: "pre-wrap", color: "#eaeaf5" }}>{this.state.error.message}</pre>
           <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", color: "#6a6a82", marginTop: 8 }}>{this.state.error.stack}</pre>
@@ -1358,7 +1383,7 @@ export default function RootShell() {
   return (
     <PublishQueueProvider>
     <ComposerLockProvider>
-      <div style={{ width: "100vw", height: "100vh", background: "#08080e" }}>
+      <div style={{ width: "100vw", height: "100vh", background: "#000000" }}>
         {showHome ? (
           <HomeFeed onEnterProfile={() => setShowHome(false)} />
         ) : (
@@ -1548,7 +1573,7 @@ function App({ onGoHome, onOpenSettings }) {
               <motion.div key="profile_desktop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fadeTrans} style={{ flexShrink: 0 }}>
                 <ProfileCard
                   onNavigate={navigate}
-                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
+                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
                   onEditAvatar={onOpenSettings}
                   followed={followed}
                   onToggleFollow={() => setFollowed(f => !f)}
@@ -1654,58 +1679,26 @@ function App({ onGoHome, onOpenSettings }) {
   const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
 
   // ── UNIFIED SCROLL (Instagram-style) ────────────────────────────────────────
-  // Single scroll container holds ProfileCard + Chips + Feed as one document.
-  // ProfileCard disappears naturally as part of the flow — no JS translateY needed.
+  // Single scroll container holds the profile header + Chips + Feed as one
+  // document. The header disappears naturally as part of the flow, like any
+  // ordinary page header — no special hidden-state tracking needed for it.
   // Chips are position:sticky so they lock below the topbar automatically.
-  // No flickering because there's only ONE scroll context.
   const unifiedScrollRef = useRef(null);
   const savedScrollTop   = useRef({});   // persist scroll position per section
   const preThreadScrollTop = useRef(0);  // exact scroll position from right before a thread was opened
-  const profileWrapperRef  = useRef(null); // measures ProfileCard's own height on demand (no observer)
-  const profileHiddenAmount = useRef(0);   // how much of ProfileCard is currently scrolled past, capped at its own height
 
-  // Tracks how much of ProfileCard has been scrolled past. Capped at
-  // ProfileCard's own height, so scrolling deep into a section's content
-  // doesn't keep inflating this — it only ever represents "how hidden is the
-  // profile", never "how far into the content am I".
-  const handleUnifiedScroll = useCallback(() => {
-    const el = unifiedScrollRef.current;
-    if (!el || insideThread) return;
-    const profileHeight = profileWrapperRef.current?.offsetHeight || 0;
-    profileHiddenAmount.current = Math.min(el.scrollTop, profileHeight);
-  }, [insideThread]);
-
-  // Thread reading-mode: hide ProfileCard, freeze the background scroll,
+  // Thread reading-mode: hide the profile header, freeze the background scroll,
   // and restore the exact prior scroll position on exit.
   useEffect(() => {
     const el = unifiedScrollRef.current;
     if (!el) return;
     if (insideThread) {
       preThreadScrollTop.current = el.scrollTop;
-      el.scrollTop = 0; // ProfileCard is about to unmount — chips should sit pinned at the very top, not wherever they were stuck before
+      el.scrollTop = 0; // header is about to unmount — chips should sit pinned at the very top, not wherever they were stuck before
     } else {
       el.scrollTop = preThreadScrollTop.current;
     }
   }, [insideThread]);
-
-  // On every section switch: reassert the profile's hidden amount (not
-  // whatever deep scrollTop the previous section happened to be at). Since
-  // that scroll position is, by construction, exactly "past the profile,
-  // chips pinned, content starts here", the freshly-mounted section content
-  // naturally begins at its own top — both requirements fall out of the same
-  // single assignment, no separate content-scroll-reset needed.
-  useEffect(() => {
-    const el = unifiedScrollRef.current;
-    if (!el || insideThread) return;
-    el.scrollTop = profileHiddenAmount.current;
-    // Safety net: the feed swap animates (mode="wait", ~180ms) before the new
-    // section's content actually mounts — reassert once more right after so a
-    // late height change can't clamp it back down.
-    const t = setTimeout(() => {
-      if (unifiedScrollRef.current) unifiedScrollRef.current.scrollTop = profileHiddenAmount.current;
-    }, 220);
-    return () => clearTimeout(t);
-  }, [activeSectionId, insideThread]);
 
   // When section changes, restore saved scroll position
   const onSectionChange = useCallback((id) => {
@@ -1791,21 +1784,18 @@ function App({ onGoHome, onOpenSettings }) {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          onScroll={handleUnifiedScroll}
         >
-          {/* 1. ProfileCard — hidden completely while reading a Thread (independent reading mode) */}
+          {/* 1. Profile header — hidden completely while reading a Thread (independent reading mode) */}
           {!insideThread && (
-            <div ref={profileWrapperRef}>
-              <ProfileCard
-                onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-                profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats }}
-                onEditAvatar={onOpenSettings}
-                followed={followed}
-                onToggleFollow={() => setFollowed(f => !f)}
-                subscribed={subscribed}
-                onToggleSubscribe={() => setSubscribed(s => !s)}
-              />
-            </div>
+            <ProfileCard
+              onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+              profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+              onEditAvatar={onOpenSettings}
+              followed={followed}
+              onToggleFollow={() => setFollowed(f => !f)}
+              subscribed={subscribed}
+              onToggleSubscribe={() => setSubscribed(s => !s)}
+            />
           )}
           {/* 2. Chips — sticky, always mounted, never animates */}
           <div style={{
