@@ -1412,7 +1412,7 @@ function App({ onGoHome, onOpenSettings }) {
   // composer immediately (PostComposer already does this) and runs the actual
   // Supabase save in the background via the publish queue.
   const handlePublishNewPost = useCallback(({ title, content, mediaFiles, audio, visibility, checklist }) => {
-    const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+    const rawFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
     enqueuePublish("Publicando post…", async () => {
       const saved = await createRecapThread({
         title: title || null,
