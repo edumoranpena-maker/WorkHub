@@ -37,6 +37,8 @@ import {
   updateRecapThread,
   updateThreadUpdate,
   fetchThreadComments,
+  fetchSubtemas,
+  createSubtema,
 } from "../lib/recapsApi.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
@@ -1101,24 +1103,23 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   const subtemaMedia = mergeLinksIntoMedia(subtema.media, subtemaLinks);
 
   const handleNewUpdate = ({ content, audio, mediaFiles }) => {
-    const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+    const rawFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
     enqueue("Publicando update…", async () => {
       const saved = await addThreadUpdate(subtema.id, { content, audio, mediaFiles: rawFiles });
       if (saved) setSubtema(s => ({ ...s, updates: [...(s.updates || []), saved] }));
     });
   };
 
-  const handleEditSubtema = ({ title, content, mediaFiles, audio }) => {
-    setSubtema(s => ({ ...s, title, content, media: mediaFiles, audio, edited: true }));
-    onSubtemaEdited?.(subtema.id, { title, content, media: mediaFiles, audio, edited: true });
-    // NOTE: subtemas are client-side only today (never persisted to Supabase),
-    // matching how they're created — so edits here only update local state.
+  const handleEditSubtema = ({ title, content, visibility }) => {
+    setSubtema(s => ({ ...s, title, content, visibility, edited: true }));
+    onSubtemaEdited?.(subtema.id, { title, content, visibility, edited: true });
+    enqueue("Guardando cambios…", async () => { await updateRecapThread(subtema.id, { title, content, visibility }); });
   };
 
   const handleDeleteSubtema = () => {
-    // Client-side only, same reasoning as above — no Supabase row to delete.
     onSubtemaDeleted?.(subtema.id);
     onBack?.();
+    enqueue("Eliminando subtema…", async () => { await deleteRecapThread(subtema.id); });
   };
 
   const handleEditUpdate = ({ content }) => {
@@ -1305,6 +1306,15 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const threadLinks = useLinkPreviews(thread.content);
   const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
 
+  // Subtemas are persisted (recap_threads rows) — load them when the Thread opens.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSubtemas(thread.id).then(subtemas => {
+      if (!cancelled) setThread(t => ({ ...t, subtemas }));
+    });
+    return () => { cancelled = true; };
+  }, [thread.id]);
+
   // ── Continuous peek-and-commit navigation (Telegram-style) ───────────────────
   // One continuous drag: strong resistance for the first ~50px, then the
   // adjacent post progressively peeks in — the further you pull, the more of
@@ -1393,26 +1403,20 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   };
 
   const handleNewUpdate = ({ content, audio, mediaFiles }) => {
-    const rawFiles = (mediaFiles || []).map(m => m.file).filter(Boolean);
+    const rawFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
     enqueue("Publicando update…", async () => {
       const saved = await addThreadUpdate(thread.id, { content, audio, mediaFiles: rawFiles });
       if (saved) setThread(t => ({ ...t, updates: [...t.updates, saved] }));
     });
   };
 
-  const handleAddSubtema = ({ title, content, mediaFiles, audio }) => {
-    // NOTE: subtemas are client-side only (no Supabase table today) — matches
-    // the existing behaviour, so this resolves immediately but still shows
-    // the same "Publicando…" bar for a consistent feel.
+  const handleAddSubtema = ({ title, content, mediaFiles, audio, visibility }) => {
+    const taggedFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
     enqueue("Publicando subtema…", async () => {
-      const newSub = {
-        id: `sub_${Date.now()}`,
-        title, content, media: mediaFiles || [], audio: audio || null,
-        author: "Alex H.", timestamp: new Date(),
-        updates: [],
-      };
-      setThread(t => ({ ...t, subtemas: [...(t.subtemas || []), newSub] }));
-      onAddSubtema?.(thread.id, newSub);
+      const saved = await createSubtema(thread.id, { title, content, mediaFiles: taggedFiles, audio, visibility: visibility || thread.visibility });
+      if (!saved) { console.error("[Post] createSubtema returned null — subtema was NOT saved"); return; }
+      setThread(t => ({ ...t, subtemas: [...(t.subtemas || []), saved] }));
+      onAddSubtema?.(thread.id, saved);
     });
   };
 
