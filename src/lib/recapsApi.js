@@ -14,10 +14,32 @@ function wasEdited(row) {
   return new Date(row.updated_at).getTime() - new Date(row.created_at).getTime() > 5000;
 }
 
-function rowToThread(row, media = [], updates = []) {
+// Classifies a media item into 'image' | 'video' | 'file', and returns the
+// raw File to upload. Accepts either:
+//   - a tagged composer item { file, type: 'image'|'video'|'file' }  (preferred —
+//     respects what the user actually attached it as, e.g. an image
+//     deliberately attached via the "Archivo" chip stays a file)
+//   - a raw browser File (fallback — inferred from MIME type)
+// Archivos get exactly the same treatment as images/videos: their own bucket,
+// their own DB type, nothing provisional or client-only about it.
+function classifyMedia(item) {
+  const file = item?.file ?? item;
+  if (!file) return null;
+  let kind = item?.type;
+  if (kind !== "image" && kind !== "video" && kind !== "file") {
+    kind = file.type?.startsWith("video/") ? "video"
+         : file.type?.startsWith("image/") ? "image"
+         : "file";
+  }
+  const bucket = kind === "video" ? "videos" : kind === "image" ? "images" : "files";
+  return { file, kind, bucket };
+}
+
+function rowToThread(row, media = [], updates = [], subtemas = []) {
   return {
     id: row.id,
     planningPostId: row.planning_post_id ?? null,
+    parentThreadId: row.parent_thread_id ?? null,
     title: row.title ?? null,
     content: row.content,
     hashtags: row.hashtags ?? [],
@@ -31,11 +53,12 @@ function rowToThread(row, media = [], updates = []) {
     liked: false,
     commentCount: row.comment_count ?? 0,
     newUpdates: row.new_updates_count ?? 0,
-    media: media.map(m => ({ type: m.type, url: m.url, thumb: m.thumb_url ?? m.url })),
+    media: media.map(m => ({ type: m.type, url: m.url, thumb: m.thumb_url ?? m.url, name: m.file_name ?? null })),
     audio: row.audio_url
       ? { url: row.audio_url, duration: row.audio_duration ?? 0, waveform: row.audio_waveform ?? [] }
       : null,
     updates,
+    subtemas,
   };
 }
 
@@ -47,7 +70,7 @@ function rowToUpdate(row, media = []) {
     timestamp: new Date(row.created_at),
     likes: row.likes_count ?? 0,
     liked: false,
-    media: media.map(m => ({ type: m.type, url: m.url, thumb: m.thumb_url ?? m.url })),
+    media: media.map(m => ({ type: m.type, url: m.url, thumb: m.thumb_url ?? m.url, name: m.file_name ?? null })),
     audio: row.audio_url
       ? { url: row.audio_url, duration: row.audio_duration ?? 0, waveform: row.audio_waveform ?? [] }
       : null,
@@ -56,11 +79,14 @@ function rowToUpdate(row, media = []) {
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
-/** Fetch all recap threads with their media and updates. */
+/** Fetch all top-level recap threads (Posts) with their media and updates.
+ *  Subtemas are recap_threads rows too now, so they're explicitly excluded
+ *  here — fetch them per-thread via fetchSubtemas() when a Post is opened. */
 export async function fetchRecapThreads() {
   const { data: threads, error } = await supabase
     .from("recap_threads")
     .select("*")
+    .is("parent_thread_id", null)
     .order("created_at", { ascending: false });
 
   if (error) { console.error("[recapsApi] fetchRecapThreads:", error.message); return []; }
@@ -161,10 +187,59 @@ export async function fetchThreadComments(threadId) {
   }));
 }
 
-// ─── Write ────────────────────────────────────────────────────────────────────
+/**
+ * Fetch a Post's Subtemas — each one is a full recap_threads row (parent_thread_id
+ * = this thread), with its own media and updates, same shape as a top-level Post.
+ * Loaded on-demand when the Thread is opened (like comments), not eagerly with
+ * the whole feed, since a Subtema can carry its own nested updates+media.
+ */
+export async function fetchSubtemas(threadId) {
+  const { data: subtemas, error } = await supabase
+    .from("recap_threads")
+    .select("*")
+    .eq("parent_thread_id", threadId)
+    .order("created_at", { ascending: true });
 
-/** Create a new recap thread, optionally linked to a planning post. */
-export async function createRecapThread({ title, content, privacy, audio, mediaFiles = [], planningPostId = null }, author = "Alex H.") {
+  if (error) { console.error("[recapsApi] fetchSubtemas:", error.message); return []; }
+  if (!subtemas.length) return [];
+
+  const subtemaIds = subtemas.map(s => s.id);
+
+  const { data: allMedia } = await supabase.from("thread_media").select("*").in("thread_id", subtemaIds);
+  const mediaMap = {};
+  (allMedia ?? []).forEach(m => { (mediaMap[m.thread_id] ??= []).push(m); });
+
+  const { data: allUpdates } = await supabase
+    .from("thread_updates")
+    .select("*")
+    .in("thread_id", subtemaIds)
+    .order("created_at", { ascending: true });
+
+  const updateIds = (allUpdates ?? []).map(u => u.id);
+  const { data: allUpdateMedia } = updateIds.length
+    ? await supabase.from("update_media").select("*").in("update_id", updateIds)
+    : { data: [] };
+
+  const updateMediaMap = {};
+  (allUpdateMedia ?? []).forEach(m => { (updateMediaMap[m.update_id] ??= []).push(m); });
+
+  const updatesBySubtema = {};
+  (allUpdates ?? []).forEach(u => {
+    (updatesBySubtema[u.thread_id] ??= []).push(rowToUpdate(u, updateMediaMap[u.id] ?? []));
+  });
+
+  return subtemas.map(s => rowToThread(s, mediaMap[s.id] ?? [], updatesBySubtema[s.id] ?? []));
+}
+
+
+
+/**
+ * Shared by createRecapThread (top-level Post) and createSubtema — the only
+ * difference between the two is whether parent_thread_id is set. Everything
+ * else (audio upload, media upload incl. Archivos, DB insert) is identical,
+ * so Subtemas get exactly the same persistence guarantees as Posts.
+ */
+async function insertThreadRow({ title, content, privacy, audio, mediaFiles = [], planningPostId = null, parentThreadId = null }, author = "Alex H.") {
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
@@ -176,11 +251,12 @@ export async function createRecapThread({ title, content, privacy, audio, mediaF
     audioUrl = audio.url; audioDuration = audio.duration ?? 0; audioWaveform = audio.waveform ?? [];
   }
 
-  // 2. Insert thread
+  // 2. Insert thread row
   const { data: thread, error } = await supabase
     .from("recap_threads")
     .insert({
       planning_post_id: planningPostId || null,
+      parent_thread_id: parentThreadId || null,
       title: title || null,
       content,
       visibility: privacy ?? "public",
@@ -192,18 +268,21 @@ export async function createRecapThread({ title, content, privacy, audio, mediaF
     .select()
     .single();
 
-  if (error) { console.error("[recapsApi] createRecapThread:", error.message); return null; }
+  if (error) { console.error("[recapsApi] insertThreadRow:", error.message); return null; }
 
-  // 3. Upload media
+  // 3. Upload media — Archivos get exactly the same treatment as images/videos:
+  // their own bucket, their own DB type, their own filename.
   const insertedMedia = [];
-  for (const file of mediaFiles) {
-    const isVideo = file.type?.startsWith("video/");
-    const bucket = isVideo ? "videos" : "images";
-    const path = storagePath(isVideo ? "threads/videos" : "threads/images", file.name);
+  for (const item of mediaFiles) {
+    const classified = classifyMedia(item);
+    if (!classified) continue;
+    const { file, kind, bucket } = classified;
+    const folder = parentThreadId ? "subtemas" : "threads";
+    const path = storagePath(`${folder}/${kind === "video" ? "videos" : kind === "image" ? "images" : "files"}`, file.name);
     const url = await uploadFile(bucket, file, path);
     if (!url) continue;
     const { data: mRow } = await supabase.from("thread_media")
-      .insert({ thread_id: thread.id, type: isVideo ? "video" : "image", url, thumb_url: url, storage_path: path })
+      .insert({ thread_id: thread.id, type: kind, url, thumb_url: kind === "file" ? null : url, storage_path: path, file_name: file.name })
       .select().single();
     if (mRow) insertedMedia.push(mRow);
   }
@@ -211,26 +290,26 @@ export async function createRecapThread({ title, content, privacy, audio, mediaF
   return rowToThread(thread, insertedMedia, []);
 }
 
+/** Create a new top-level recap thread (Post), optionally linked to a planning post. */
+export async function createRecapThread(params, author = "Alex H.") {
+  return insertThreadRow(params, author);
+}
+
+/**
+ * Create a Subtema under a Post. A Subtema is a full recap_threads row
+ * (parent_thread_id = threadId) — same persistence, same media pipeline,
+ * same edit/delete infrastructure as a Post. No client-only state involved.
+ */
+export async function createSubtema(parentThreadId, { title, content, audio, mediaFiles = [], visibility } = {}, author = "Alex H.") {
+  if (!parentThreadId) { console.error("[recapsApi] createSubtema: parentThreadId is required"); return null; }
+  return insertThreadRow({ title, content, audio, mediaFiles, privacy: visibility, parentThreadId }, author);
+}
+
 /**
  * Add an update (sub-message) to an existing thread.
  * Handles audio blob upload + media file uploads.
  */
 export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [] }, author = "Alex H.") {
-  // ── LOG 4a: incoming payload ───────────────────────────────────────────────
-  console.group("[addThreadUpdate] called");
-  console.log("threadId:", threadId);
-  console.log("content:", content);
-  console.log("mediaFiles received:", mediaFiles);
-  console.log("mediaFiles length:", mediaFiles.length);
-  mediaFiles.forEach((f, i) => {
-    console.log(`  mediaFiles[${i}]:`, {
-      name: f?.name,
-      type: f?.type,
-      size: f?.size,
-      isFile: f instanceof File ? "✅ File" : "❌ NOT File — actual type: " + typeof f,
-    });
-  });
-
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
@@ -258,10 +337,8 @@ export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [
 
   if (error) {
     console.error("[recapsApi] addThreadUpdate INSERT error:", error.message, error);
-    console.groupEnd();
     return null;
   }
-  console.log("[addThreadUpdate] thread_updates INSERT ok, update.id:", update.id);
 
   // 3. Increment new_updates_count on thread (not an edit of the post's own
   //    content, so updated_at is deliberately left untouched here)
@@ -270,55 +347,32 @@ export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [
       .update({ new_updates_count: (t.new_updates_count ?? 0) + 1 })
       .eq("id", threadId));
 
-  // 4. Upload media
+  // 4. Upload media — Archivos get exactly the same treatment as images/videos.
   const insertedMedia = [];
-  for (const file of mediaFiles) {
-    const isVideo = file.type?.startsWith("video/");
-    const bucket = isVideo ? "videos" : "images";
-    const path = storagePath(isVideo ? "updates/videos" : "updates/images", file.name);
-
-    // ── LOG 4b: per-file upload attempt ───────────────────────────────────
-    console.group(`[addThreadUpdate] uploading file: ${file.name}`);
-    console.log("bucket:", bucket);
-    console.log("path:", path);
+  for (const item of mediaFiles) {
+    const classified = classifyMedia(item);
+    if (!classified) continue;
+    const { file, kind, bucket } = classified;
+    const path = storagePath(`updates/${kind === "video" ? "videos" : kind === "image" ? "images" : "files"}`, file.name);
 
     const url = await uploadFile(bucket, file, path);
-
-    // ── LOG 4c: upload result ──────────────────────────────────────────────
-    console.log("uploadFile result url:", url);
     if (!url) {
-      console.error(`[addThreadUpdate] ❌ uploadFile returned null/undefined for ${file.name} — skipping update_media INSERT`);
-      console.groupEnd();
+      console.error(`[addThreadUpdate] uploadFile returned null for ${file.name} — skipping update_media INSERT`);
       continue;
     }
-    console.log("upload ✅ url:", url);
-
-    // ── LOG 4d: update_media INSERT ────────────────────────────────────────
-    const insertPayload = { update_id: update.id, type: isVideo ? "video" : "image", url, thumb_url: url, storage_path: path };
-    console.log("update_media INSERT payload:", insertPayload);
 
     const { data: mRow, error: mErr } = await supabase.from("update_media")
-      .insert(insertPayload)
+      .insert({ update_id: update.id, type: kind, url, thumb_url: kind === "file" ? null : url, storage_path: path, file_name: file.name })
       .select().single();
 
     if (mErr) {
-      console.error("[addThreadUpdate] ❌ update_media INSERT error:", mErr.message, mErr);
+      console.error("[addThreadUpdate] update_media INSERT error:", mErr.message, mErr);
     } else {
-      console.log("[addThreadUpdate] ✅ update_media INSERT ok:", mRow);
       insertedMedia.push(mRow);
     }
-    console.groupEnd();
   }
 
-  // ── LOG 5: final return value ────────────────────────────────────────────
   const result = rowToUpdate(update, insertedMedia);
-  console.log("[addThreadUpdate] insertedMedia:", insertedMedia);
-  console.log("[addThreadUpdate] rowToUpdate result:", result);
-  console.log("[addThreadUpdate] result.media:", result.media);
-  if (result.media.length === 0 && mediaFiles.length > 0) {
-    console.error("[addThreadUpdate] ❌ result.media is EMPTY despite receiving", mediaFiles.length, "file(s) — all uploads may have failed");
-  }
-  console.groupEnd();
   return result;
 }
 
@@ -399,7 +453,7 @@ async function removeStorageObjects(rows) {
   const byBucket = {};
   for (const r of rows) {
     if (!r.storage_path) continue;
-    const bucket = r.type === "video" ? "videos" : "images";
+    const bucket = r.type === "video" ? "videos" : r.type === "file" ? "files" : "images";
     (byBucket[bucket] ??= []).push(r.storage_path);
   }
   await Promise.all(
@@ -419,7 +473,24 @@ async function purgeThreadStorage(threadId) {
       const { data } = await supabase.from("update_media").select("type, storage_path").in("update_id", updateIds);
       updateMedia = data || [];
     }
-    await removeStorageObjects([...(media || []), ...updateMedia]);
+
+    // Subtemas cascade-delete in the DB along with the parent Post, but their
+    // Storage files won't clean themselves up — walk them the same way.
+    const { data: subtemas } = await supabase.from("recap_threads").select("id").eq("parent_thread_id", threadId);
+    const subtemaIds = (subtemas || []).map(s => s.id);
+    let subtemaMedia = [], subtemaUpdateMedia = [];
+    if (subtemaIds.length) {
+      const { data: sMedia } = await supabase.from("thread_media").select("type, storage_path").in("thread_id", subtemaIds);
+      subtemaMedia = sMedia || [];
+      const { data: sUpdates } = await supabase.from("thread_updates").select("id").in("thread_id", subtemaIds);
+      const sUpdateIds = (sUpdates || []).map(u => u.id);
+      if (sUpdateIds.length) {
+        const { data: sUpdateMedia } = await supabase.from("update_media").select("type, storage_path").in("update_id", sUpdateIds);
+        subtemaUpdateMedia = sUpdateMedia || [];
+      }
+    }
+
+    await removeStorageObjects([...(media || []), ...updateMedia, ...subtemaMedia, ...subtemaUpdateMedia]);
   } catch (err) {
     console.error("[recapsApi] purgeThreadStorage (non-blocking):", err.message);
   }
@@ -435,10 +506,12 @@ async function purgeUpdateStorage(updateId) {
 }
 
 /**
- * Delete a thread. thread_media / thread_updates / update_media / comments /
- * likes all cascade automatically at the DB level (ON DELETE CASCADE on
- * thread_id — see supabase-schema.sql), so this one delete is enough to
- * leave zero orphan rows. Storage files are purged best-effort first.
+ * Delete a thread (Post or Subtema — same table now). thread_media /
+ * thread_updates / update_media / comments / likes all cascade automatically
+ * at the DB level (ON DELETE CASCADE on thread_id — see supabase-schema.sql).
+ * Subtemas (parent_thread_id) cascade too, so deleting a Post correctly takes
+ * its Subtemas down with it. This one delete is enough to leave zero orphan
+ * rows. Storage files (incl. Subtemas' own) are purged best-effort first.
  */
 export async function deleteRecapThread(threadId) {
   await purgeThreadStorage(threadId);
