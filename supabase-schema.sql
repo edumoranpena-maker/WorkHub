@@ -12,7 +12,7 @@ create table if not exists planning_posts (
   title           text,
   content         text not null,
   hashtags        text[]    default '{}',
-  visibility      text      default 'members' check (visibility in ('public', 'members', 'private')),
+  visibility      text      default 'members' check (visibility in ('public', 'members', 'followers')),
   status          text      default 'active'  check (status  in ('active', 'in_progress', 'closed')),
   pinned          boolean   default false,
   author          text      not null default 'Alex H.',
@@ -34,10 +34,11 @@ create table if not exists planning_posts (
 create table if not exists post_media (
   id          uuid primary key default uuid_generate_v4(),
   post_id     uuid references planning_posts(id) on delete cascade,
-  type        text not null check (type in ('image', 'video')),
+  type        text not null check (type in ('image', 'video', 'file')),
   url         text not null,
   thumb_url   text,
   storage_path text,
+  file_name   text,
   created_at  timestamptz default now()
 );
 
@@ -47,10 +48,11 @@ create table if not exists post_media (
 create table if not exists recap_threads (
   id                uuid primary key default uuid_generate_v4(),
   planning_post_id  uuid references planning_posts(id) on delete set null,
+  parent_thread_id  uuid references recap_threads(id) on delete cascade,
   title             text,
   content           text not null,
   hashtags          text[]  default '{}',
-  visibility        text    default 'members' check (visibility in ('public', 'members', 'private')),
+  visibility        text    default 'members' check (visibility in ('public', 'members', 'followers')),
   status            text    default 'active'  check (status  in ('active', 'in_progress', 'closed')),
   author            text    not null default 'Alex H.',
   author_role       text    default 'host',
@@ -69,10 +71,11 @@ create table if not exists recap_threads (
 create table if not exists thread_media (
   id          uuid primary key default uuid_generate_v4(),
   thread_id   uuid references recap_threads(id) on delete cascade,
-  type        text not null check (type in ('image', 'video')),
+  type        text not null check (type in ('image', 'video', 'file')),
   url         text not null,
   thumb_url   text,
   storage_path text,
+  file_name   text,
   created_at  timestamptz default now()
 );
 
@@ -88,17 +91,19 @@ create table if not exists thread_updates (
   audio_url       text,
   audio_duration  integer,
   audio_waveform  float[] default '{}',
-  created_at  timestamptz default now()
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
 );
 
 -- ─── UPDATE MEDIA ─────────────────────────────────────────────────────────────
 create table if not exists update_media (
   id          uuid primary key default uuid_generate_v4(),
   update_id   uuid references thread_updates(id) on delete cascade,
-  type        text not null check (type in ('image', 'video')),
+  type        text not null check (type in ('image', 'video', 'file')),
   url         text not null,
   thumb_url   text,
   storage_path text,
+  file_name   text,
   created_at  timestamptz default now()
 );
 
@@ -222,12 +227,13 @@ create policy "Public insert" on rr_snapshots  for insert with check (true);
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Storage bucket policies  (run AFTER creating buckets in the Storage UI)
 -- ═══════════════════════════════════════════════════════════════════════════════
--- Create buckets named: images, videos, audio
+-- Create buckets named: images, videos, audio, files
 -- Then run the following to make them publicly readable:
 
 -- insert into storage.buckets (id, name, public) values ('images', 'images', true) on conflict do nothing;
 -- insert into storage.buckets (id, name, public) values ('videos', 'videos', true) on conflict do nothing;
 -- insert into storage.buckets (id, name, public) values ('audio',  'audio',  true) on conflict do nothing;
+-- insert into storage.buckets (id, name, public) values ('files',  'files',  true) on conflict do nothing;
 
 -- create policy "Public read images"  on storage.objects for select using (bucket_id = 'images');
 -- create policy "Public upload images" on storage.objects for insert with check (bucket_id = 'images');
@@ -240,3 +246,7 @@ create policy "Public insert" on rr_snapshots  for insert with check (true);
 -- create policy "Public read audio"   on storage.objects for select using (bucket_id = 'audio');
 -- create policy "Public upload audio" on storage.objects for insert with check (bucket_id = 'audio');
 -- create policy "Public delete audio" on storage.objects for delete using (bucket_id = 'audio');
+
+-- create policy "Public read files"   on storage.objects for select using (bucket_id = 'files');
+-- create policy "Public upload files" on storage.objects for insert with check (bucket_id = 'files');
+-- create policy "Public delete files" on storage.objects for delete using (bucket_id = 'files');
