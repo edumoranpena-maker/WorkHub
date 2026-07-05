@@ -1097,6 +1097,11 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   const [editingSubtema, setEditingSubtema] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
   const [confirmDeleteSubtema, setConfirmDeleteSubtema] = useState(false);
+  const [justEntered, setJustEntered] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setJustEntered(false), 1800);
+    return () => clearTimeout(t);
+  }, []);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const subtemaLinks = useLinkPreviews(subtema.content);
@@ -1155,7 +1160,12 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
         </motion.div>
 
         {/* Subtema header */}
-        <div style={{ background: `${C.teal}08`, borderBottom: `1px solid ${C.teal}18`, padding: "20px 16px 16px" }}>
+        <div style={{
+          background: justEntered ? `${C.teal}10` : C.card,
+          borderBottom: `1px solid ${justEntered ? C.teal + "35" : C.teal + "22"}`,
+          padding: "20px 16px 16px",
+          transition: "background 1s ease, border-color 1s ease",
+        }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.teal}18`, border: `1px solid ${C.teal}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Layers size={14} color={C.teal} />
@@ -1301,6 +1311,11 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const [editingThread, setEditingThread] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
   const [confirmDeleteThread, setConfirmDeleteThread] = useState(false);
+  const [justEntered, setJustEntered] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setJustEntered(false), 1800);
+    return () => clearTimeout(t);
+  }, []);
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const threadLinks = useLinkPreviews(thread.content);
@@ -1491,7 +1506,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               </motion.div>
 
               {/* Root Post */}
-              <div style={{ background: `${C.teal}08`, borderBottom: `1px solid ${C.teal}18`, padding: "20px 16px 16px" }}>
+              <div style={{
+                background: justEntered ? `${C.teal}10` : C.card,
+                borderBottom: `1px solid ${justEntered ? C.teal + "35" : C.teal + "22"}`,
+                padding: "20px 16px 16px",
+                transition: "background 1s ease, border-color 1s ease",
+              }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                   <Avatar name={thread.author} size={36} />
                   <div style={{ flex: 1 }}>
