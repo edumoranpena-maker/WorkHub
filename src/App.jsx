@@ -1819,12 +1819,17 @@ function App({ onGoHome, onOpenSettings }) {
             </div>
           </div>
 
-          {/* 3. Feed — only this area transitions. Bounded height while inside a
-              Thread so its own internal scroll becomes the ONLY scrollable region
-              (this is what stops scroll-chaining back into the ProfileCard). */}
+          {/* 3. Feed — only this area transitions. minHeight:100% (of the scroll
+              container itself, not the viewport) guarantees the document is
+              always at least as tall as what's visible, so the browser never
+              has a reason to clamp scrollTop back down — regardless of how
+              short a section's content is, or whether it's still loading.
+              Bounded height while inside a Thread so its own internal scroll
+              becomes the ONLY scrollable region (stops scroll-chaining back
+              into the profile header). */}
           <div style={insideThread
             ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
-            : { position: "relative", background: C.bg, minHeight: "50vh" }}>
+            : { position: "relative", background: C.bg, minHeight: "100%" }}>
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={activeSectionId ?? "perfil"}
