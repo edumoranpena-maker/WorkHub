@@ -14,7 +14,7 @@
  *  3. ThreadView     — reused from Recaps, minus the sticky bottom composer
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
@@ -1953,7 +1953,11 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, [openThread]);
 
   // Notify parent when thread open state changes so it can hide the purple FAB
-  useEffect(() => { onThreadChange?.(!!openThread); }, [openThread]); // eslint-disable-line
+  // and the profile header. useLayoutEffect (not useEffect) so this fires — and
+  // App.jsx's resulting re-render commits — before the browser paints. With a
+  // plain useEffect there's a real gap: ThreadView is already on screen but the
+  // header hasn't been told to unmount yet, causing a visible one-frame flash.
+  useLayoutEffect(() => { onThreadChange?.(!!openThread); }, [openThread]); // eslint-disable-line
 
   const slideVariants = {
     enter: d => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
