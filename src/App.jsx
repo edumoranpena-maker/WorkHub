@@ -20,6 +20,7 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import { createRecapThread } from "./lib/recapsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
+import { WorkContextProvider } from "./lib/workContext.jsx";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
@@ -1381,6 +1382,7 @@ export default function RootShell() {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
+    <WorkContextProvider>
     <PublishQueueProvider>
     <ComposerLockProvider>
       <div style={{ width: "100vw", height: "100vh", background: "#000000" }}>
@@ -1401,6 +1403,7 @@ export default function RootShell() {
       </div>
     </ComposerLockProvider>
     </PublishQueueProvider>
+    </WorkContextProvider>
   );
 }
 
@@ -1660,6 +1663,7 @@ function App({ onGoHome, onOpenSettings }) {
         {showFullPostSheet && (
           <PostComposer
             mode="post"
+            memoryKey="recaps:composer:post:new"
             checklists={checklists}
             onSubmit={handlePublishNewPost}
             onClose={() => setShowFullPostSheet(false)}
@@ -2009,6 +2013,7 @@ function App({ onGoHome, onOpenSettings }) {
         {showFullPostSheet && (
           <PostComposer
             mode="post"
+            memoryKey="recaps:composer:post:new"
             checklists={checklists}
             onSubmit={handlePublishNewPost}
             onClose={() => setShowFullPostSheet(false)}
