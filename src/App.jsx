@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
@@ -20,7 +20,7 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import { createRecapThread } from "./lib/recapsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
-import { WorkContextProvider } from "./lib/workContext.jsx";
+import { WorkContextProvider, useWorkContextStore } from "./lib/workContext.jsx";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
@@ -1688,11 +1688,14 @@ function App({ onGoHome, onOpenSettings }) {
   // ordinary page header — no special hidden-state tracking needed for it.
   // Chips are position:sticky so they lock below the topbar automatically.
   const unifiedScrollRef = useRef(null);
-  const savedScrollTop   = useRef({});   // persist scroll position per section
-  const preThreadScrollTop = useRef(0);  // exact scroll position from right before a thread was opened
+  const contentWrapperRef = useRef(null); // the section-content div, right after profile+chips
+  const preThreadScrollTop = useRef(0);   // exact scroll position from right before a thread was opened
+  const workStore = useWorkContextStore();
+  const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
 
   // Thread reading-mode: hide the profile header, freeze the background scroll,
-  // and restore the exact prior scroll position on exit.
+  // and restore the exact prior scroll position on exit. Unrelated to section
+  // switching — a Thread is a nested view inside a section, not a section itself.
   useEffect(() => {
     const el = unifiedScrollRef.current;
     if (!el) return;
@@ -1704,13 +1707,42 @@ function App({ onGoHome, onOpenSettings }) {
     }
   }, [insideThread]);
 
-  // When section changes, restore saved scroll position
-  const onSectionChange = useCallback((id) => {
-    // Save current scroll
-    if (unifiedScrollRef.current) {
-      savedScrollTop.current[activeSectionId ?? "perfil"] = unifiedScrollRef.current.scrollTop;
-    }
-  }, [activeSectionId]);
+  // Continuously record this section's own scroll position (a plain write to
+  // the shared store, not React state — no re-renders from scrolling).
+  useEffect(() => {
+    const el = unifiedScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (insideThread) return; // Thread mode has its own scroll handling — don't overwrite with 0
+      workStore.set(sectionScrollKey, el.scrollTop);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [sectionScrollKey, insideThread]); // eslint-disable-line
+
+  // On every section switch: exact restore if there's valid memory for it;
+  // otherwise cap the inherited scroll at this section's own real starting
+  // point (measured from the DOM, not estimated) — never past it, and never
+  // forced further than wherever the user currently is.
+  useLayoutEffect(() => {
+    const el = unifiedScrollRef.current;
+    if (!el || insideThread) return;
+    const apply = () => {
+      const saved = workStore.get(sectionScrollKey);
+      if (saved !== undefined) {
+        el.scrollTop = saved; // within the memory window — exact restore, no correction
+        return;
+      }
+      const cap = contentWrapperRef.current?.offsetTop;
+      if (typeof cap === "number") el.scrollTop = Math.min(el.scrollTop, cap);
+    };
+    apply();
+    // Safety net: the feed swap animates (mode="wait", ~180ms) before the new
+    // section's content actually mounts — reapply once more right after so a
+    // late mount can't leave it in the wrong spot.
+    const t = setTimeout(apply, 220);
+    return () => clearTimeout(t);
+  }, [activeSectionId]); // eslint-disable-line
 
   // scrollProps is kept for passing to child sections that have own scroll containers
   // For sections that DON'T have their own scroll (Perfil), the unified container handles it
@@ -1815,8 +1847,8 @@ function App({ onGoHome, onOpenSettings }) {
             <div style={{ padding: "6px 14px 8px" }}>
               <SectionChips
                 activeSectionId={activeSectionId}
-                onNavigate={(id) => { onSectionChange(id); setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { onSectionChange(null); setDirection(-1); setActiveSectionId(null); }}
+                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
                 onSections={allSections}
                 onAddSection={() => setShowAddSection(true)}
               />
@@ -1831,9 +1863,11 @@ function App({ onGoHome, onOpenSettings }) {
               Bounded height while inside a Thread so its own internal scroll
               becomes the ONLY scrollable region (stops scroll-chaining back
               into the profile header). */}
-          <div style={insideThread
-            ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
-            : { position: "relative", background: C.bg, minHeight: "100%" }}>
+          <div
+            ref={contentWrapperRef}
+            style={insideThread
+              ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
+              : { position: "relative", background: C.bg, minHeight: "100%" }}>
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={activeSectionId ?? "perfil"}
