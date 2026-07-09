@@ -1821,10 +1821,14 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
 
 export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange, onRegisterPostCallback }) {
   // Work Context Persistence — single source of truth for "what was I doing
-  // in Posts". Restored exactly on return within the memory window; starts
-  // fresh on first entry or once that window has expired.
+  // in Posts" (thread/composer/etc). Restored exactly on return within the
+  // memory window; starts fresh on first entry or once that window has
+  // expired. Scroll position is NOT tracked here — App.jsx owns that via its
+  // own single per-section scroll memory (feedContainerRef below was never
+  // actually a scrollable element, so a parallel copy here would just be
+  // duplicated, dead logic).
   const [mem, setMem] = useSectionMemory("recaps", () => ({
-    threads: null, feedScrollTop: 0, openThreadId: null, composerMode: null,
+    threads: null, openThreadId: null, composerMode: null,
   }));
 
   // ── Feed state — never mutated by search or UI events ─────────────────────
@@ -1855,20 +1859,9 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // this unseen-tracking lives purely in memory for the session.
   const [unseenSubtemas, setUnseenSubtemas] = useState({}); // { [threadId]: boolean }
   const [direction, setDirection] = useState(1);
-  const feedScrollRef = useRef(mem.feedScrollTop || 0);
-  const feedContainerRef = useRef(null);
+  const feedContainerRef = useRef(null); // not scrollable itself — the ancestor unified scroll container is; kept only as a DOM anchor, no scroll logic here anymore
 
   useEffect(() => { setMem(m => ({ ...m, openThreadId: openThread?.id ?? null })); }, [openThread]); // eslint-disable-line
-
-  // Save the feed scroll position whenever the section is left, regardless of
-  // how (switching sections directly, not just via opening a thread first).
-  useEffect(() => {
-    return () => {
-      if (feedContainerRef.current) {
-        setMem(m => ({ ...m, feedScrollTop: feedContainerRef.current.scrollTop }));
-      }
-    };
-  }, []); // eslint-disable-line
 
   // ── Search + Filter state ─────────────────────────────────────────────────
   // searchQuery is committed only when user presses the Search button
@@ -1964,16 +1957,12 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []);
 
   const openThreadView = useCallback((thread) => {
-    if (feedContainerRef.current) {
-      feedScrollRef.current = feedContainerRef.current.scrollTop;
-      setMem(m => ({ ...m, feedScrollTop: feedScrollRef.current }));
-    }
     setDirection(1); setOpenThread(thread);
     // Mark as seen: clear the dot immediately, then persist in the background.
     setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, newUpdates: 0 } : t));
     setUnseenSubtemas(prev => ({ ...prev, [thread.id]: false }));
     resetThreadNewUpdates(thread.id);
-  }, []); // eslint-disable-line
+  }, []);
 
   // Same visible order PostFeed renders — needed so "next/prev post" from
   // inside a Thread matches what the user would actually see in the feed.
@@ -2005,12 +1994,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     setDirection(-1); setOpenThread(null); setSubtemaOpen(false);
   }, []);
 
-  // Restore scroll on back
-  useEffect(() => {
-    if (!openThread && feedContainerRef.current) {
-      feedContainerRef.current.scrollTop = feedScrollRef.current;
-    }
-  }, [openThread]);
 
   // Notify parent when thread open state changes so it can hide the purple FAB
   // and the profile header. useLayoutEffect (not useEffect) so this fires — and
