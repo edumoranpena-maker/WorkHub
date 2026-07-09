@@ -95,3 +95,28 @@ export function useClearSectionMemory() {
   const store = useContext(WorkContextStoreCtx);
   return useCallback((key) => { store?.current?.delete(key); }, [store]);
 }
+
+/**
+ * Raw imperative access to the same store, for components that never unmount
+ * themselves (e.g. App.jsx, which stays mounted across every section switch)
+ * but still need to read/write a DIFFERENT key per navigation event. The
+ * useSectionMemory hook above assumes one key per component lifetime (it
+ * hydrates once, on mount) — that doesn't fit "the same long-lived component
+ * needs a different slot each time activeSectionId changes", so this exists
+ * as the low-level counterpart using the exact same store and TTL rule.
+ */
+export function useWorkContextStore() {
+  const store = useContext(WorkContextStoreCtx);
+  if (!store) throw new Error("useWorkContextStore() must be used inside <WorkContextProvider>");
+  return useRef({
+    get(key) {
+      const entry = store.current.get(key);
+      if (entry && (Date.now() - entry.savedAt) < TTL_MS) return entry.data;
+      if (entry) store.current.delete(key);
+      return undefined;
+    },
+    set(key, data) {
+      store.current.set(key, { data, savedAt: Date.now() });
+    },
+  }).current;
+}
