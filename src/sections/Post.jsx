@@ -1226,7 +1226,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
       <AnimatePresence>
         {showComposer && (
           <PostComposer mode="update"
-            memoryKey={`recaps:composer:update:${subtema.id}`}
             onSubmit={handleNewUpdate}
             onClose={onHideComposer} />
         )}
@@ -1236,7 +1235,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
       <AnimatePresence>
         {editingSubtema && (
           <PostComposer mode="subtema" isEditing
-            memoryKey={`recaps:composer:subtema-edit:${subtema.id}`}
             initial={{ title: subtema.title, content: subtema.content, mediaFiles: subtema.media, audio: subtema.audio }}
             onSubmit={handleEditSubtema}
             onClose={() => setEditingSubtema(false)} />
@@ -1247,7 +1245,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
       <AnimatePresence>
         {editingUpdate && (
           <PostComposer mode="update" isEditing
-            memoryKey={`recaps:composer:update-edit:${editingUpdate.id}`}
             initial={{ content: editingUpdate.content, mediaFiles: editingUpdate.media, audio: editingUpdate.audio }}
             onSubmit={handleEditUpdate}
             onClose={() => setEditingUpdate(null)} />
@@ -1682,7 +1679,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       <AnimatePresence>
         {showUpdateComposer && (
           <PostComposer mode="update"
-            memoryKey={`recaps:composer:update:${thread.id}`}
             onSubmit={handleNewUpdate}
             onClose={onHideComposer} />
         )}
@@ -1690,7 +1686,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       <AnimatePresence>
         {showSubtemaComposer && (
           <PostComposer mode="subtema"
-            memoryKey={`recaps:composer:subtema:${thread.id}`}
             onSubmit={handleAddSubtema}
             onClose={onHideComposer} />
         )}
@@ -1700,7 +1695,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       <AnimatePresence>
         {editingThread && (
           <PostComposer mode="post" isEditing
-            memoryKey={`recaps:composer:post-edit:${thread.id}`}
             initial={{ title: thread.title, content: thread.content, visibility: thread.visibility, mediaFiles: thread.media, thumbnail: null }}
             onSubmit={handleEditThread}
             onClose={() => setEditingThread(false)} />
@@ -1711,7 +1705,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       <AnimatePresence>
         {editingUpdate && (
           <PostComposer mode="update" isEditing
-            memoryKey={`recaps:composer:update-edit:${editingUpdate.id}`}
             initial={{ content: editingUpdate.content, mediaFiles: editingUpdate.media, audio: editingUpdate.audio }}
             onSubmit={handleEditUpdate}
             onClose={() => setEditingUpdate(null)} />
@@ -1820,20 +1813,13 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
 });
 
 export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange, onRegisterPostCallback }) {
-  // Work Context Persistence — single source of truth for "what was I doing
-  // in Posts" (thread/composer/etc). Restored exactly on return within the
-  // memory window; starts fresh on first entry or once that window has
-  // expired. Scroll position is NOT tracked here — App.jsx owns that via its
-  // own single per-section scroll memory (feedContainerRef below was never
-  // actually a scrollable element, so a parallel copy here would just be
-  // duplicated, dead logic).
-  const [mem, setMem] = useSectionMemory("recaps", () => ({
-    threads: null, openThreadId: null, composerMode: null,
-  }));
-
   // ── Feed state — never mutated by search or UI events ─────────────────────
-  const [threads, setThreads] = useState(mem.threads || MOCK_THREADS);
-  const [loadingThreads, setLoadingThreads] = useState(!mem.threads);
+  // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
+  // hidden via CSS, never torn down) — so this plain useState already
+  // survives navigating away and back, no memory/persistence system needed
+  // for it anymore.
+  const [threads, setThreads] = useState(MOCK_THREADS);
+  const [loadingThreads, setLoadingThreads] = useState(true);
 
   // Expose a stable callback so App.jsx can prepend a newly created thread
   // without Post needing to know about NewPostSheet or createRecapThread directly.
@@ -1845,23 +1831,13 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     return () => { onRegisterPostCallback?.(null); };
   }, [onRegisterPostCallback]); // eslint-disable-line
 
-  // Keep the cached feed in sync so a quick return doesn't show a stale list —
-  // and so a section that expired and comes back gets nothing stale either.
-  useEffect(() => { setMem(m => ({ ...m, threads })); }, [threads]); // eslint-disable-line
-
   // ── Navigation state ───────────────────────────────────────────────────────
-  // Restore the exact same open thread on return, by id, once threads are loaded.
-  const [openThread, setOpenThread] = useState(() => {
-    if (!mem.openThreadId) return null;
-    return (mem.threads || MOCK_THREADS).find(t => t.id === mem.openThreadId) || null;
-  });
+  const [openThread, setOpenThread] = useState(null);
   // Subtemas are client-side only (no DB row), so unlike new_updates_count
   // this unseen-tracking lives purely in memory for the session.
   const [unseenSubtemas, setUnseenSubtemas] = useState({}); // { [threadId]: boolean }
   const [direction, setDirection] = useState(1);
-  const feedContainerRef = useRef(null); // not scrollable itself — the ancestor unified scroll container is; kept only as a DOM anchor, no scroll logic here anymore
-
-  useEffect(() => { setMem(m => ({ ...m, openThreadId: openThread?.id ?? null })); }, [openThread]); // eslint-disable-line
+  const feedContainerRef = useRef(null); // not scrollable itself — the ancestor unified scroll container is; kept only as a DOM anchor
 
   // ── Search + Filter state ─────────────────────────────────────────────────
   // searchQuery is committed only when user presses the Search button
@@ -1873,9 +1849,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // ── UI-only state ──────────────────────────────────────────────────────────
   // ── FAB + composer state ───────────────────────────────────────────────────
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
-  const [activeComposer, setActiveComposer] = useState(mem.composerMode ?? null); // null | "update" | "subtema"
+  const [activeComposer, setActiveComposer] = useState(null); // null | "update" | "subtema"
   const [subtemaOpen, setSubtemaOpen] = useState(false); // true when inside a SubtemaView
-  useEffect(() => { setMem(m => ({ ...m, composerMode: activeComposer })); }, [activeComposer]); // eslint-disable-line
   const fabVisible = activeComposer === null;
 
   const openComposer = (mode) => { setFabMenuOpen(false); setActiveComposer(mode); };
@@ -2088,7 +2063,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
         {editingFeedThread && (
           <PostComposer mode="post" isEditing
-            memoryKey={`recaps:composer:post-edit:${editingFeedThread.id}`}
             initial={{ title: editingFeedThread.title, content: editingFeedThread.content, visibility: editingFeedThread.visibility, mediaFiles: editingFeedThread.media }}
             onSubmit={handleFeedEditSubmit}
             onClose={() => setEditingFeedThread(null)} />
@@ -2145,7 +2119,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
       {editingFeedThread && (
         <PostComposer mode="post" isEditing
-          memoryKey={`recaps:composer:post-edit:${editingFeedThread.id}`}
           initial={{ title: editingFeedThread.title, content: editingFeedThread.content, visibility: editingFeedThread.visibility, mediaFiles: editingFeedThread.media }}
           onSubmit={handleFeedEditSubmit}
           onClose={() => setEditingFeedThread(null)} />
