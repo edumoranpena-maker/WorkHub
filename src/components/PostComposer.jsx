@@ -39,7 +39,6 @@ import {
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.jsx";
 import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 import { useComposerNavLock } from "../lib/composerLock.jsx";
-import { useSectionMemory, useClearSectionMemory } from "../lib/workContext.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -55,36 +54,21 @@ const MEDIA_TABS = [
   { id: "thumbnail", label: "Miniatura", kind: "thumbnail", accept: "image/*", icon: ImagePlus },
 ];
 
-export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], memoryKey = null, onSubmit, onClose }) {
+export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], onSubmit, onClose }) {
   const isPost = mode === "post";
   const isSubtema = mode === "subtema";
 
-  // Work Context Persistence: if this exact composer instance (same memoryKey)
-  // was left open with a draft in progress within the memory window, restore
-  // it exactly — title, content, attached media/files/links, everything.
-  // Falls back to `initial` (edit target) or blank (new) only when there's no
-  // in-progress draft saved yet.
-  const [draft, setDraft] = useSectionMemory(memoryKey || `composer:${mode}:${isEditing ? "edit" : "new"}`, () => ({}));
-  const clearMemory = useClearSectionMemory();
-  const seeded = (field, fallback) => (draft[field] !== undefined ? draft[field] : fallback);
-
-  const [title, setTitle]           = useState(seeded("title", initial?.title || ""));
-  const [content, setContent]       = useState(seeded("content", initial?.content || ""));
-  const [mediaFiles, setMediaFiles] = useState(seeded("mediaFiles", initial?.mediaFiles || [])); // [{type,url,file?,existing?}]
-  const [thumbnail, setThumbnail]   = useState(seeded("thumbnail", initial?.thumbnail || null));
-  const [visibility, setVisibility] = useState(seeded("visibility", initial?.visibility || DEFAULT_VISIBILITY));
-  const [attachedChecklist, setAttachedChecklist] = useState(seeded("attachedChecklist", initial?.checklist || null));
+  const [title, setTitle]           = useState(initial?.title || "");
+  const [content, setContent]       = useState(initial?.content || "");
+  const [mediaFiles, setMediaFiles] = useState(initial?.mediaFiles || []); // [{type,url,file?,existing?}]
+  const [thumbnail, setThumbnail]   = useState(initial?.thumbnail || null);
+  const [visibility, setVisibility] = useState(initial?.visibility || DEFAULT_VISIBILITY);
+  const [attachedChecklist, setAttachedChecklist] = useState(initial?.checklist || null);
 
   const [recording, setRecording]   = useState(false);
-  const [audioBlob, setAudioBlob]   = useState(seeded("audioBlob", null));
-  const [audioURL, setAudioURL]     = useState(seeded("audioURL", initial?.audio?.url || null));
-  const [audioRemoved, setAudioRemoved] = useState(seeded("audioRemoved", false));
-
-  // Keep the shared draft in sync as the user types/attaches — this is what
-  // survives switching to another section and coming back within the window.
-  useEffect(() => {
-    setDraft({ title, content, mediaFiles, thumbnail, visibility, attachedChecklist, audioBlob, audioURL, audioRemoved });
-  }, [title, content, mediaFiles, thumbnail, visibility, attachedChecklist, audioBlob, audioURL, audioRemoved]); // eslint-disable-line
+  const [audioBlob, setAudioBlob]   = useState(null);
+  const [audioURL, setAudioURL]     = useState(initial?.audio?.url || null);
+  const [audioRemoved, setAudioRemoved] = useState(false);
 
   const [showCancel, setShowCancel] = useState(false);
   const [expandedLink, setExpandedLink] = useState(null);
@@ -194,7 +178,6 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
       checklist: attachedChecklist,
       links: previews,
     });
-    clearMemory(memoryKey || `composer:${mode}:${isEditing ? "edit" : "new"}`);
     onClose();
   };
 
@@ -355,7 +338,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
           <p style={{ margin: "0 0 16px", fontFamily: font, fontSize: 14, color: C.text }}>¿Descartar {isEditing ? "los cambios" : "esta publicación"}?</p>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setShowCancel(false)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.text, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 600 }}>Seguir editando</button>
-            <button onClick={() => { clearMemory(memoryKey || `composer:${mode}:${isEditing ? "edit" : "new"}`); onClose(); }} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
+            <button onClick={onClose} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
           </div>
         </div>
       </div>
