@@ -1663,7 +1663,6 @@ function App({ onGoHome, onOpenSettings }) {
         {showFullPostSheet && (
           <PostComposer
             mode="post"
-            memoryKey="recaps:composer:post:new"
             checklists={checklists}
             onSubmit={handlePublishNewPost}
             onClose={() => setShowFullPostSheet(false)}
@@ -1778,14 +1777,47 @@ function App({ onGoHome, onOpenSettings }) {
   };
 
   // Render del feed móvil según sección activa — sin navegar a página nueva
-  function renderMobileFeed() {
-    // No scrollProps — unified scroll container handles scrolling for all sections
-    if (!activeSectionId) return <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />;
-    if (activeSectionId === "metrics")       return <MetricsContent />;
-    if (activeSectionId === "rooms")         return <RoomsContent />;
-    return null;
+  // Sections are rendered ALL AT ONCE and stay permanently mounted — switching
+  // sections only toggles which one is visible (display:none on the rest).
+  // This is what makes Thread/composer-draft/filter state survive navigation
+  // for free: React never tears the component down, so its own useState never
+  // resets. Only the shared scroll document (handled above) still needs an
+  // explicit memory system, because that's the one thing that isn't "a
+  // component's own state" — it's a single number every section shares.
+  const customSections = allSections.filter(s => !["recaps", "announcements", "metrics", "rooms"].includes(s.id));
+
+  function renderMobileSections() {
+    const visible = (id) => ({ display: activeSectionId === id ? "block" : "none", minHeight: "100%" });
+    const visibleRecaps = {
+      display: activeSectionId === "recaps" ? "block" : "none",
+      ...(activeSectionId === "recaps" && insideThread
+        ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+        : { minHeight: "100%" }),
+    };
+    return (
+      <>
+        <div style={visible(null)}>
+          <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />
+        </div>
+        <div style={visibleRecaps}>
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
+        </div>
+        <div style={visible("announcements")}>
+          <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />
+        </div>
+        <div style={visible("metrics")}>
+          <MetricsContent />
+        </div>
+        <div style={visible("rooms")}>
+          <RoomsContent />
+        </div>
+        {customSections.map(cs => (
+          <div key={cs.id} style={visible(cs.id)}>
+            <CustomSectionContent section={cs} checklists={checklists} onChecklistsChange={setChecklists} />
+          </div>
+        ))}
+      </>
+    );
   }
 
   return (
@@ -1868,21 +1900,8 @@ function App({ onGoHome, onOpenSettings }) {
             style={insideThread
               ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
               : { position: "relative", background: C.bg, minHeight: "100%" }}>
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={activeSectionId ?? "perfil"}
-                custom={direction}
-                variants={feedVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={feedTrans}
-                style={insideThread ? { willChange: "opacity, transform", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" } : { willChange: "opacity, transform" }}
-              >
-                {renderMobileFeed()}
-                {!insideThread && <div style={{ height: 40 }} />}
-              </motion.div>
-            </AnimatePresence>
+            {renderMobileSections()}
+            {!insideThread && <div style={{ height: 40 }} />}
           </div>
 
         </div>
@@ -2047,7 +2066,6 @@ function App({ onGoHome, onOpenSettings }) {
         {showFullPostSheet && (
           <PostComposer
             mode="post"
-            memoryKey="recaps:composer:post:new"
             checklists={checklists}
             onSubmit={handlePublishNewPost}
             onClose={() => setShowFullPostSheet(false)}
