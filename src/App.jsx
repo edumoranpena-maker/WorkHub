@@ -1688,36 +1688,25 @@ function App({ onGoHome, onOpenSettings }) {
   // Chips are position:sticky so they lock below the topbar automatically.
   const unifiedScrollRef = useRef(null);
   const contentWrapperRef = useRef(null); // the section-content div, right after profile+chips
-  const preThreadScrollTop = useRef(0);   // exact scroll position from right before a thread was opened
   const workStore = useWorkContextStore();
   const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
 
-  // Thread reading-mode: hide the profile header, freeze the background scroll,
-  // and restore the exact prior scroll position on exit. Unrelated to section
-  // switching — a Thread is a nested view inside a section, not a section itself.
-  useEffect(() => {
-    const el = unifiedScrollRef.current;
-    if (!el) return;
-    if (insideThread) {
-      preThreadScrollTop.current = el.scrollTop;
-      el.scrollTop = 0; // header is about to unmount — chips should sit pinned at the very top, not wherever they were stuck before
-    } else {
-      el.scrollTop = preThreadScrollTop.current;
-    }
-  }, [insideThread]);
+  // Thread/Subtema are real fullscreen overlays now — position:fixed, siblings
+  // of the document below, which never unmounts and never has its scrollTop
+  // touched. The ONLY thing that needs to happen here is blocking the
+  // underlying document from being scrolled while an overlay covers it (so a
+  // stray touch can't move the feed hidden behind it) — a plain CSS
+  // overflow toggle, nothing measured, nothing saved, nothing restored.
 
   // Continuously record this section's own scroll position (a plain write to
   // the shared store, not React state — no re-renders from scrolling).
   useEffect(() => {
     const el = unifiedScrollRef.current;
     if (!el) return;
-    const onScroll = () => {
-      if (insideThread) return; // Thread mode has its own scroll handling — don't overwrite with 0
-      workStore.set(sectionScrollKey, el.scrollTop);
-    };
+    const onScroll = () => { workStore.set(sectionScrollKey, el.scrollTop); };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [sectionScrollKey, insideThread]); // eslint-disable-line
+  }, [sectionScrollKey]); // eslint-disable-line
 
   // On every section switch: exact restore if there's valid memory for it;
   // otherwise cap the inherited scroll at this section's own real starting
@@ -1725,7 +1714,7 @@ function App({ onGoHome, onOpenSettings }) {
   // forced further than wherever the user currently is.
   useLayoutEffect(() => {
     const el = unifiedScrollRef.current;
-    if (!el || insideThread) return;
+    if (!el) return;
     const apply = () => {
       const saved = workStore.get(sectionScrollKey);
       if (saved !== undefined) {
@@ -1788,18 +1777,12 @@ function App({ onGoHome, onOpenSettings }) {
 
   function renderMobileSections() {
     const visible = (id) => ({ display: activeSectionId === id ? "block" : "none", minHeight: "100%" });
-    const visibleRecaps = {
-      display: activeSectionId === "recaps" ? "block" : "none",
-      ...(activeSectionId === "recaps" && insideThread
-        ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
-        : { minHeight: "100%" }),
-    };
     return (
       <>
         <div style={visible(null)}>
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />
         </div>
-        <div style={visibleRecaps}>
+        <div style={visible("recaps")}>
           <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
         </div>
         <div style={visible("announcements")}>
@@ -1846,8 +1829,7 @@ function App({ onGoHome, onOpenSettings }) {
           ref={unifiedScrollRef}
           style={{
             flex: 1, overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface,
-            overflowY: insideThread ? "hidden" : "auto",
-            ...(insideThread ? { display: "flex", flexDirection: "column" } : {}),
+            overflowY: insideThread ? "hidden" : "auto", // block the background from scrolling while a Thread overlay covers it
           }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -1887,21 +1869,20 @@ function App({ onGoHome, onOpenSettings }) {
             </div>
           </div>
 
-          {/* 3. Feed — only this area transitions. minHeight:100% (of the scroll
-              container itself, not the viewport) guarantees the document is
-              always at least as tall as what's visible, so the browser never
-              has a reason to clamp scrollTop back down — regardless of how
-              short a section's content is, or whether it's still loading.
-              Bounded height while inside a Thread so its own internal scroll
-              becomes the ONLY scrollable region (stops scroll-chaining back
-              into the profile header). */}
+          {/* Section content — all sections stay permanently mounted (visibility
+              toggled via CSS in renderMobileSections), so this div's own size
+              is just whichever section is currently visible. minHeight:100%
+              (of the scroll container, not the viewport) guarantees the
+              document is always at least as tall as what's visible, so the
+              browser never clamps scrollTop back down for a short/loading
+              section. Thread/Subtema no longer live here at all — they're
+              position:fixed overlays rendered by Post.jsx itself, completely
+              independent of this container. */}
           <div
             ref={contentWrapperRef}
-            style={insideThread
-              ? { position: "relative", background: C.bg, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }
-              : { position: "relative", background: C.bg, minHeight: "100%" }}>
+            style={{ position: "relative", background: C.bg, minHeight: "100%" }}>
             {renderMobileSections()}
-            {!insideThread && <div style={{ height: 40 }} />}
+            <div style={{ height: 40 }} />
           </div>
 
         </div>
