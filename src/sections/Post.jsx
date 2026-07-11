@@ -1308,7 +1308,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const [likeCount, setLikeCount] = useState(initialThread.likes);
   const [showComments, setShowComments] = useState(false);
   const [openSubtema, setOpenSubtema] = useState(null); // resolved once thread.subtemas loads — see fetch effect below
-  const [subtemaDirection, setSubtemaDirection] = useState(1);
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingThread, setEditingThread] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
@@ -1479,14 +1478,9 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     enqueue("Eliminando update…", async () => { await deleteThreadUpdate(update.id); });
   };
 
-  const openSubtemaView = (sub) => { setSubtemaDirection(1); setOpenSubtema(sub); setTmem(m => ({ ...m, openSubtemaId: sub.id })); onSubtemaChange?.(true); };
-  const closeSubtema = () => { setSubtemaDirection(-1); setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); };
+  const openSubtemaView = (sub) => { setOpenSubtema(sub); setTmem(m => ({ ...m, openSubtemaId: sub.id })); onSubtemaChange?.(true); };
+  const closeSubtema = () => { setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); };
 
-  const slideVariants = {
-    enter: d => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
-    center: { x: 0, opacity: 1 },
-    exit: d => ({ x: d > 0 ? "-100%" : "100%", opacity: 0 }),
-  };
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
   // Which composer to show inside this view
@@ -1504,10 +1498,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, position: "relative" }}>
       {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
 
-      <AnimatePresence mode="popLayout" custom={subtemaDirection}>
-        {!openSubtema ? (
-          <motion.div key="thread-main" initial={{ opacity: 1 }} animate={{ opacity: 1 }}
-            style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Thread's own content — always mounted, never replaced by SubtemaView */}
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
             <div ref={scrollElRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", position: "relative" }}
               onTouchStart={handleScrollTouchStart} onTouchMove={handleScrollTouchMove} onTouchEnd={handleScrollTouchEnd} onTouchCancel={handleScrollTouchEnd}>
@@ -1660,11 +1652,14 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                 </div>
               )}
             </div>
-          </motion.div>
-        ) : (
-          <motion.div key={openSubtema.id} custom={subtemaDirection} variants={slideVariants}
-            initial="enter" animate="center" exit="exit" transition={springTrans}
-            style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      </div>
+
+      {/* Subtema — real fullscreen overlay. Thread's content above never unmounts. */}
+      <AnimatePresence>
+        {openSubtema && (
+          <motion.div key={openSubtema.id}
+            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
+            style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface, display: "flex", flexDirection: "column" }}>
             <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
               parentVisibility={thread.visibility}
               onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
@@ -1836,7 +1831,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // Subtemas are client-side only (no DB row), so unlike new_updates_count
   // this unseen-tracking lives purely in memory for the session.
   const [unseenSubtemas, setUnseenSubtemas] = useState({}); // { [threadId]: boolean }
-  const [direction, setDirection] = useState(1);
   const feedContainerRef = useRef(null); // not scrollable itself — the ancestor unified scroll container is; kept only as a DOM anchor
 
   // ── Search + Filter state ─────────────────────────────────────────────────
@@ -1872,7 +1866,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         const fallback = openThreadId.startsWith("p")
           ? MOCK_THREADS.find(th => th.planningPostId === openThreadId)
           : MOCK_THREADS.find(th => th.id === openThreadId);
-        if (t || fallback) { setDirection(1); setOpenThread(t || fallback); }
+        if (t || fallback) { setOpenThread(t || fallback); }
       }
     }).catch(() => setLoadingThreads(false));
     return () => { cancelled = true; };
@@ -1883,7 +1877,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     const t = openThreadId.startsWith("p")
       ? threads.find(th => th.planningPostId === openThreadId)
       : threads.find(th => th.id === openThreadId);
-    if (t) { setDirection(1); setOpenThread(t); }
+    if (t) { setOpenThread(t); }
   }, [openThreadId]); // eslint-disable-line
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -1932,7 +1926,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []);
 
   const openThreadView = useCallback((thread) => {
-    setDirection(1); setOpenThread(thread);
+    setOpenThread(thread);
     // Mark as seen: clear the dot immediately, then persist in the background.
     setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, newUpdates: 0 } : t));
     setUnseenSubtemas(prev => ({ ...prev, [thread.id]: false }));
@@ -1966,7 +1960,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, [openThread, feedOrder]);
 
   const closeThread = useCallback(() => {
-    setDirection(-1); setOpenThread(null); setSubtemaOpen(false);
+    setOpenThread(null); setSubtemaOpen(false);
   }, []);
 
 
@@ -2019,45 +2013,44 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           {/* ── Desktop feed / thread panel (inlined — no wrapper component) ── */}
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
             <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-              <AnimatePresence mode="popLayout" custom={direction}>
-                {!openThread ? (
-                  <motion.div key="post-feed" initial={false} animate={{}} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
-                    <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
-                      <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
-                    </div>
-                    <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
-                      {loadingThreads ? (
-                        <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                          <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                          <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
-                        </div>
-                      ) : (
-                        <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                          unseenSubtemas={unseenSubtemas} />
-                      )}
-                    </div>
-                  </motion.div>
+              <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
+                <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
+              </div>
+              <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
+                {loadingThreads ? (
+                  <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                    <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                    <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+                  </div>
                 ) : (
-                  <motion.div key={openThread.id} custom={direction} variants={slideVariants}
-                    initial="enter" animate="center" exit="exit" transition={springTrans}
-                    style={{ position: "absolute", inset: 0, background: C.surface, display: "flex", flexDirection: "column" }}>
-                    <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
-                      onNavigateAdjacent={navigateAdjacentThread}
-                      adjacentThreads={adjacentThreads}
-                      onStatusChange={handleStatusChange}
-                      onThreadEdited={handleThreadEdited}
-                      onThreadDeleted={handleDeleteThread}
-                      showComposer={activeComposer !== null}
-                      composerMode={activeComposer}
-                      onHideComposer={closeComposer}
-                      onSubtemaChange={setSubtemaOpen}
-                      onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
-                    />
-                  </motion.div>
+                  <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
+                    onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                    unseenSubtemas={unseenSubtemas} />
                 )}
-              </AnimatePresence>
+              </div>
             </div>
+
+            {/* Thread — real overlay. PostFeed above never unmounts, its scroll never moves. */}
+            <AnimatePresence>
+              {openThread && (
+                <motion.div key={openThread.id}
+                  initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
+                  style={{ position: "absolute", inset: 0, zIndex: 50, background: C.surface, display: "flex", flexDirection: "column" }}>
+                  <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+                    onNavigateAdjacent={navigateAdjacentThread}
+                    adjacentThreads={adjacentThreads}
+                    onStatusChange={handleStatusChange}
+                    onThreadEdited={handleThreadEdited}
+                    onThreadDeleted={handleDeleteThread}
+                    showComposer={activeComposer !== null}
+                    composerMode={activeComposer}
+                    onHideComposer={closeComposer}
+                    onSubtemaChange={setSubtemaOpen}
+                    onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
         {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
@@ -2072,38 +2065,42 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
-  // Render as plain flow — unified scroll in App.jsx handles overflow.
-  // FeedPanelMobile is inlined (not a sub-component) so React never sees a type
-  // change between renders, which would unmount ThreadView and wipe its state.
+  // PostFeed is always mounted, in normal flow (unified scroll in App.jsx
+  // handles its scrolling). Thread is a real fullscreen overlay — a sibling,
+  // never a replacement — so the feed underneath never unmounts, never loses
+  // its scroll position, and needs no restoration logic when the overlay closes.
   return (
     <>
-      <div style={openThread ? { background: C.surface, height: "100%", display: "flex", flexDirection: "column" } : { background: C.surface, minHeight: 400 }}>
-        {!openThread ? (
-          <>
-            {/* Filter bar */}
-            <div style={{ padding: "12px 14px 10px" }}>
-              <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
-            </div>
+      <div style={{ background: C.surface, minHeight: 400 }}>
+        {/* Filter bar */}
+        <div style={{ padding: "12px 14px 10px" }}>
+          <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
+        </div>
 
-            {/* Posts list — flows naturally */}
-            <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
-              {loadingThreads ? (
-                <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                  <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                  <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
-                </div>
-              ) : (
-                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                          onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                          unseenSubtemas={unseenSubtemas} />
-              )}
+        {/* Posts list — flows naturally */}
+        <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
+          {loadingThreads ? (
+            <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+              <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+              <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
             </div>
-          </>
-        ) : (
-          <div style={{ background: C.surface, height: "100%", display: "flex", flexDirection: "column", overscrollBehavior: "contain" }}>
+          ) : (
+            <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
+                      onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                      unseenSubtemas={unseenSubtemas} />
+          )}
+        </div>
+      </div>
+
+      {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement */}
+      <AnimatePresence>
+        {openThread && (
+          <motion.div key={openThread.id}
+            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
+            style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface, display: "flex", flexDirection: "column" }}>
             <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
-                      onNavigateAdjacent={navigateAdjacentThread}
-                      adjacentThreads={adjacentThreads}
+              onNavigateAdjacent={navigateAdjacentThread}
+              adjacentThreads={adjacentThreads}
               onStatusChange={handleStatusChange}
               onThreadEdited={handleThreadEdited}
               onThreadDeleted={handleDeleteThread}
@@ -2113,9 +2110,10 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               onSubtemaChange={setSubtemaOpen}
               onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
             />
-          </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
+
       {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
       {editingFeedThread && (
         <PostComposer mode="post" isEditing
