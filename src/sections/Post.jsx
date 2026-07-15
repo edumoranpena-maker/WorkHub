@@ -1264,44 +1264,17 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   );
 }
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
-// ─── AdjacentThreadPeek — lightweight preview shown while dragging past an edge ──
-function AdjacentThreadPeek({ thread }) {
-  if (!thread) return null;
-  const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
-  const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
-  return (
-    <div style={{ height: "100%", background: C.surface, overflow: "hidden" }}>
-      <div style={{ background: `${C.teal}08`, padding: "20px 16px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <Avatar name={thread.author} size={36} />
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
-              <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
-            </div>
-          </div>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
-          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
-        </div>
-
-        {thread.title && (
-          <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 15, fontWeight: 800, color: C.accentLight, lineHeight: 1.35 }}>{thread.title}</p>
-        )}
-
-        <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{thread.content}</p>
-
-        {thumb && (
-          <img src={thumb} alt="" style={{ width: "100%", maxHeight: 160, objectFit: "cover", borderRadius: 12, marginTop: 12 }} />
-        )}
-      </div>
-    </div>
-  );
-}
+// Set by ThreadView right before it hands off to the adjacent post at the end
+// of a committed drag. The freshly-mounted ThreadView for that post reads it
+// once (and resets it) to skip its own entrance animation — the content was
+// already fully visible, glued to the outgoing post, for the whole gesture,
+// so replaying a "just opened" fade/tint here would reintroduce exactly the
+// seam we're trying to remove. A normal card tap never sets this, so opening
+// a thread from the feed still gets its entrance animation as before.
+let pendingSwipeArrival = false;
 
 function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+  const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
   const [thread, setThread] = useState(initialThread);
   const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ scrollTop: 0, openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
@@ -1312,11 +1285,12 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const [editingThread, setEditingThread] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
   const [confirmDeleteThread, setConfirmDeleteThread] = useState(false);
-  const [justEntered, setJustEntered] = useState(true);
+  const [justEntered, setJustEntered] = useState(!skipEntrance);
   useEffect(() => {
+    if (skipEntrance) return;
     const t = setTimeout(() => setJustEntered(false), 1800);
     return () => clearTimeout(t);
-  }, []);
+  }, []); // eslint-disable-line
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const threadLinks = useLinkPreviews(thread.content);
@@ -1337,11 +1311,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     return () => { cancelled = true; };
   }, [thread.id]); // eslint-disable-line
 
-  // ── Continuous peek-and-commit navigation (Telegram-style) ───────────────────
-  // One continuous drag: strong resistance for the first ~50px, then the
-  // adjacent post progressively peeks in — the further you pull, the more of
-  // it becomes visible. Release past the distance threshold (or a fast flick)
-  // completes the transition; otherwise everything snaps back elastically.
   const scrollElRef = useRef(null);
 
   // Restore the Thread's own scroll position once its content is in the DOM.
@@ -1357,14 +1326,22 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     };
   }, []); // eslint-disable-line
 
+  // ── Continuous drag-and-commit navigation ─────────────────────────────────
+  // One continuous drag: strong resistance for the first ~50px (the "hitting
+  // a limit" feel), then the adjacent post — glued directly to the current
+  // one, mounted from the first move sample, never swapped for a stand-in —
+  // progressively slides into view as a single surface. Release past the
+  // distance threshold (or a fast flick) completes the transition by handing
+  // off to the real navigation callback; otherwise everything snaps back.
   const pullGesture  = useRef(null); // { startY, startT, atTop, atBottom, lastY, lastT }
-  const [peek, setPeek] = useState({ active: false, edge: null, display: 0, animating: false });
+  const [drag, setDrag] = useState({ active: false, edge: null, offset: 0, animating: false });
 
   const RESIST_ZONE_PX = 50;    // pure-resistance distance before reveal starts easing up
   const RUBBER_COEFF   = 0.55;  // lower = more resistance overall
   const COMMIT_PX      = 130;   // raw drag distance that guarantees a commit
   const FLICK_MIN_PX   = 46;    // minimum drag before a fast flick can also commit
   const FLICK_VELOCITY = 0.55;  // px/ms
+  const SNAP_MS         = 260;  // duration of both the commit-completion and snap-back animations
 
   // Classic UIScrollView-style rubber band: resistance is strong near 0 and
   // eases off continuously as the drag grows, asymptotically approaching `dim`
@@ -1372,7 +1349,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const rubberBand = (raw, dim) => (dim * raw * RUBBER_COEFF) / (dim + RUBBER_COEFF * raw);
 
   const handleScrollTouchStart = (e) => {
-    if (peek.animating) return;
+    if (drag.animating) return;
     const el = scrollElRef.current;
     if (!el) return;
     const y = e.touches[0].clientY;
@@ -1385,7 +1362,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
 
   const handleScrollTouchMove = (e) => {
     const g = pullGesture.current;
-    if (!g || peek.animating) return;
+    if (!g || drag.animating) return;
     const el = scrollElRef.current;
     const y = e.touches[0].clientY;
     const dy = y - g.startY;
@@ -1403,16 +1380,16 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       const eased = raw <= RESIST_ZONE_PX
         ? raw * 0.28
         : RESIST_ZONE_PX * 0.28 + rubberBand(raw - RESIST_ZONE_PX, dim * 0.92);
-      setPeek({ active: true, edge, display: Math.min(dim, eased), animating: false });
-    } else if (peek.active) {
-      setPeek({ active: false, edge: null, display: 0, animating: false });
+      setDrag({ active: true, edge, offset: Math.min(dim, eased), animating: false });
+    } else if (drag.active) {
+      setDrag({ active: false, edge: null, offset: 0, animating: false });
     }
   };
 
   const handleScrollTouchEnd = () => {
     const g = pullGesture.current;
     pullGesture.current = null;
-    if (!g || !peek.active) return;
+    if (!g || !drag.active) return;
 
     const rawDelta = Math.abs(g.lastY - g.startY);
     const dt = Math.max(1, g.lastT - g.startT);
@@ -1420,16 +1397,29 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     const commit = rawDelta > COMMIT_PX || (rawDelta > FLICK_MIN_PX && velocity > FLICK_VELOCITY);
     const el = scrollElRef.current;
     const dim = el?.clientHeight || 600;
-    const edge = peek.edge;
+    const edge = drag.edge;
 
     if (commit) {
-      setPeek(p => ({ ...p, display: dim, animating: true }));
-      setTimeout(() => { onNavigateAdjacent?.(edge === "top" ? "newer" : "older"); }, 240);
+      // Finish sliding the same glued surface the rest of the way — no swap yet.
+      setDrag(d => ({ ...d, offset: dim, animating: true }));
+      setTimeout(() => {
+        // The adjacent post is already fully in view, pixel-identical to what
+        // its real ThreadView will render. Flag the handoff so that instance
+        // skips its entrance animation, then trigger the existing navigation
+        // callback exactly as before — only its timing changed.
+        pendingSwipeArrival = true;
+        onNavigateAdjacent?.(edge === "top" ? "newer" : "older");
+      }, SNAP_MS);
     } else {
-      setPeek(p => ({ ...p, display: 0, animating: true }));
-      setTimeout(() => setPeek({ active: false, edge: null, display: 0, animating: false }), 340);
+      setDrag(d => ({ ...d, offset: 0, animating: true }));
+      setTimeout(() => setDrag({ active: false, edge: null, offset: 0, animating: false }), SNAP_MS);
     }
   };
+
+  // The assembly's translateY: positive slides it down (revealing the newer
+  // post glued above), negative slides it up (revealing the older post glued
+  // below). 0 when no drag is active.
+  const dragOffsetPx = drag.edge === "top" ? drag.offset : drag.edge === "bottom" ? -drag.offset : 0;
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1494,164 +1484,190 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     onReport: () => {},
   });
 
+  // Renders a full thread — TopBar through Subtemas — from arbitrary thread
+  // data. Used for the live, interactive thread AND for the adjacent post
+  // glued to it during a drag, so both are pixel-identical: there's nothing
+  // to "swap" visually once the real ThreadView for that post takes over.
+  // interactive=false disables all handlers (the panel is also pointer-events:
+  // none while dragging) and reads display data straight off `data` instead
+  // of this component's own live state.
+  const renderThreadSurface = (data, { interactive }) => {
+    const media = interactive ? threadMedia : (data.media || []);
+    const tint = interactive && justEntered;
+    const dataLiked = interactive ? liked : !!data.liked;
+    const dataLikeCount = interactive ? likeCount : (data.likes || 0);
+    const updates = data.updates || [];
+    const subtemas = data.subtemas || [];
+    return (
+      <>
+        {/* TopBar */}
+        <motion.div initial={interactive && !skipEntrance ? { opacity: 0, y: -8 } : false} animate={{ opacity: 1, y: 0 }}
+          style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
+          <button onClick={interactive ? onBack : undefined} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: interactive ? "pointer" : "default", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+            <ChevronLeft size={19} strokeWidth={2.2} /> Back
+          </button>
+          <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 44, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {data.title || "Post"}
+          </span>
+        </motion.div>
+
+        {/* Root Post */}
+        <div style={{
+          background: tint ? `${C.teal}10` : C.card,
+          borderBottom: `1px solid ${tint ? C.teal + "35" : C.teal + "22"}`,
+          padding: "20px 16px 16px",
+          transition: "background 1s ease, border-color 1s ease",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <Avatar name={data.author} size={36} />
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{data.author}</span>
+                <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(data.timestamp)} · {fmtTime(data.timestamp)}</span>
+                <PrivacyIcon visibility={data.visibility} size={10} color={C.textMuted} />
+                {data.edited && <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>}
+              </div>
+            </div>
+            {interactive && isHost && <PostOptionsMenu actions={menuActions} />}
+          </div>
+
+          {data.title && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.accentLight, lineHeight: 1.35 }}>{data.title}</span>
+              <StatusChip status={data.status} isHost={interactive && isHost}
+                onSetStatus={interactive ? (s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(data.id, s); }) : (() => {})} />
+            </div>
+          )}
+
+          <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={data.content} /></p>
+
+          {data.checklist && (
+            <div style={{ marginTop: 12 }}>
+              <ChecklistBlock
+                checklist={data.checklist}
+                onChange={interactive ? (updated => setThread(t => ({ ...t, checklist: updated }))) : (() => {})}
+                accentColor={C.teal}
+              />
+            </div>
+          )}
+
+          {data.hashtags?.length > 0 && (
+            <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{data.hashtags.join(" ")}</p>
+          )}
+
+          {media.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <MediaCarousel
+                items={media}
+                onOpenGallery={interactive ? openGallery : (() => {})}
+                accentColor={C.teal}
+              />
+            </div>
+          )}
+
+          {data.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={data.audio} accentColor={C.teal} /></div>}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
+            <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? toggleLike : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 5, background: dataLiked ? `${C.red}14` : "transparent", border: `1px solid ${dataLiked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: interactive ? "pointer" : "default", color: dataLiked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
+              <Heart size={13} fill={dataLiked ? C.red : "none"} /> {dataLikeCount}
+            </motion.button>
+            <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? (() => setShowComments(true)) : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: interactive ? "pointer" : "default", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
+              <MessageCircle size={13} /> {data.commentCount}
+            </motion.button>
+            <div style={{ flex: 1 }} />
+            <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Bookmark size={14} /></button>
+            <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Share2 size={14} /></button>
+          </div>
+        </div>
+
+        {/* Updates */}
+        <div style={{ padding: "16px 16px 0" }}>
+          {updates.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}40, transparent)` }} />
+              <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {updates.length} Update{updates.length !== 1 ? "s" : ""}
+              </span>
+              <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}40, transparent)` }} />
+            </div>
+          )}
+          <div style={{ paddingLeft: 4 }}>
+            {updates.map((u, i) => (
+              <UpdateBubble key={u.id} update={u} index={i} visibility={data.visibility}
+                onEdit={interactive ? (() => setEditingUpdate(u)) : (() => {})}
+                onDelete={interactive ? handleDeleteUpdate : (() => {})}
+                onShare={() => {}} onReport={() => {}} />
+            ))}
+          </div>
+          {updates.length === 0 && !isHost && (
+            <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
+          )}
+        </div>
+
+        {/* Subtemas */}
+        {(subtemas.length > 0 || isHost) && (
+          <div style={{ padding: "16px 16px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}30, transparent)` }} />
+              <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Subtemas {subtemas.length > 0 ? `· ${subtemas.length}` : ""}
+              </span>
+              <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}30, transparent)` }} />
+            </div>
+            {subtemas.map((sub) => (
+              <SubtemaCard key={sub.id} subtema={sub} onClick={interactive ? (() => openSubtemaView(sub)) : undefined} />
+            ))}
+          </div>
+        )}
+
+        <div style={{ height: 90 }} />
+      </>
+    );
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.surface, position: "relative" }}>
       {showComments && <CommentsSheet threadId={thread.id} onClose={() => setShowComments(false)} />}
 
-      {/* Thread's own content — always mounted, never replaced by SubtemaView */}
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-            <div ref={scrollElRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", position: "relative" }}
-              onTouchStart={handleScrollTouchStart} onTouchMove={handleScrollTouchMove} onTouchEnd={handleScrollTouchEnd} onTouchCancel={handleScrollTouchEnd}>
-              <div style={{
-                transform: peek.active ? `scale(${1 - Math.min(0.06, (peek.display / (scrollElRef.current?.clientHeight || 600)) * 0.06)})` : "none",
-                opacity: peek.active ? 1 - Math.min(0.4, (peek.display / (scrollElRef.current?.clientHeight || 600)) * 0.4) : 1,
-                transition: peek.animating ? "transform 0.24s cubic-bezier(0.22,1,0.36,1), opacity 0.24s ease" : "none",
-              }}>
-              {/* TopBar */}
-              <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
-                <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-                  <ChevronLeft size={19} strokeWidth={2.2} /> Back
-                </button>
-                <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 44, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {thread.title || "Post"}
-                </span>
-              </motion.div>
-
-              {/* Root Post */}
-              <div style={{
-                background: justEntered ? `${C.teal}10` : C.card,
-                borderBottom: `1px solid ${justEntered ? C.teal + "35" : C.teal + "22"}`,
-                padding: "20px 16px 16px",
-                transition: "background 1s ease, border-color 1s ease",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <Avatar name={thread.author} size={36} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{thread.author}</span>
-                      <span style={{ fontFamily: font, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accentLight, background: `${C.accent}18`, border: `1px solid ${C.accent}28`, borderRadius: 4, padding: "1px 5px" }}>Host</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(thread.timestamp)} · {fmtTime(thread.timestamp)}</span>
-                      <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
-                      {thread.edited && <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>}
-                    </div>
-                  </div>
-                  {isHost && <PostOptionsMenu actions={menuActions} />}
-                </div>
-
-                {thread.title && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.accentLight, lineHeight: 1.35 }}>{thread.title}</span>
-                    <StatusChip status={thread.status} isHost={isHost} onSetStatus={s => { setThread(t => ({ ...t, status: s })); onStatusChange?.(thread.id, s); }} />
-                  </div>
-                )}
-
-                <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={thread.content} /></p>
-
-                {thread.checklist && (
-                  <div style={{ marginTop: 12 }}>
-                    <ChecklistBlock
-                      checklist={thread.checklist}
-                      onChange={(updated) => setThread(t => ({ ...t, checklist: updated }))}
-                      accentColor={C.teal}
-                    />
-                  </div>
-                )}
-
-                {thread.hashtags?.length > 0 && (
-                  <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{thread.hashtags.join(" ")}</p>
-                )}
-
-                {threadMedia.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <MediaCarousel
-                      items={threadMedia}
-                      onOpenGallery={openGallery}
-                      accentColor={C.teal}
-                    />
-                  </div>
-                )}
-
-                {thread.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={thread.audio} accentColor={C.teal} /></div>}
-
-                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
-                  <motion.button whileTap={{ scale: 0.88 }} onClick={toggleLike}
-                    style={{ display: "flex", alignItems: "center", gap: 5, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
-                    <Heart size={13} fill={liked ? C.red : "none"} /> {likeCount}
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.88 }} onClick={() => setShowComments(true)}
-                    style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
-                    <MessageCircle size={13} /> {thread.commentCount}
-                  </motion.button>
-                  <div style={{ flex: 1 }} />
-                  <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Bookmark size={14} /></button>
-                  <button style={{ background: "none", border: "none", color: C.textMuted, cursor: "pointer", padding: 6 }}><Share2 size={14} /></button>
-                </div>
-              </div>
-
-              {/* Updates */}
-              <div style={{ padding: "16px 16px 0" }}>
-                {thread.updates.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                    <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}40, transparent)` }} />
-                    <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                      {thread.updates.length} Update{thread.updates.length !== 1 ? "s" : ""}
-                    </span>
-                    <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}40, transparent)` }} />
-                  </div>
-                )}
-                <div style={{ paddingLeft: 4 }}>
-                  {thread.updates.map((u, i) => (
-                    <UpdateBubble key={u.id} update={u} index={i} visibility={thread.visibility}
-                      onEdit={() => setEditingUpdate(u)} onDelete={handleDeleteUpdate} onShare={() => {}} onReport={() => {}} />
-                  ))}
-                </div>
-                {thread.updates.length === 0 && !isHost && (
-                  <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
-                )}
-              </div>
-
-              {/* Subtemas */}
-              {((thread.subtemas?.length || 0) > 0 || isHost) && (
-                <div style={{ padding: "16px 16px 0" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}30, transparent)` }} />
-                    <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.teal, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                      Subtemas {(thread.subtemas?.length || 0) > 0 ? `· ${thread.subtemas.length}` : ""}
-                    </span>
-                    <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}30, transparent)` }} />
-                  </div>
-                  {(thread.subtemas || []).map((sub) => (
-                    <SubtemaCard key={sub.id} subtema={sub} onClick={() => openSubtemaView(sub)} />
-                  ))}
-
-                </div>
-              )}
-
-              <div style={{ height: 90 }} />
-              </div>
-
-              {peek.active && (
-                <div style={{
-                  position: "absolute", left: 0, right: 0,
-                  top: peek.edge === "top" ? 0 : "auto",
-                  bottom: peek.edge === "bottom" ? 0 : "auto",
-                  height: `${peek.display}px`,
-                  overflow: "hidden",
-                  zIndex: 40,
-                  boxShadow: peek.edge === "bottom" ? "0 -10px 30px rgba(0,0,0,0.4)" : "0 10px 30px rgba(0,0,0,0.4)",
-                  transition: peek.animating ? "height 0.24s cubic-bezier(0.22,1,0.36,1)" : "none",
-                  pointerEvents: "none",
-                }}>
-                  <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: scrollElRef.current?.clientHeight || "100%" }}>
-                    <AdjacentThreadPeek thread={peek.edge === "bottom" ? adjacentThreads?.older : adjacentThreads?.newer} />
-                  </div>
-                </div>
-              )}
+      {/* Thread's own content — always mounted, never replaced by SubtemaView.
+          A single translateY-driven assembly: the current post and (only while
+          actively dragging past an edge) the adjacent post, glued edge-to-edge
+          with no gap. Both are rendered by the same renderThreadSurface function,
+          so there is nothing visually distinct to "swap" — dragging the assembly
+          is dragging one continuous surface, and the adjacent post exists from
+          the first move sample of the gesture, not born partway through it. */}
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", inset: 0,
+          transform: `translateY(${dragOffsetPx}px)`,
+          transition: drag.animating ? `transform ${SNAP_MS}ms cubic-bezier(0.22,1,0.36,1)` : "none",
+        }}>
+          {/* Newer post — glued directly above the current one */}
+          {drag.edge === "top" && adjacentThreads?.newer && (
+            <div style={{ position: "absolute", left: 0, right: 0, bottom: "100%", height: "100%", overflow: "hidden", pointerEvents: "none" }}>
+              {renderThreadSurface(adjacentThreads.newer, { interactive: false })}
             </div>
+          )}
+
+          {/* Current post — the real, interactive, independently scrollable thread */}
+          <div ref={scrollElRef}
+            style={{ position: "absolute", inset: 0, overflowY: drag.active ? "hidden" : "auto", overflowX: "hidden", overscrollBehavior: "contain" }}
+            onTouchStart={handleScrollTouchStart} onTouchMove={handleScrollTouchMove} onTouchEnd={handleScrollTouchEnd} onTouchCancel={handleScrollTouchEnd}>
+            {renderThreadSurface(thread, { interactive: true })}
+          </div>
+
+          {/* Older post — glued directly below the current one */}
+          {drag.edge === "bottom" && adjacentThreads?.older && (
+            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", height: "100%", overflow: "hidden", pointerEvents: "none" }}>
+              {renderThreadSurface(adjacentThreads.older, { interactive: false })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Subtema — real fullscreen overlay. Thread's content above never unmounts.
