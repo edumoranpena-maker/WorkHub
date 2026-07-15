@@ -1264,6 +1264,23 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   );
 }
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
+
+// ─── Overlay gesture isolation ──────────────────────────────────────────────
+// Thread/Subtema overlays are portaled to document.body (see createPortal
+// below), but a React portal's events still bubble through the REACT tree,
+// not the DOM tree — so a touch gesture starting inside the overlay would
+// otherwise keep bubbling up through <Post>'s real React ancestor (App.jsx's
+// unifiedScrollRef), reaching its horizontal-swipe-to-change-section handler
+// even though the overlay visually covers it. Stopping propagation right at
+// the overlay's own boundary is what actually makes it "the only interactive
+// element" while it's open — nothing below can react to what happens on top
+// of it, regardless of what handlers exist (or get added later) upstream.
+const isolateOverlayGestures = {
+  onTouchStart: (e) => e.stopPropagation(),
+  onTouchMove: (e) => e.stopPropagation(),
+  onTouchEnd: (e) => e.stopPropagation(),
+};
+
 // Set by ThreadView right before it hands off to the adjacent post at the end
 // of a committed drag. The freshly-mounted ThreadView for that post reads it
 // once (and resets it) to skip its own entrance animation — the content was
@@ -1678,7 +1695,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       {createPortal(
         <AnimatePresence>
           {openSubtema && (
-            <motion.div key="subtema-overlay"
+            <motion.div key="subtema-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
               <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
@@ -1764,7 +1781,12 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0, opacity: 0 }}
           transition={{ type: "spring", stiffness: 440, damping: 32 }}
-          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 395 }}>
+          style={{ position: "fixed", bottom: 28, right: 22, zIndex: 650 }}>
+          {/* zIndex:650 — must sit above both thread-overlay (500) and
+              subtema-overlay (600), which it now shares document.body with
+              since the createPortal fix. Below 500/600 it silently painted
+              underneath their opaque background: technically still there,
+              just invisible. */}
 
           {/* FAB menu options */}
           <AnimatePresence>
@@ -2058,7 +2080,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 switching between adjacent threads (only ThreadView remounts, below). */}
             <AnimatePresence>
               {openThread && (
-                <motion.div key="thread-overlay"
+                <motion.div key="thread-overlay" {...isolateOverlayGestures}
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
                   style={{ position: "absolute", inset: 0, zIndex: 50, background: C.surface }}>
                   <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
@@ -2132,7 +2154,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       {createPortal(
         <AnimatePresence>
           {openThread && (
-            <motion.div key="thread-overlay"
+            <motion.div key="thread-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
               <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
