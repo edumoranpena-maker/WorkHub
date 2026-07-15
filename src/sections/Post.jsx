@@ -1654,12 +1654,14 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             </div>
       </div>
 
-      {/* Subtema — real fullscreen overlay. Thread's content above never unmounts. */}
+      {/* Subtema — real fullscreen overlay. Thread's content above never unmounts.
+          Static key: no transform (opacity-only), so it can't interfere with
+          SubtemaView's own position:sticky/absolute TopBar inside. */}
       <AnimatePresence>
         {openSubtema && (
-          <motion.div key={openSubtema.id}
-            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
-            style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface, display: "flex", flexDirection: "column" }}>
+          <motion.div key="subtema-overlay"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+            style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
             <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
               parentVisibility={thread.visibility}
               onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
@@ -2030,12 +2032,14 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               </div>
             </div>
 
-            {/* Thread — real overlay. PostFeed above never unmounts, its scroll never moves. */}
+            {/* Thread — real overlay. PostFeed above never unmounts, its scroll never moves.
+                Static key: this shell only mounts/unmounts on true open/close, never on
+                switching between adjacent threads (only ThreadView remounts, below). */}
             <AnimatePresence>
               {openThread && (
-                <motion.div key={openThread.id}
-                  initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
-                  style={{ position: "absolute", inset: 0, zIndex: 50, background: C.surface, display: "flex", flexDirection: "column" }}>
+                <motion.div key="thread-overlay"
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+                  style={{ position: "absolute", inset: 0, zIndex: 50, background: C.surface }}>
                   <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
                     onNavigateAdjacent={navigateAdjacentThread}
                     adjacentThreads={adjacentThreads}
@@ -2092,12 +2096,18 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
         </div>
       </div>
 
-      {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement */}
+      {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement.
+          key is static ("thread-overlay"), NOT tied to openThread.id — this wrapper only
+          mounts/unmounts on true open/close. Switching between adjacent threads only
+          remounts ThreadView (its own key={openThread.id} below), while this opaque
+          shell stays put the whole time — the feed underneath is never exposed, even
+          for a frame. Animates opacity only (no transform), so it can't interfere with
+          position:sticky/fixed inside (ThreadView's own TopBar). */}
       <AnimatePresence>
         {openThread && (
-          <motion.div key={openThread.id}
-            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={springTrans}
-            style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface, display: "flex", flexDirection: "column" }}>
+          <motion.div key="thread-overlay"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+            style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
             <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
               onNavigateAdjacent={navigateAdjacentThread}
               adjacentThreads={adjacentThreads}
