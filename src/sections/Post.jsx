@@ -1655,22 +1655,27 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
       </div>
 
       {/* Subtema — real fullscreen overlay. Thread's content above never unmounts.
-          Static key: no transform (opacity-only), so it can't interfere with
-          SubtemaView's own position:sticky/absolute TopBar inside. */}
-      <AnimatePresence>
-        {openSubtema && (
-          <motion.div key="subtema-overlay"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-            style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
-            <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
-              parentVisibility={thread.visibility}
-              onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
-              onSubtemaDeleted={(subId) => setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) }))}
-              showComposer={showComposer && composerMode === "update"}
-              onHideComposer={onHideComposer} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+          createPortal renders this into document.body, making its position:fixed
+          relative to the viewport regardless of the unifiedScrollRef ancestor
+          (App.jsx) whose overflow clips fixed descendants that aren't escaped —
+          same reasoning as GreenFAB below. */}
+      {createPortal(
+        <AnimatePresence>
+          {openSubtema && (
+            <motion.div key="subtema-overlay"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+              style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
+              <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
+                parentVisibility={thread.visibility}
+                onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
+                onSubtemaDeleted={(subId) => setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) }))}
+                showComposer={showComposer && composerMode === "update"}
+                onHideComposer={onHideComposer} />
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Composers for thread-level actions */}
       <AnimatePresence>
@@ -2101,28 +2106,36 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           mounts/unmounts on true open/close. Switching between adjacent threads only
           remounts ThreadView (its own key={openThread.id} below), while this opaque
           shell stays put the whole time — the feed underneath is never exposed, even
-          for a frame. Animates opacity only (no transform), so it can't interfere with
-          position:sticky/fixed inside (ThreadView's own TopBar). */}
-      <AnimatePresence>
-        {openThread && (
-          <motion.div key="thread-overlay"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-            style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
-            <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
-              onNavigateAdjacent={navigateAdjacentThread}
-              adjacentThreads={adjacentThreads}
-              onStatusChange={handleStatusChange}
-              onThreadEdited={handleThreadEdited}
-              onThreadDeleted={handleDeleteThread}
-              showComposer={activeComposer !== null}
-              composerMode={activeComposer}
-              onHideComposer={closeComposer}
-              onSubtemaChange={setSubtemaOpen}
-              onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+          for a frame.
+          createPortal renders this into document.body, same pattern as GreenFAB: the
+          unifiedScrollRef ancestor in App.jsx (overflowX:"hidden", overflowY:auto/hidden)
+          clips position:fixed descendants that don't escape it, and unifiedScrollRef's
+          own box starts below the app's MobileTopBar — that clipped exactly the region
+          where ThreadView's own TopBar (top:0 of this overlay) would paint, which is why
+          it was invisible. Portaling fixes this regardless of animation/transform choices. */}
+      {createPortal(
+        <AnimatePresence>
+          {openThread && (
+            <motion.div key="thread-overlay"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+              style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
+              <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+                onNavigateAdjacent={navigateAdjacentThread}
+                adjacentThreads={adjacentThreads}
+                onStatusChange={handleStatusChange}
+                onThreadEdited={handleThreadEdited}
+                onThreadDeleted={handleDeleteThread}
+                showComposer={activeComposer !== null}
+                composerMode={activeComposer}
+                onHideComposer={closeComposer}
+                onSubtemaChange={setSubtemaOpen}
+                onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
       {editingFeedThread && (
