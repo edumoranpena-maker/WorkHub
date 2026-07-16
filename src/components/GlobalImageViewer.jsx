@@ -28,6 +28,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { X, File as FileIcon, ExternalLink, Download } from "lucide-react";
+import { getVisibilityOption } from "../lib/visibility.jsx";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SWIPE_MIN       = 50;   // px to count as a swipe between items
@@ -37,6 +38,24 @@ const INDICATOR_SHOW  = 2200; // ms the position indicator stays visible
 const MAX_ZOOM        = 5;
 const MIN_ZOOM        = 1;
 const DOUBLE_TAP_MS   = 280;  // ms window for double-tap-to-zoom
+const DESCRIPTION_COLLAPSE_LEN = 120; // chars — beyond this, description collapses to 2 lines + "Ver más"
+
+// Relative-time label ("Hace 2 horas") for the info panel's metadata line.
+// Local to this file on purpose — GlobalImageViewer is a generic, reusable
+// viewer (also used outside Post.jsx, e.g. HomeFeed.jsx), so it doesn't
+// import Post.jsx's own (unexported, English-formatted) fmtDate.
+function fmtRelativeEs(d) {
+  if (!d) return "";
+  const date = d instanceof Date ? d : new Date(d);
+  const diff = (Date.now() - date.getTime()) / 1000;
+  if (diff < 60) return "Justo ahora";
+  if (diff < 3600) { const m = Math.floor(diff / 60); return `Hace ${m} min`; }
+  if (diff < 86400) { const h = Math.floor(diff / 3600); return `Hace ${h} hora${h !== 1 ? "s" : ""}`; }
+  if (diff < 172800) return "Ayer";
+  const days = Math.floor(diff / 86400);
+  if (days < 7) return `Hace ${days} días`;
+  return date.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+}
 
 // ── Viewport zoom lock ────────────────────────────────────────────────────────
 // Swap the viewport meta tag to prevent the browser from pinch-zooming the
@@ -76,7 +95,103 @@ function PositionIndicator({ current, total, visible }) {
   );
 }
 
-// ── Link pane — shown when the viewer swipes to a link-preview item ───────────
+// ── Media info panel — author, content type, metadata, description ──────────
+// Single reusable component: Post/Update/Subtema all funnel through the same
+// `context` shape ({ author, contentType, timestamp, visibility, edited,
+// description }), built by the caller (Post.jsx) from whichever content type
+// is being viewed. Images and files only — never rendered for video/link
+// items (gated by the caller below). Shares visibility with the position
+// indicator via the `visible` prop, and keying by index (done by the caller)
+// resets the expand/collapse state on every image/file change.
+function MediaInfoPanel({ context, visible }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!context) return null;
+  const { author, contentType, timestamp, visibility, edited, description } = context;
+  const desc = (description || "").trim();
+  const isLong = desc.length > DESCRIPTION_COLLAPSE_LEN;
+  const metaParts = [fmtRelativeEs(timestamp), visibility ? getVisibilityOption(visibility).label : null, edited ? "Editado" : null].filter(Boolean);
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.22 }}
+          style={{
+            position: "absolute", top: 54, left: 18, right: 18, zIndex: 10,
+            display: "flex", flexDirection: "column", gap: 3,
+            pointerEvents: "none", // let taps pass through to the image below; only the "Ver más" button opts back in
+          }}
+        >
+          {/* Author row — avatar, name, content type (lesser hierarchy) inline */}
+          {author && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, color: "#fff" }}>
+                  {author[0]?.toUpperCase() || "?"}
+                </span>
+              </div>
+              <span style={{
+                fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, color: "#fff",
+                textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {author}
+                {contentType && <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.7)" }}> · {contentType}</span>}
+              </span>
+            </div>
+          )}
+
+          {/* Metadata line */}
+          {metaParts.length > 0 && (
+            <div style={{
+              paddingLeft: author ? 30 : 0,
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 500,
+              color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+            }}>
+              {metaParts.join(" • ")}
+            </div>
+          )}
+
+          {/* Description — collapses to 2 lines past DESCRIPTION_COLLAPSE_LEN chars */}
+          {desc && (
+            <div style={{ paddingLeft: author ? 30 : 0, marginTop: 2 }}>
+              <p style={{
+                margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
+                color: "rgba(255,255,255,0.94)", textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                whiteSpace: "pre-wrap",
+                display: (!expanded && isLong) ? "-webkit-box" : "block",
+                WebkitLineClamp: (!expanded && isLong) ? 2 : undefined,
+                WebkitBoxOrient: (!expanded && isLong) ? "vertical" : undefined,
+                overflow: (!expanded && isLong) ? "hidden" : "visible",
+              }}>
+                {desc}
+              </p>
+              {isLong && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                  style={{
+                    marginTop: 3, background: "none", border: "none", padding: 0, cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.7)", pointerEvents: "auto",
+                  }}
+                >
+                  {expanded ? "Ver menos" : "Ver más"}
+                </button>
+              )}
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+
 function LinkPane({ item }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, maxWidth: "88vw" }}>
@@ -237,7 +352,7 @@ function ZoomableImage({ src, onZoomChange }) {
 }
 
 // ── Main viewer ───────────────────────────────────────────────────────────────
-function GlobalImageViewer({ items, startIndex, onClose }) {
+function GlobalImageViewer({ items, startIndex, context, onClose }) {
   const [idx, setIdx]           = useState(startIndex ?? 0);
   const [dir, setDir]           = useState(0);
   const [zoomScale, setZoomScale] = useState(1);
@@ -381,6 +496,16 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
         {/* Position indicator */}
         <PositionIndicator current={idx} total={count} visible={indicatorVisible} />
 
+        {/* Media info panel — Post/Update/Subtema context. Images and files
+            only (never video or link — video gets its own viewer later, and
+            link items already show their own title/CTA via LinkPane).
+            key={idx} is what makes the description reset to collapsed on
+            every image/file change, per spec — a fresh mount = fresh state,
+            no explicit reset effect needed. */}
+        {(current.type === "image" || current.type === "file") && (
+          <MediaInfoPanel key={idx} context={context} visible={indicatorVisible} />
+        )}
+
         {/* Sliding item frame */}
         <AnimatePresence initial={false} custom={dir} mode="popLayout">
           <motion.div
@@ -453,26 +578,30 @@ function GlobalImageViewer({ items, startIndex, onClose }) {
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useImageViewer() {
-  const [gallery, setGallery] = useState(null); // { items, startIndex }
+  const [gallery, setGallery] = useState(null); // { items, startIndex, context }
 
   /** Open the gallery at a specific index.
    *  openGallery({ items, startIndex }) for multi-item context
    *  openGallery({ items: [{ type:"image", url }], startIndex: 0 }) for single image
+   *  openGallery({ items, startIndex, context }) — context is optional; when
+   *  present it feeds the info panel (author/type/metadata/description) for
+   *  image and file items. Callers that omit it (video-only carousels, the
+   *  old single-image shorthand, etc.) behave exactly as before.
    */
-  const openGallery = useCallback(({ items, startIndex = 0 }) => {
-    if (items?.length) setGallery({ items, startIndex });
+  const openGallery = useCallback(({ items, startIndex = 0, context = null }) => {
+    if (items?.length) setGallery({ items, startIndex, context });
   }, []);
 
   /** Backward-compat: openImage(url) still works for single images */
   const openImage = useCallback((url) => {
-    if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0 });
+    if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0, context: null });
   }, []);
 
   const closeImage = useCallback(() => setGallery(null), []);
 
   const ViewerPortal = useCallback(
     () => gallery
-      ? <GlobalImageViewer items={gallery.items} startIndex={gallery.startIndex} onClose={closeImage} />
+      ? <GlobalImageViewer items={gallery.items} startIndex={gallery.startIndex} context={gallery.context} onClose={closeImage} />
       : null,
     [gallery, closeImage]
   );

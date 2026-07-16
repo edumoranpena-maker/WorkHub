@@ -23,11 +23,14 @@ const LOCK_AFTER_PX = 10;
 
 /**
  * items        : Array<{ type: "image"|"video", url: string, thumb?: string }>
- * onOpenGallery: ({ items, startIndex }) => void  — opens fullscreen gallery
+ * onOpenGallery: ({ items, startIndex, context }) => void  — opens fullscreen gallery
+ * galleryContext: optional { author, contentType, timestamp, visibility, edited, description }
+ *                 forwarded to GlobalImageViewer's info panel (Post/Update/Subtema context).
+ *                 Omit it and the viewer behaves exactly as before (no info panel).
  * accentColor  : optional CSS color for dot highlight
  * square       : boolean (default true) — 1:1 in feed; false = 16:9
  */
-export default function MediaCarousel({ items = [], onOpenGallery, accentColor = "#7c4dff", square = true }) {
+export default function MediaCarousel({ items = [], onOpenGallery, accentColor = "#7c4dff", square = true, galleryContext = null }) {
   const [idx, setIdx] = useState(0);
   const [dir, setDir] = useState(0);
   const touchRef      = useRef(null);
@@ -78,7 +81,7 @@ export default function MediaCarousel({ items = [], onOpenGallery, accentColor =
   };
 
   // Open fullscreen gallery at current index
-  const openGallery = () => onOpenGallery?.({ items, startIndex: idx });
+  const openGallery = () => onOpenGallery?.({ items, startIndex: idx, context: galleryContext });
 
   return (
     <div
