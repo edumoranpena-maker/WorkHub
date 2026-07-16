@@ -873,7 +873,7 @@ function AudioPlayer({ audio, accentColor }) {
 }
 
 // ─── UpdateBubble ──────────────────────────────────────────────────────────────
-function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, onReport }) {
+function UpdateBubble({ update, index, visibility, author, onEdit, onDelete, onShare, onReport }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
   const [expandedLink, setExpandedLink] = useState(null);
@@ -881,6 +881,10 @@ function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, on
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const links = useLinkPreviews(update.content);
   const mediaWithLinks = mergeLinksIntoMedia(update.media, links);
+  // Updates have no author of their own — they always belong to whichever
+  // Post or Subtema they were added to, so the viewer's info panel uses that
+  // parent's author, passed down from ThreadView/SubtemaView.
+  const galleryContext = { author, contentType: "Update", timestamp: update.timestamp, visibility, edited: update.edited, description: update.content };
 
   const toggleLike = async () => {
     const next = !liked;
@@ -915,6 +919,7 @@ function UpdateBubble({ update, index, visibility, onEdit, onDelete, onShare, on
               onOpenGallery={openGallery}
               accentColor={C.teal}
               square={false}
+              galleryContext={galleryContext}
             />
           </div>
         )}
@@ -1192,6 +1197,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
                 items={subtemaMedia}
                 onOpenGallery={openGallery}
                 accentColor={C.teal}
+                galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content }}
               />
             </div>
           )}
@@ -1212,7 +1218,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           )}
           <div style={{ paddingLeft: 4 }}>
             {(subtema.updates || []).map((u, i) => (
-              <UpdateBubble key={u.id} update={u} index={i} visibility={parentVisibility}
+              <UpdateBubble key={u.id} update={u} index={i} visibility={parentVisibility} author={subtema.author}
                 onEdit={() => setEditingUpdate(u)} onDelete={handleDeleteUpdate} onShare={() => {}} onReport={() => {}} />
             ))}
           </div>
@@ -1581,6 +1587,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                 items={media}
                 onOpenGallery={interactive ? openGallery : (() => {})}
                 accentColor={C.teal}
+                galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content }}
               />
             </div>
           )}
@@ -1615,7 +1622,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
           )}
           <div style={{ paddingLeft: 4 }}>
             {updates.map((u, i) => (
-              <UpdateBubble key={u.id} update={u} index={i} visibility={data.visibility}
+              <UpdateBubble key={u.id} update={u} index={i} visibility={data.visibility} author={data.author}
                 onEdit={interactive ? (() => setEditingUpdate(u)) : (() => {})}
                 onDelete={interactive ? handleDeleteUpdate : (() => {})}
                 onShare={() => {}} onReport={() => {}} />
