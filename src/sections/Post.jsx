@@ -873,12 +873,11 @@ function AudioPlayer({ audio, accentColor }) {
 }
 
 // ─── UpdateBubble ──────────────────────────────────────────────────────────────
-function UpdateBubble({ update, index, visibility, author, onEdit, onDelete, onShare, onReport }) {
+function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit, onDelete, onShare, onReport }) {
   const [liked, setLiked] = useState(update.liked);
   const [likeCount, setLikeCount] = useState(update.likes);
   const [expandedLink, setExpandedLink] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const links = useLinkPreviews(update.content);
   const mediaWithLinks = mergeLinksIntoMedia(update.media, links);
   // Updates have no author of their own — they always belong to whichever
@@ -916,7 +915,7 @@ function UpdateBubble({ update, index, visibility, author, onEdit, onDelete, onS
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
               items={mediaWithLinks}
-              onOpenGallery={openGallery}
+              onOpenGallery={onOpenGallery}
               accentColor={C.teal}
               square={false}
               galleryContext={galleryContext}
@@ -944,7 +943,6 @@ function UpdateBubble({ update, index, visibility, author, onEdit, onDelete, onS
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => { setConfirmDelete(false); onDelete?.(update); }}
       />
-      <ViewerPortal />
     </motion.div>
   );
 }
@@ -1097,7 +1095,7 @@ function SubtemaCard({ subtema, onClick }) {
 }
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
-function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted }) {
+function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor }) {
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingSubtema, setEditingSubtema] = useState(false);
@@ -1108,7 +1106,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
     const t = setTimeout(() => setJustEntered(false), 1800);
     return () => clearTimeout(t);
   }, []);
-  const { openGallery, openImage, ViewerPortal } = useImageViewer();
   const { enqueue } = usePublishQueue();
   const subtemaLinks = useLinkPreviews(subtema.content);
   const subtemaMedia = mergeLinksIntoMedia(subtema.media, subtemaLinks);
@@ -1195,7 +1192,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <div style={{ marginBottom: 12 }}>
               <MediaCarousel
                 items={subtemaMedia}
-                onOpenGallery={openGallery}
+                onOpenGallery={openGalleryFor(subtema.id)}
                 accentColor={C.teal}
                 galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content }}
               />
@@ -1219,6 +1216,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           <div style={{ paddingLeft: 4 }}>
             {(subtema.updates || []).map((u, i) => (
               <UpdateBubble key={u.id} update={u} index={i} visibility={parentVisibility} author={subtema.author}
+                onOpenGallery={openGalleryFor(u.id)}
                 onEdit={() => setEditingUpdate(u)} onDelete={handleDeleteUpdate} onShare={() => {}} onReport={() => {}} />
             ))}
           </div>
@@ -1265,7 +1263,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
         onCancel={() => setConfirmDeleteSubtema(false)}
         onConfirm={() => { setConfirmDeleteSubtema(false); handleDeleteSubtema(); }}
       />
-      <ViewerPortal />
     </div>
   );
 }
@@ -1296,6 +1293,44 @@ const isolateOverlayGestures = {
 // a thread from the feed still gets its entrance animation as before.
 let pendingSwipeArrival = false;
 
+// ─── Thread media sequence — the fullscreen viewer's continuous journey ──────
+// Flattens a Thread into ONE ordered list of media for GlobalImageViewer to
+// swipe through end-to-end: Post → its Updates (in order) → each Subtema →
+// that Subtema's own Updates (in order) → next Subtema, and so on. Content
+// with zero media is skipped — nothing to show there, nothing to swipe past.
+//
+// Deliberately uses only raw `data.media` (image/video/file) — never the
+// link-preview cards that mergeLinksIntoMedia appends locally in each
+// MediaCarousel. Those come from useLinkPreviews, a per-content async hook;
+// building this sequence in one place (ThreadView) can't call it a variable
+// number of times (once per Update/Subtema) without breaking the rules of
+// hooks. A direct tap on a link-preview card still opens fine — see
+// openGalleryFor below — it just doesn't join the cross-content journey.
+function buildThreadMediaSequence(thread) {
+  const groups = [];
+  const items = [];
+
+  const pushGroup = (contentId, contentType, data, visibility) => {
+    const media = data.media || [];
+    if (media.length === 0) return;
+    const startIdx = items.length;
+    items.push(...media);
+    groups.push({
+      contentId, startIdx, count: media.length,
+      context: { author: data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content },
+    });
+  };
+
+  pushGroup(thread.id, "Post", thread, thread.visibility);
+  for (const u of thread.updates || []) pushGroup(u.id, "Update", u, thread.visibility);
+  for (const s of thread.subtemas || []) {
+    pushGroup(s.id, "Subtema", s, thread.visibility); // subtemas have no visibility of their own — inherit the thread's, same as everywhere else in this file
+    for (const u of s.updates || []) pushGroup(u.id, "Update", u, thread.visibility);
+  }
+
+  return { items, groups };
+}
+
 function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
   const [thread, setThread] = useState(initialThread);
@@ -1315,6 +1350,30 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
+  // Single shared viewer for the whole Thread — root Post, its Updates, every
+  // Subtema and their own Updates all funnel through this one instance, so
+  // the fullscreen viewer can swipe continuously across all of them instead
+  // of each content opening its own isolated gallery. Recomputes whenever
+  // `thread` changes reference (new update/subtema, edits, etc.).
+  const threadSequence = useMemo(() => buildThreadMediaSequence(thread), [thread]);
+
+  // Returns an onOpenGallery-shaped callback ({items, startIndex, context}) => void
+  // for a specific piece of content (contentId = thread.id / update.id / subtema.id),
+  // to be handed to that content's own <MediaCarousel>. A tap on real media
+  // (image/video/file) opens the full cross-content sequence, landing exactly
+  // on the tapped item. A tap on a link-preview card (not part of the
+  // sequence — see buildThreadMediaSequence) falls back to the original
+  // single-content call, unaffected by any of this.
+  const openGalleryFor = useCallback((contentId) => ({ items: localItems, startIndex: localStart, context: localContext }) => {
+    const tapped = localItems[localStart];
+    const group = tapped?.type !== "link" && threadSequence.groups.find(g => g.contentId === contentId);
+    if (!group) {
+      openGallery({ items: localItems, startIndex: localStart, context: localContext });
+      return;
+    }
+    openGallery({ items: threadSequence.items, startIndex: group.startIdx + localStart, groups: threadSequence.groups });
+  }, [threadSequence, openGallery]);
+
   const { enqueue } = usePublishQueue();
   const threadLinks = useLinkPreviews(thread.content);
   const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
@@ -1585,7 +1644,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             <div style={{ marginTop: 12 }}>
               <MediaCarousel
                 items={media}
-                onOpenGallery={interactive ? openGallery : (() => {})}
+                onOpenGallery={interactive ? openGalleryFor(data.id) : (() => {})}
                 accentColor={C.teal}
                 galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content }}
               />
@@ -1623,6 +1682,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
           <div style={{ paddingLeft: 4 }}>
             {updates.map((u, i) => (
               <UpdateBubble key={u.id} update={u} index={i} visibility={data.visibility} author={data.author}
+                onOpenGallery={interactive ? openGalleryFor(u.id) : (() => {})}
                 onEdit={interactive ? (() => setEditingUpdate(u)) : (() => {})}
                 onDelete={interactive ? handleDeleteUpdate : (() => {})}
                 onShare={() => {}} onReport={() => {}} />
@@ -1710,7 +1770,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
                 onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
                 onSubtemaDeleted={(subId) => setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) }))}
                 showComposer={showComposer && composerMode === "update"}
-                onHideComposer={onHideComposer} />
+                onHideComposer={onHideComposer}
+                openGalleryFor={openGalleryFor} />
             </motion.div>
           )}
         </AnimatePresence>,
