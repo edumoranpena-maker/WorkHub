@@ -34,11 +34,12 @@ import { getVisibilityOption } from "../lib/visibility.jsx";
 const SWIPE_MIN       = 50;   // px to count as a swipe between items
 const SWIPE_RATIO     = 1.4;  // horiz must be N× vertical to be counted
 const LOCK_PX         = 8;    // direction lock threshold
-const INDICATOR_SHOW  = 2200; // ms the position indicator stays visible
+const INDICATOR_SHOW  = 5200; // ms the position indicator (and info blocks) stay visible — was 2200, +3000 per request
 const MAX_ZOOM        = 5;
 const MIN_ZOOM        = 1;
 const DOUBLE_TAP_MS   = 280;  // ms window for double-tap-to-zoom
 const DESCRIPTION_COLLAPSE_LEN = 120; // chars — beyond this, description collapses to 2 lines + "Ver más"
+const DESCRIPTION_MAX_HEIGHT = "38vh"; // cap once expanded — beyond this, internal scroll takes over
 
 // Relative-time label ("Hace 2 horas") for the info panel's metadata line.
 // Local to this file on purpose — GlobalImageViewer is a generic, reusable
@@ -95,21 +96,17 @@ function PositionIndicator({ current, total, visible }) {
   );
 }
 
-// ── Media info panel — author, content type, metadata, description ──────────
-// Single reusable component: Post/Update/Subtema all funnel through the same
-// `context` shape ({ author, contentType, timestamp, visibility, edited,
-// description }), built by the caller (Post.jsx) from whichever content type
-// is being viewed. Images and files only — never rendered for video/link
-// items (gated by the caller below). Shares visibility with the position
-// indicator via the `visible` prop, and keying by index (done by the caller)
-// resets the expand/collapse state on every image/file change.
-function MediaInfoPanel({ context, visible }) {
-  const [expanded, setExpanded] = useState(false);
+// ── Media info header — author, content type, metadata ──────────────────────
+// Top block: stays exactly where the combined panel used to sit. Reusable
+// across Post/Update/Subtema via the same `context` shape ({ author,
+// contentType, timestamp, visibility, edited, description }) — description
+// itself now lives in MediaDescriptionBlock below, not here. Purely
+// presentational: no local state, so nothing to reset between items.
+function MediaInfoHeader({ context, visible }) {
   if (!context) return null;
-  const { author, contentType, timestamp, visibility, edited, description } = context;
-  const desc = (description || "").trim();
-  const isLong = desc.length > DESCRIPTION_COLLAPSE_LEN;
+  const { author, contentType, timestamp, visibility, edited } = context;
   const metaParts = [fmtRelativeEs(timestamp), visibility ? getVisibilityOption(visibility).label : null, edited ? "Editado" : null].filter(Boolean);
+  if (!author && metaParts.length === 0) return null;
 
   return (
     <AnimatePresence>
@@ -120,7 +117,7 @@ function MediaInfoPanel({ context, visible }) {
           style={{
             position: "absolute", top: 54, left: 18, right: 18, zIndex: 10,
             display: "flex", flexDirection: "column", gap: 3,
-            pointerEvents: "none", // let taps pass through to the image below; only the "Ver más" button opts back in
+            pointerEvents: "none", // purely informational — never intercepts taps
           }}
         >
           {/* Author row — avatar, name, content type (lesser hierarchy) inline */}
@@ -156,35 +153,81 @@ function MediaInfoPanel({ context, visible }) {
               {metaParts.join(" • ")}
             </div>
           )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
-          {/* Description — collapses to 2 lines past DESCRIPTION_COLLAPSE_LEN chars */}
-          {desc && (
-            <div style={{ paddingLeft: author ? 30 : 0, marginTop: 2 }}>
-              <p style={{
-                margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
-                color: "rgba(255,255,255,0.94)", textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-                whiteSpace: "pre-wrap",
-                display: (!expanded && isLong) ? "-webkit-box" : "block",
-                WebkitLineClamp: (!expanded && isLong) ? 2 : undefined,
-                WebkitBoxOrient: (!expanded && isLong) ? "vertical" : undefined,
-                overflow: (!expanded && isLong) ? "hidden" : "visible",
-              }}>
-                {desc}
-              </p>
-              {isLong && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-                  style={{
-                    marginTop: 3, background: "none", border: "none", padding: 0, cursor: "pointer",
-                    fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.7)", pointerEvents: "auto",
-                  }}
-                >
-                  {expanded ? "Ver menos" : "Ver más"}
-                </button>
-              )}
-            </div>
-          )}
+// ── Media description block — bottom-anchored, Telegram-style ───────────────
+// Independent from the header above: its own gradient backdrop (grows with
+// the text, capped at DESCRIPTION_MAX_HEIGHT with internal scroll beyond
+// that), and its own, tightly-scoped gesture footprint. The outer wrapper is
+// pointer-events:none end to end — it never steals a tap — and only the
+// parts that actually need interaction (the "Ver más"/"Ver menos" button,
+// and the text/scroll area once expanded) opt back into pointer-events:auto.
+// Everything else in the viewer (swipe-nav, pinch-zoom, tap-to-toggle-chrome)
+// stays exactly as free as it already was — nothing new is intercepted for a
+// collapsed, non-expanded description.
+function MediaDescriptionBlock({ description, visible, expanded, onExpandChange }) {
+  const desc = (description || "").trim();
+  if (!desc) return null;
+  const isLong = desc.length > DESCRIPTION_COLLAPSE_LEN;
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.22 }}
+          style={{
+            position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10,
+            paddingTop: 44, // gradient fade-in room above the text
+            background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.5) 55%, transparent 100%)",
+            pointerEvents: "none", // decorative wrapper — never intercepts anything itself
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: expanded ? "auto" : "none",
+              padding: `14px 18px max(14px, env(safe-area-inset-bottom))`,
+              maxHeight: expanded ? DESCRIPTION_MAX_HEIGHT : "none",
+              overflowY: expanded ? "auto" : "visible",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+            }}
+            // Only intercepts when expanded — that's the "scroll internally
+            // instead of swiping to the next item" case. Collapsed, these
+            // handlers aren't even attached, so a swipe starting over the
+            // 2-line preview reaches the backdrop exactly as it always did.
+            onClick={expanded ? (e) => e.stopPropagation() : undefined}
+            onTouchStart={expanded ? (e) => e.stopPropagation() : undefined}
+            onTouchMove={expanded ? (e) => e.stopPropagation() : undefined}
+            onTouchEnd={expanded ? (e) => e.stopPropagation() : undefined}
+          >
+            <p style={{
+              margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
+              color: "rgba(255,255,255,0.94)", whiteSpace: "pre-wrap",
+              display: (!expanded && isLong) ? "-webkit-box" : "block",
+              WebkitLineClamp: (!expanded && isLong) ? 2 : undefined,
+              WebkitBoxOrient: (!expanded && isLong) ? "vertical" : undefined,
+              overflow: (!expanded && isLong) ? "hidden" : "visible",
+            }}>
+              {desc}
+            </p>
+            {isLong && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onExpandChange(!expanded); }}
+                style={{
+                  marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
+                  pointerEvents: "auto", // clickable even while collapsed, regardless of the wrapper above
+                }}
+              >
+                {expanded ? "Ver menos" : "Ver más"}
+              </button>
+            )}
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -357,6 +400,7 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
   const [dir, setDir]           = useState(0);
   const [zoomScale, setZoomScale] = useState(1);
   const [indicatorVisible, setIndicatorVisible] = useState(true);
+  const [descExpanded, setDescExpanded] = useState(false);
   const indicatorTimer          = useRef(null);
   const touchRef                = useRef(null);
   const mouseRef                = useRef(null);
@@ -378,9 +422,23 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
   }, []);
 
   useEffect(() => {
+    setDescExpanded(false); // never carry an expanded description across items — always start collapsed
     showIndicator();
     return () => clearTimeout(indicatorTimer.current);
   }, [idx]);
+
+  // Expanding the description holds the whole chrome (header + description)
+  // open indefinitely — no auto-hide while the user is reading. Collapsing
+  // it resumes the normal auto-hide countdown.
+  const handleDescExpandChange = useCallback((next) => {
+    setDescExpanded(next);
+    if (next) {
+      clearTimeout(indicatorTimer.current);
+      setIndicatorVisible(true);
+    } else {
+      showIndicator();
+    }
+  }, [showIndicator]);
 
   const goTo = useCallback((next, direction) => {
     if (next < 0 || next >= count) return;
@@ -496,14 +554,12 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
         {/* Position indicator */}
         <PositionIndicator current={idx} total={count} visible={indicatorVisible} />
 
-        {/* Media info panel — Post/Update/Subtema context. Images and files
-            only (never video or link — video gets its own viewer later, and
-            link items already show their own title/CTA via LinkPane).
-            key={idx} is what makes the description reset to collapsed on
-            every image/file change, per spec — a fresh mount = fresh state,
-            no explicit reset effect needed. */}
+        {/* Info header — Post/Update/Subtema context. Images and files only
+            (never video or link — video gets its own viewer later, and link
+            items already show their own title/CTA via LinkPane). Same spot
+            it's always been; no local state, nothing to reset per item. */}
         {(current.type === "image" || current.type === "file") && (
-          <MediaInfoPanel key={idx} context={context} visible={indicatorVisible} />
+          <MediaInfoHeader context={context} visible={indicatorVisible} />
         )}
 
         {/* Sliding item frame */}
@@ -518,11 +574,17 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
             transition={{ type: "tween", duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             onClick={(e) => {
               e.stopPropagation();
-              // Tap on image toggles indicator visibility (only for images)
+              // Tap on image toggles indicator visibility (only for images).
+              // Taps landing here never originate from inside the description
+              // block — MediaDescriptionBlock stops propagation on its own
+              // interactive area while expanded — so reaching this handler
+              // always means "outside the description". Hiding also collapses
+              // it, per spec: dismissing the chrome resets the description too.
               if (current.type !== "video") {
                 if (indicatorVisible) {
                   clearTimeout(indicatorTimer.current);
                   setIndicatorVisible(false);
+                  setDescExpanded(false);
                 } else {
                   showIndicator();
                 }
@@ -555,6 +617,19 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
             )}
           </motion.div>
         </AnimatePresence>
+
+        {/* Info description — bottom-anchored, own gradient/scroll. Rendered
+            after the item frame so it paints above it; its own pointer-events
+            scoping (see component) keeps it from stealing gestures it doesn't
+            need. */}
+        {(current.type === "image" || current.type === "file") && (
+          <MediaDescriptionBlock
+            description={context?.description}
+            visible={indicatorVisible}
+            expanded={descExpanded}
+            onExpandChange={handleDescExpandChange}
+          />
+        )}
 
         {/* Close button */}
         <button
