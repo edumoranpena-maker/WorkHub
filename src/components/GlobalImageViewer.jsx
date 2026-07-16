@@ -395,18 +395,44 @@ function ZoomableImage({ src, onZoomChange }) {
 }
 
 // ── Main viewer ───────────────────────────────────────────────────────────────
-function GlobalImageViewer({ items, startIndex, context, onClose }) {
+function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
   const [idx, setIdx]           = useState(startIndex ?? 0);
   const [dir, setDir]           = useState(0);
   const [zoomScale, setZoomScale] = useState(1);
   const [indicatorVisible, setIndicatorVisible] = useState(true);
-  const [descExpanded, setDescExpanded] = useState(false);
+  // Which content's description is expanded, if any — not a plain boolean.
+  // Expansion belongs to a specific Post/Update/Subtema, not to a media
+  // index: swiping to the next photo of the SAME content keeps it expanded;
+  // crossing into a different content always resets it (handled by the
+  // group-change effect below).
+  const [expandedContentId, setExpandedContentId] = useState(null);
   const indicatorTimer          = useRef(null);
   const touchRef                = useRef(null);
   const mouseRef                = useRef(null);
   const didDragRef              = useRef(false);
   const count                   = items.length;
   const current                 = items[idx] ?? items[0];
+
+  // Groups describe the fullscreen journey as segments of `items`, each with
+  // its own info-panel context — e.g. Post's 3 photos, then Update 1's 2
+  // photos, then Subtema's 1 photo, all in the same flat `items` array. When
+  // the caller doesn't pass any (single-content callers like HomeFeed.jsx),
+  // everything falls into one synthetic group wrapping the plain `context`
+  // prop — same behavior as before groups existed.
+  const resolvedGroups = useMemo(
+    () => (groups && groups.length ? groups : [{ contentId: "__single__", context, count: items.length, startIdx: 0 }]),
+    [groups, context, items.length]
+  );
+  const currentGroupIdx = useMemo(() => {
+    for (let g = 0; g < resolvedGroups.length; g++) {
+      const grp = resolvedGroups[g];
+      if (idx >= grp.startIdx && idx < grp.startIdx + grp.count) return g;
+    }
+    return 0;
+  }, [idx, resolvedGroups]);
+  const currentGroup = resolvedGroups[currentGroupIdx];
+  const localIdx = idx - currentGroup.startIdx;
+  const expanded = expandedContentId !== null && expandedContentId === currentGroup.contentId;
 
   // Lock viewport zoom while viewer is open
   useEffect(() => {
@@ -422,23 +448,38 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
   }, []);
 
   useEffect(() => {
-    setDescExpanded(false); // never carry an expanded description across items — always start collapsed
-    showIndicator();
+    clearTimeout(indicatorTimer.current);
+    setIndicatorVisible(true);
+    // If the description held open belongs to the content we're still in
+    // (just swiped to another of its own photos), don't re-arm the auto-hide
+    // countdown — it was already cancelled when the user expanded it, and a
+    // same-content swipe shouldn't silently restart it.
+    if (expandedContentId !== null && expandedContentId === currentGroup.contentId) return;
+    indicatorTimer.current = setTimeout(() => setIndicatorVisible(false), INDICATOR_SHOW);
     return () => clearTimeout(indicatorTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
-  // Expanding the description holds the whole chrome (header + description)
-  // open indefinitely — no auto-hide while the user is reading. Collapsing
-  // it resumes the normal auto-hide countdown.
+  // Reset the expanded description only when the CONTENT changes — not on
+  // every media index change. Swiping within the same Post/Update/Subtema's
+  // own photos must not collapse it.
+  useEffect(() => {
+    setExpandedContentId(null);
+  }, [currentGroupIdx]);
+
+  // Expanding the description holds the chrome (header + description) open
+  // indefinitely for its own content — no auto-hide while the user is
+  // reading. Collapsing it resumes the normal auto-hide countdown.
   const handleDescExpandChange = useCallback((next) => {
-    setDescExpanded(next);
     if (next) {
+      setExpandedContentId(currentGroup.contentId);
       clearTimeout(indicatorTimer.current);
       setIndicatorVisible(true);
     } else {
+      setExpandedContentId(null);
       showIndicator();
     }
-  }, [showIndicator]);
+  }, [currentGroup, showIndicator]);
 
   const goTo = useCallback((next, direction) => {
     if (next < 0 || next >= count) return;
@@ -551,15 +592,19 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
           touchAction: "none",
         }}
       >
-        {/* Position indicator */}
-        <PositionIndicator current={idx} total={count} visible={indicatorVisible} />
+        {/* Position indicator — local to the current content (e.g. "2/3" for
+            the Post's own photos), not a global count across the whole
+            Thread journey. */}
+        <PositionIndicator current={localIdx} total={currentGroup.count} visible={indicatorVisible} />
 
         {/* Info header — Post/Update/Subtema context. Images and files only
             (never video or link — video gets its own viewer later, and link
             items already show their own title/CTA via LinkPane). Same spot
-            it's always been; no local state, nothing to reset per item. */}
+            it's always been; re-fed with whichever group is current, so it
+            updates automatically as the journey crosses into the next
+            content. No local state, nothing to reset per item. */}
         {(current.type === "image" || current.type === "file") && (
-          <MediaInfoHeader context={context} visible={indicatorVisible} />
+          <MediaInfoHeader context={currentGroup.context} visible={indicatorVisible} />
         )}
 
         {/* Sliding item frame */}
@@ -578,13 +623,13 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
               // Taps landing here never originate from inside the description
               // block — MediaDescriptionBlock stops propagation on its own
               // interactive area while expanded — so reaching this handler
-              // always means "outside the description". Hiding also collapses
-              // it, per spec: dismissing the chrome resets the description too.
+              // always means "outside the description". Dismissing the chrome
+              // also collapses whichever content's description was expanded.
               if (current.type !== "video") {
                 if (indicatorVisible) {
                   clearTimeout(indicatorTimer.current);
                   setIndicatorVisible(false);
-                  setDescExpanded(false);
+                  setExpandedContentId(null);
                 } else {
                   showIndicator();
                 }
@@ -621,15 +666,17 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
         {/* Info description — bottom-anchored, own gradient/scroll. Rendered
             after the item frame so it paints above it; its own pointer-events
             scoping (see component) keeps it from stealing gestures it doesn't
-            need. */}
+            need. Persists expansion across media of the SAME content — see
+            expandedContentId above — and resets when the content changes. */}
         {(current.type === "image" || current.type === "file") && (
           <MediaDescriptionBlock
-            description={context?.description}
+            description={currentGroup.context?.description}
             visible={indicatorVisible}
-            expanded={descExpanded}
+            expanded={expanded}
             onExpandChange={handleDescExpandChange}
           />
         )}
+
 
         {/* Close button */}
         <button
@@ -653,7 +700,7 @@ function GlobalImageViewer({ items, startIndex, context, onClose }) {
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useImageViewer() {
-  const [gallery, setGallery] = useState(null); // { items, startIndex, context }
+  const [gallery, setGallery] = useState(null); // { items, startIndex, context, groups }
 
   /** Open the gallery at a specific index.
    *  openGallery({ items, startIndex }) for multi-item context
@@ -662,21 +709,28 @@ export function useImageViewer() {
    *  present it feeds the info panel (author/type/metadata/description) for
    *  image and file items. Callers that omit it (video-only carousels, the
    *  old single-image shorthand, etc.) behave exactly as before.
+   *  openGallery({ items, startIndex, groups }) — groups is optional; when
+   *  present, items spans MULTIPLE contents back-to-back (e.g. a whole
+   *  Thread's Post + Updates + Subtemas) and groups describes each content's
+   *  own segment + context, so the info panel and position indicator update
+   *  automatically as the swipe crosses from one content into the next.
+   *  Omit it and a single caller-supplied `context` applies to all items,
+   *  exactly as before groups existed.
    */
-  const openGallery = useCallback(({ items, startIndex = 0, context = null }) => {
-    if (items?.length) setGallery({ items, startIndex, context });
+  const openGallery = useCallback(({ items, startIndex = 0, context = null, groups = null }) => {
+    if (items?.length) setGallery({ items, startIndex, context, groups });
   }, []);
 
   /** Backward-compat: openImage(url) still works for single images */
   const openImage = useCallback((url) => {
-    if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0, context: null });
+    if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0, context: null, groups: null });
   }, []);
 
   const closeImage = useCallback(() => setGallery(null), []);
 
   const ViewerPortal = useCallback(
     () => gallery
-      ? <GlobalImageViewer items={gallery.items} startIndex={gallery.startIndex} context={gallery.context} onClose={closeImage} />
+      ? <GlobalImageViewer items={gallery.items} startIndex={gallery.startIndex} context={gallery.context} groups={gallery.groups} onClose={closeImage} />
       : null,
     [gallery, closeImage]
   );
