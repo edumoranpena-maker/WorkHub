@@ -1310,22 +1310,26 @@ function buildThreadMediaSequence(thread) {
   const groups = [];
   const items = [];
 
-  const pushGroup = (contentId, contentType, data, visibility) => {
+  // authorOverride: Updates have no author of their own — they always
+  // belong to whichever Post or Subtema they were added to. Without this,
+  // pushGroup would read `data.author` off the Update itself (undefined),
+  // which is exactly why Update/Subtema headers were showing blank.
+  const pushGroup = (contentId, contentType, data, visibility, authorOverride) => {
     const media = data.media || [];
     if (media.length === 0) return;
     const startIdx = items.length;
     items.push(...media);
     groups.push({
       contentId, startIdx, count: media.length,
-      context: { author: data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content },
+      context: { author: authorOverride ?? data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content },
     });
   };
 
   pushGroup(thread.id, "Post", thread, thread.visibility);
-  for (const u of thread.updates || []) pushGroup(u.id, "Update", u, thread.visibility);
+  for (const u of thread.updates || []) pushGroup(u.id, "Update", u, thread.visibility, thread.author);
   for (const s of thread.subtemas || []) {
     pushGroup(s.id, "Subtema", s, thread.visibility); // subtemas have no visibility of their own — inherit the thread's, same as everywhere else in this file
-    for (const u of s.updates || []) pushGroup(u.id, "Update", u, thread.visibility);
+    for (const u of s.updates || []) pushGroup(u.id, "Update", u, thread.visibility, s.author);
   }
 
   return { items, groups };
