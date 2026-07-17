@@ -115,8 +115,11 @@ function MediaInfoHeader({ context, visible }) {
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.22 }}
           style={{
-            position: "absolute", top: 54, left: 18, right: 18, zIndex: 10,
-            display: "flex", flexDirection: "column", gap: 3,
+            position: "absolute", top: 46, left: 18, right: 18, zIndex: 10,
+            display: "flex", flexDirection: "column", gap: 4,
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
+            borderRadius: 14, padding: "8px 12px",
+            width: "fit-content", maxWidth: "calc(100% - 36px)",
             pointerEvents: "none", // purely informational — never intercepts taps
           }}
         >
@@ -162,13 +165,13 @@ function MediaInfoHeader({ context, visible }) {
 // ── Media description block — bottom-anchored, Telegram-style ───────────────
 // Independent from the header above: its own gradient backdrop (grows with
 // the text, capped at DESCRIPTION_MAX_HEIGHT with internal scroll beyond
-// that), and its own, tightly-scoped gesture footprint. The outer wrapper is
-// pointer-events:none end to end — it never steals a tap — and only the
-// parts that actually need interaction (the "Ver más"/"Ver menos" button,
-// and the text/scroll area once expanded) opt back into pointer-events:auto.
-// Everything else in the viewer (swipe-nav, pinch-zoom, tap-to-toggle-chrome)
-// stays exactly as free as it already was — nothing new is intercepted for a
-// collapsed, non-expanded description.
+// that). The whole zone is tappable: a tap anywhere in it expands (same as
+// "Ver más"); once expanded, a tap inside does nothing — only "Ver menos"
+// collapses it. Every tap here (collapsed or expanded) stops propagation, so
+// it never reaches the backdrop's tap-to-toggle-chrome handler — that's what
+// keeps a tap on the text from accidentally hiding the whole viewer instead
+// of expanding it. Internal scroll (once expanded, past the max height) is
+// the only other gesture this component intercepts.
 function MediaDescriptionBlock({ description, visible, expanded, onExpandChange }) {
   const desc = (description || "").trim();
   if (!desc) return null;
@@ -183,24 +186,28 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
           style={{
             position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10,
             paddingTop: 44, // gradient fade-in room above the text
-            background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.5) 55%, transparent 100%)",
+            background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.62) 55%, transparent 100%)",
             pointerEvents: "none", // decorative wrapper — never intercepts anything itself
           }}
         >
           <div
             style={{
-              pointerEvents: expanded ? "auto" : "none",
+              pointerEvents: "auto", // whole zone is now interactive — see onClick below
               padding: `14px 18px max(14px, env(safe-area-inset-bottom))`,
               maxHeight: expanded ? DESCRIPTION_MAX_HEIGHT : "none",
               overflowY: expanded ? "auto" : "visible",
               WebkitOverflowScrolling: "touch",
               overscrollBehavior: "contain",
             }}
-            // Only intercepts when expanded — that's the "scroll internally
-            // instead of swiping to the next item" case. Collapsed, these
-            // handlers aren't even attached, so a swipe starting over the
-            // 2-line preview reaches the backdrop exactly as it always did.
-            onClick={expanded ? (e) => e.stopPropagation() : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Any tap in the zone expands it, exactly like "Ver más" — but
+              // only ever expands here; collapsing is the button's job alone.
+              if (!expanded && isLong) onExpandChange(true);
+            }}
+            // Only intercepts touch (for internal scroll) once expanded —
+            // collapsed, a swipe starting over the 2-line preview still
+            // reaches the backdrop exactly as it always did.
             onTouchStart={expanded ? (e) => e.stopPropagation() : undefined}
             onTouchMove={expanded ? (e) => e.stopPropagation() : undefined}
             onTouchEnd={expanded ? (e) => e.stopPropagation() : undefined}
@@ -221,7 +228,7 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
                 style={{
                   marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
                   fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
-                  pointerEvents: "auto", // clickable even while collapsed, regardless of the wrapper above
+                  pointerEvents: "auto",
                 }}
               >
                 {expanded ? "Ver menos" : "Ver más"}
@@ -440,22 +447,19 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
     return () => unlockViewportZoom();
   }, []);
 
-  // Auto-hide indicator
+  // Auto-hide indicator. Skips re-arming the countdown while the CURRENT
+  // content's description is held open — reading time shouldn't be cut off
+  // by a timer, and re-showing the chrome after a "clean mode" tap (below)
+  // shouldn't silently restart a countdown either.
   const showIndicator = useCallback(() => {
     setIndicatorVisible(true);
     clearTimeout(indicatorTimer.current);
-    indicatorTimer.current = setTimeout(() => setIndicatorVisible(false), INDICATOR_SHOW);
-  }, []);
-
-  useEffect(() => {
-    clearTimeout(indicatorTimer.current);
-    setIndicatorVisible(true);
-    // If the description held open belongs to the content we're still in
-    // (just swiped to another of its own photos), don't re-arm the auto-hide
-    // countdown — it was already cancelled when the user expanded it, and a
-    // same-content swipe shouldn't silently restart it.
     if (expandedContentId !== null && expandedContentId === currentGroup.contentId) return;
     indicatorTimer.current = setTimeout(() => setIndicatorVisible(false), INDICATOR_SHOW);
+  }, [expandedContentId, currentGroup]);
+
+  useEffect(() => {
+    showIndicator();
     return () => clearTimeout(indicatorTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
@@ -467,9 +471,12 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
     setExpandedContentId(null);
   }, [currentGroupIdx]);
 
-  // Expanding the description holds the chrome (header + description) open
-  // indefinitely for its own content — no auto-hide while the user is
-  // reading. Collapsing it resumes the normal auto-hide countdown.
+  // Expanding holds the chrome (header + description) open indefinitely for
+  // its own content — no auto-hide while the user is reading (see
+  // showIndicator above). Collapsing resumes the normal auto-hide countdown
+  // right away — force it directly rather than via showIndicator, since
+  // expandedContentId hasn't actually committed to state yet at this point
+  // in the same call, and would otherwise still read as "expanded".
   const handleDescExpandChange = useCallback((next) => {
     if (next) {
       setExpandedContentId(currentGroup.contentId);
@@ -477,9 +484,11 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
       setIndicatorVisible(true);
     } else {
       setExpandedContentId(null);
-      showIndicator();
+      setIndicatorVisible(true);
+      clearTimeout(indicatorTimer.current);
+      indicatorTimer.current = setTimeout(() => setIndicatorVisible(false), INDICATOR_SHOW);
     }
-  }, [currentGroup, showIndicator]);
+  }, [currentGroup]);
 
   const goTo = useCallback((next, direction) => {
     if (next < 0 || next >= count) return;
@@ -621,15 +630,17 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
               e.stopPropagation();
               // Tap on image toggles indicator visibility (only for images).
               // Taps landing here never originate from inside the description
-              // block — MediaDescriptionBlock stops propagation on its own
-              // interactive area while expanded — so reaching this handler
-              // always means "outside the description". Dismissing the chrome
-              // also collapses whichever content's description was expanded.
+              // zone — MediaDescriptionBlock stops propagation on every tap
+              // of its own area — so reaching this handler always means
+              // "outside the description". Hiding the chrome this way is a
+              // temporary "clean mode": an expanded description stays
+              // expanded underneath, and tapping again reveals both exactly
+              // as they were. Only "Ver menos" or an actual content change
+              // (see the group-change effect above) resets the expansion.
               if (current.type !== "video") {
                 if (indicatorVisible) {
                   clearTimeout(indicatorTimer.current);
                   setIndicatorVisible(false);
-                  setExpandedContentId(null);
                 } else {
                   showIndicator();
                 }
