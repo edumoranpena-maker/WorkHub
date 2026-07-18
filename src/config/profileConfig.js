@@ -12,9 +12,9 @@ export const DEFAULT_PROFILE_CONFIG = {
 
   // ── Identity ────────────────────────────────────────────────────────────────
   identity: {
-    name:       "Alex Herrera",
-    handle:     "@alexherrera.trades",
-    initials:   "A",
+    name:       "Luis Morp",
+    handle:     "@luismorp",
+    initials:   "L",
     avatarUrl:  null,          // null = use initials fallback
     bio:        "Trader & educator — 6+ years in FX & commodities. Sharing live setups, weekly recaps & real-time analysis.",
     bioHighlight: "XAUUSD · DXY · EURUSD",
