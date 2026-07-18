@@ -56,7 +56,7 @@ const SECTIONS = DEFAULT_PROFILE_CONFIG.sections
 
 // Latest post previews per section (for Perfil feed)
 const PREVIEW_POSTS = {
-  recaps:        { title: "Week 20 — Targets Hit",       excerpt: "XAUUSD confirmed the rejection at 2340. Target hit at 2310. Full breakdown inside.",                           author: "Alex H.",  timestamp: "Today",     tag: "Post"       },
+  recaps:        { title: "Week 20 — Targets Hit",       excerpt: "XAUUSD confirmed the rejection at 2340. Target hit at 2310. Full breakdown inside.",                           author: "Luis Morp",  timestamp: "Today",     tag: "Post"       },
   announcements: { title: "New Room Schedule — May",     excerpt: "Daily sessions now at 8 AM and 2 PM EST. Check the full calendar inside.",                                    author: "Admin",    timestamp: "Yesterday", tag: "Official"   },
   rooms:         { title: "🔴 Live: Pre-Market Session", excerpt: "Alex H. is hosting a live pre-market session. Join now for real-time analysis and trade setups.",             author: "Alex H.",  timestamp: "Live now",  tag: "Live"       },
 };
@@ -169,7 +169,7 @@ function ProfileHeader({ onNavigate, hideButtons, profile, onEditAvatar,
               </div>
             )}
           </div>
-          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 12, color: C.accentLight, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@alexherrera.trades"}</p>
+          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 12, color: C.textMuted, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@luismorp"}</p>
         </div>
       </div>
 
@@ -1193,7 +1193,7 @@ function AddSectionModal({ onAdd, onClose }) {
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 function SettingsPanel({ onClose }) {
   const [username,   setUsername]   = useState("Luis Morp");
-  const [handle,     setHandle]     = useState("alexherrera.trades");
+  const [handle,     setHandle]     = useState("luismorp");
   const [privacy,    setPrivacy]    = useState("members");
   const [saved,      setSaved]      = useState(false);
   const [activeTab,  setActiveTab]  = useState("account");
