@@ -69,7 +69,7 @@ if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
 
 // ─── Tokens ────────────────────────────────────────────────────────────────────
 const C = {
-  bg: "#08080e", surface: "#0e0e18", card: "#13131f", cardHover: "#19192a",
+  bg: "#000000", surface: "#0a0a0a", card: "#121212", cardHover: "#1a1a1a",
   border: "#1c1c2e", accent: "#7c4dff", accentLight: "#9d71ff",
   accentDim: "#3d2480", text: "#fafafa", textMuted: "#8e8e8e", textDim: "#32324a",
   green: "#1ed99a", greenDim: "rgba(30,217,154,0.12)",
@@ -189,47 +189,68 @@ function groupByMonth(list) {
 }
 
 
-// ─── ExpandableText — line-clamped body text with an inline "Ver más" ────────
+// ─── ExpandableText — Instagram-style truncation with an inline "Ver más" ────
 // Shared by Post/Subtema (root content) and Update (its own content), so the
-// truncation behavior only lives in one place. Clamps via max-height (so
-// fractional line counts like 5.5 work, unlike -webkit-line-clamp which only
-// takes integers), and overlays "Ver más" at the bottom-right, patched over
-// the tail of the last visible line with a solid background matching its
-// container — same idea as the fullscreen viewer's description block, just
-// inline in the thread body here. Overflow is detected from the actual
-// rendered height (scrollHeight vs the clamp), not a character-count guess,
-// so it's correct regardless of links, emoji, or formatting inside the text.
-function ExpandableText({ text, maxLines, fontSize = 14, lineHeight = 1.65, color, bg, style }) {
+// truncation behavior only lives in one place. Instead of visually clipping
+// the full text with an overlapping "Ver más" button on top (which read as a
+// floating badge, not part of the text), this measures the ACTUAL rendered
+// text against the line limit and truncates the string itself, appending
+// "… Ver más" so it flows as a natural continuation of the sentence — same
+// technique Instagram/Facebook use. maxLines can be fractional (5.5, 4.5)
+// since the limit is applied in pixels (fontSize × lineHeight × maxLines),
+// not via -webkit-line-clamp, which only accepts whole lines.
+// The whole collapsed block is clickable — not just the "Ver más" text.
+function ExpandableText({ text, maxLines, fontSize = 14, lineHeight = 1.65, color, style }) {
   const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
-  const ref = useRef(null);
+  const [truncatedText, setTruncatedText] = useState(null); // null = fits fully, no truncation needed
+  const measureRef = useRef(null);
   const clampPx = fontSize * lineHeight * maxLines;
 
-  useEffect(() => {
-    const el = ref.current;
-    if (el) setOverflowing(el.scrollHeight > clampPx + 1);
+  useLayoutEffect(() => {
+    const measurer = measureRef.current;
+    if (!measurer || !text) return;
+
+    // Does the full text already fit within the limit? Then there's nothing to truncate.
+    measurer.textContent = text;
+    if (measurer.scrollHeight <= clampPx + 1) {
+      setTruncatedText(null);
+      return;
+    }
+
+    // Binary-search the longest prefix of `text` such that "<prefix>… Ver más"
+    // still fits — measured against THIS exact font/width, not guessed from
+    // a character count, so it's correct regardless of content or container size.
+    let lo = 0, hi = text.length, best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      measurer.textContent = text.slice(0, mid) + "... Ver más";
+      if (measurer.scrollHeight <= clampPx + 1) { best = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    setTruncatedText(text.slice(0, best).trimEnd());
   }, [text, clampPx]);
 
   if (!text) return null;
+  const overflowing = truncatedText !== null;
+  const textStyle = { margin: 0, fontFamily: font, fontSize, lineHeight, color: color || C.text, whiteSpace: "pre-wrap", ...style };
 
   return (
     <div style={{ position: "relative" }}>
-      <p ref={ref} style={{
-        margin: 0, fontFamily: font, fontSize, lineHeight, color: color || C.text, whiteSpace: "pre-wrap",
-        maxHeight: expanded ? "none" : `${clampPx}px`, overflow: "hidden",
-        ...style,
-      }}>
-        <LinkifiedText text={text} />
+      {/* Invisible twin, same typography — used only to binary-search the truncation point above. */}
+      <p aria-hidden="true" ref={measureRef} style={{ ...textStyle, position: "absolute", visibility: "hidden", pointerEvents: "none", zIndex: -1 }} />
+
+      <p
+        onClick={!expanded && overflowing ? () => setExpanded(true) : undefined}
+        style={{ ...textStyle, cursor: !expanded && overflowing ? "pointer" : "default" }}
+      >
+        {expanded || !overflowing ? (
+          <LinkifiedText text={text} />
+        ) : (
+          <>
+            {truncatedText}<span style={{ color: C.textMuted }}>... </span><span style={{ color: C.teal, fontWeight: 700 }}>Ver más</span>
+          </>
+        )}
       </p>
-      {!expanded && overflowing && (
-        <button onClick={() => setExpanded(true)} style={{
-          position: "absolute", right: 0, bottom: 0, paddingLeft: 8,
-          background: bg || C.card, border: "none", cursor: "pointer",
-          fontFamily: font, fontSize, fontWeight: 700, color: C.teal, lineHeight,
-        }}>
-          Ver más
-        </button>
-      )}
       {expanded && overflowing && (
         <button onClick={() => setExpanded(false)} style={{
           display: "block", marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
@@ -995,7 +1016,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}60`, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
-        <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} bg={C.card} />
+        <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} />
         {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
@@ -1282,7 +1303,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </div>
 
           {subtema.content && (
-            <ExpandableText text={subtema.content} maxLines={5.5} bg={justEntered ? `${C.teal}10` : C.card} style={{ marginBottom: 12 }} />
+            <ExpandableText text={subtema.content} maxLines={5.5} style={{ marginBottom: 12 }} />
           )}
 
           {subtemaMedia.length > 0 && (
@@ -1740,7 +1761,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             </div>
           )}
 
-          <ExpandableText text={data.content} maxLines={5.5} bg={tint ? `${C.teal}10` : C.card} />
+          <ExpandableText text={data.content} maxLines={5.5} />
 
           {data.checklist && (
             <div style={{ marginTop: 12 }}>
