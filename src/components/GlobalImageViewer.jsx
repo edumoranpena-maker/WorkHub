@@ -55,7 +55,8 @@ function fmtRelativeEs(d) {
   if (diff < 172800) return "Ayer";
   const days = Math.floor(diff / 86400);
   if (days < 7) return `Hace ${days} días`;
-  return date.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+  const overAYear = diff >= 365 * 86400;
+  return date.toLocaleDateString("es-ES", overAYear ? { day: "numeric", month: "short", year: "numeric" } : { day: "numeric", month: "short" });
 }
 
 // ── Viewport zoom lock ────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ function PositionIndicator({ current, total, visible }) {
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
           style={{
-            position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
+            position: "absolute", top: 78, left: "50%", transform: "translateX(-50%)",
             background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)",
             borderRadius: 99, padding: "4px 14px", pointerEvents: "none", zIndex: 10,
           }}
@@ -97,11 +98,12 @@ function PositionIndicator({ current, total, visible }) {
 }
 
 // ── Media info header — author, content type, metadata ──────────────────────
-// Top block: stays exactly where the combined panel used to sit. Reusable
-// across Post/Update/Subtema via the same `context` shape ({ author,
-// contentType, timestamp, visibility, edited, description }) — description
-// itself now lives in MediaDescriptionBlock below, not here. Purely
-// presentational: no local state, so nothing to reset between items.
+// Top block: now sits above the position indicator (swapped — banner on top,
+// counter below it), still left-aligned. Reusable across Post/Update/Subtema
+// via the same `context` shape ({ author, contentType, timestamp, visibility,
+// edited, description }) — description itself lives in MediaDescriptionBlock
+// below, not here. Purely presentational: no local state, so nothing to
+// reset between items.
 function MediaInfoHeader({ context, visible }) {
   if (!context) return null;
   const { author, contentType, timestamp, visibility, edited } = context;
@@ -115,7 +117,7 @@ function MediaInfoHeader({ context, visible }) {
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.22 }}
           style={{
-            position: "absolute", top: 46, left: 18, right: 18, zIndex: 10,
+            position: "absolute", top: 16, left: 18, right: 18, zIndex: 10,
             display: "flex", flexDirection: "column", gap: 4,
             background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
             borderRadius: 14, padding: "8px 12px",
@@ -186,7 +188,7 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
           style={{
             position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10,
             paddingTop: 44, // gradient fade-in room above the text
-            background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.62) 55%, transparent 100%)",
+            background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.5) 55%, transparent 100%)",
             pointerEvents: "none", // decorative wrapper — never intercepts anything itself
           }}
         >
