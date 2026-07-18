@@ -22,6 +22,7 @@ import {
   Send, Mic, Square, Image, Video,
   Loader, FileText, Check, ChevronRight,
   Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
+  Play, Pause, Sparkles,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -187,6 +188,86 @@ function groupByMonth(list) {
   return groups;
 }
 
+
+// ─── ExpandableText — line-clamped body text with an inline "Ver más" ────────
+// Shared by Post/Subtema (root content) and Update (its own content), so the
+// truncation behavior only lives in one place. Clamps via max-height (so
+// fractional line counts like 5.5 work, unlike -webkit-line-clamp which only
+// takes integers), and overlays "Ver más" at the bottom-right, patched over
+// the tail of the last visible line with a solid background matching its
+// container — same idea as the fullscreen viewer's description block, just
+// inline in the thread body here. Overflow is detected from the actual
+// rendered height (scrollHeight vs the clamp), not a character-count guess,
+// so it's correct regardless of links, emoji, or formatting inside the text.
+function ExpandableText({ text, maxLines, fontSize = 14, lineHeight = 1.65, color, bg, style }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const ref = useRef(null);
+  const clampPx = fontSize * lineHeight * maxLines;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) setOverflowing(el.scrollHeight > clampPx + 1);
+  }, [text, clampPx]);
+
+  if (!text) return null;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <p ref={ref} style={{
+        margin: 0, fontFamily: font, fontSize, lineHeight, color: color || C.text, whiteSpace: "pre-wrap",
+        maxHeight: expanded ? "none" : `${clampPx}px`, overflow: "hidden",
+        ...style,
+      }}>
+        <LinkifiedText text={text} />
+      </p>
+      {!expanded && overflowing && (
+        <button onClick={() => setExpanded(true)} style={{
+          position: "absolute", right: 0, bottom: 0, paddingLeft: 8,
+          background: bg || C.card, border: "none", cursor: "pointer",
+          fontFamily: font, fontSize, fontWeight: 700, color: C.teal, lineHeight,
+        }}>
+          Ver más
+        </button>
+      )}
+      {expanded && overflowing && (
+        <button onClick={() => setExpanded(false)} style={{
+          display: "block", marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
+          fontFamily: font, fontSize, fontWeight: 700, color: C.teal,
+        }}>
+          Ver menos
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── TtsControls — visual-only playback controls, ready for a future TTS engine ──
+// Pure UI placeholder, per request: no audio, no Web Speech API. Clicking ▶
+// flips to showing ⏸ + ⏹ and back — just enough interface/space reserved so
+// the real synthesizer can be wired in later without touching layout again.
+// One shared component so Post/Update/Subtema all get the identical control.
+function TtsControls({ interactive = true }) {
+  const [playing, setPlaying] = useState(false);
+  const btnStyle = (active) => ({
+    background: "none", border: "none", padding: 6, cursor: interactive ? "pointer" : "default",
+    color: active ? C.teal : C.textMuted, display: "flex", alignItems: "center",
+  });
+  return playing ? (
+    <>
+      <button onClick={interactive ? () => setPlaying(false) : undefined} style={btnStyle(true)} title="Pausar lectura">
+        <Pause size={14} fill={C.teal} />
+      </button>
+      <button onClick={interactive ? () => setPlaying(false) : undefined} style={btnStyle(false)} title="Detener lectura">
+        <Square size={13} />
+      </button>
+    </>
+  ) : (
+    <button onClick={interactive ? () => setPlaying(true) : undefined} style={btnStyle(false)} title="Escuchar">
+      <Play size={14} />
+    </button>
+  );
+}
 
 function useIsDesktop() {
   const [is, setIs] = useState(() => window.innerWidth >= 768);
@@ -662,10 +743,11 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
   const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
 
   const menuActions = buildContentMenuActions({
-    onEdit:   onEdit   && (() => onEdit(thread)),
-    onDelete: onDelete && (() => setConfirmDelete(true)),
-    onShare:  onShare  && (() => onShare(thread)),
-    onReport: onReport && (() => onReport(thread)),
+    onEdit:     onEdit   && (() => onEdit(thread)),
+    onRegister: () => {}, // placeholder — no functionality defined yet, UI-only per request
+    onDelete:   onDelete && (() => setConfirmDelete(true)),
+    onShare:    onShare  && (() => onShare(thread)),
+    onReport:   onReport && (() => onReport(thread)),
   });
 
   return (
@@ -913,7 +995,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}60`, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
-        <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}><LinkifiedText text={update.content} /></p>
+        <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} bg={C.card} />
         {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
@@ -935,6 +1017,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
             style={{ display: "flex", alignItems: "center", gap: 4, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.15s" }}>
             <Heart size={12} fill={liked ? C.red : "none"} /> {likeCount}
           </motion.button>
+          <TtsControls />
           <PostOptionsMenu actions={menuActions} size={26} />
         </div>
       </div>
@@ -1104,6 +1187,8 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   const [editingSubtema, setEditingSubtema] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
   const [confirmDeleteSubtema, setConfirmDeleteSubtema] = useState(false);
+  const [subLiked, setSubLiked] = useState(initialSubtema.liked);
+  const [subLikeCount, setSubLikeCount] = useState(initialSubtema.likes);
   const [justEntered, setJustEntered] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setJustEntered(false), 1800);
@@ -1112,6 +1197,15 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   const { enqueue } = usePublishQueue();
   const subtemaLinks = useLinkPreviews(subtema.content);
   const subtemaMedia = mergeLinksIntoMedia(subtema.media, subtemaLinks);
+
+  // Local-only for now — there's no toggleSubtemaLike endpoint yet (unlike
+  // Post/Update), so this doesn't persist. Kept as a plain optimistic toggle
+  // so the new heart button isn't just a dead decoration.
+  const toggleSubLike = () => {
+    const next = !subLiked;
+    setSubLiked(next);
+    setSubLikeCount(c => next ? c + 1 : c - 1);
+  };
 
   const handleNewUpdate = ({ content, audio, mediaFiles }) => {
     const rawFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
@@ -1188,7 +1282,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </div>
 
           {subtema.content && (
-            <p style={{ margin: "0 0 12px", fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={subtema.content} /></p>
+            <ExpandableText text={subtema.content} maxLines={5.5} bg={justEntered ? `${C.teal}10` : C.card} style={{ marginBottom: 12 }} />
           )}
 
           {subtemaMedia.length > 0 && (
@@ -1202,7 +1296,21 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             </div>
           )}
 
-          {subtema.audio && <AudioPlayer audio={subtema.audio} accentColor={C.teal} />}
+          {subtema.audio && <div style={{ marginBottom: 12 }}><AudioPlayer audio={subtema.audio} accentColor={C.teal} /></div>}
+
+          {/* Same design language as the root Post's row — heart, comments,
+              TTS controls. No save/share/Ask AI here: those are exclusive to
+              the root Post. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <motion.button whileTap={{ scale: 0.88 }} onClick={toggleSubLike}
+              style={{ display: "flex", alignItems: "center", gap: 5, background: subLiked ? `${C.red}14` : "transparent", border: `1px solid ${subLiked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: subLiked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
+              <Heart size={13} fill={subLiked ? C.red : "none"} /> {subLikeCount}
+            </motion.button>
+            <button style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "default", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
+              <MessageCircle size={13} /> {subtema.commentCount || 0}
+            </button>
+            <TtsControls />
+          </div>
         </div>
 
         {/* Updates */}
@@ -1567,10 +1675,11 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const showSubtemaComposer = showComposer && composerMode === "subtema" && !openSubtema;
 
   const menuActions = buildContentMenuActions({
-    onEdit:   () => setEditingThread(true),
-    onDelete: () => setConfirmDeleteThread(true),
-    onShare:  () => {},
-    onReport: () => {},
+    onEdit:     () => setEditingThread(true),
+    onRegister: () => {}, // placeholder — no functionality defined yet, UI-only per request
+    onDelete:   () => setConfirmDeleteThread(true),
+    onShare:    () => {},
+    onReport:   () => {},
   });
 
   // Renders a full thread — TopBar through Subtemas — from arbitrary thread
@@ -1631,7 +1740,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             </div>
           )}
 
-          <p style={{ margin: 0, fontFamily: font, fontSize: 14, lineHeight: 1.65, color: C.text, whiteSpace: "pre-wrap" }}><LinkifiedText text={data.content} /></p>
+          <ExpandableText text={data.content} maxLines={5.5} bg={tint ? `${C.teal}10` : C.card} />
 
           {data.checklist && (
             <div style={{ marginTop: 12 }}>
@@ -1669,9 +1778,21 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: interactive ? "pointer" : "default", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
               <MessageCircle size={13} /> {data.commentCount}
             </motion.button>
-            <div style={{ flex: 1 }} />
             <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Bookmark size={14} /></button>
             <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Share2 size={14} /></button>
+            <TtsControls interactive={interactive} />
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={interactive ? () => {} : undefined}
+              style={{
+                display: "flex", alignItems: "center", gap: 5, background: `${C.teal}14`,
+                border: `1px solid ${C.teal}40`, borderRadius: 8, padding: "6px 12px",
+                cursor: interactive ? "pointer" : "default", color: C.teal,
+                fontFamily: font, fontSize: 12, fontWeight: 700,
+              }}
+            >
+              <Sparkles size={13} /> Ask AI
+            </button>
           </div>
         </div>
 
