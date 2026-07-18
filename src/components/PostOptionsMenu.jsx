@@ -19,7 +19,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical } from "lucide-react";
-import { Pencil, Trash2, Share2, Flag } from "lucide-react";
+import { Pencil, ClipboardCheck, Trash2, Share2, Flag } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -28,8 +28,12 @@ const C = {
 };
 
 /**
- * Standard Editar/Eliminar/Compartir/Reportar action list for a piece of
+ * Standard Editar/Compartir/Eliminar/Reportar action list for a piece of
  * content (Post, Update or Subtema).
+ *
+ * onRegister is optional and only used by Post/PostCard right now — passing
+ * it inserts "Registrar" right after "Editar"; omit it anywhere else (Update,
+ * Subtema) and it simply doesn't appear, same as any other action here.
  *
  * `roles` on each action is NOT enforced anywhere yet (no role system wired
  * up per product decision) — it's there so that later, filtering by the
@@ -40,12 +44,13 @@ const C = {
  * Only pass the callbacks that make sense for the calling context — an
  * action is included only if its onSelect was actually provided.
  */
-export function buildContentMenuActions({ onEdit, onDelete, onShare, onReport }) {
+export function buildContentMenuActions({ onEdit, onRegister, onShare, onDelete, onReport }) {
   return [
-    { id: "edit",   label: "Editar",    icon: Pencil, roles: ["host"],           onSelect: onEdit },
-    { id: "delete", label: "Eliminar",  icon: Trash2, roles: ["host"],           onSelect: onDelete, danger: true },
-    { id: "share",  label: "Compartir", icon: Share2, roles: ["host", "member"], onSelect: onShare },
-    { id: "report", label: "Reportar",  icon: Flag,   roles: ["host", "member"], onSelect: onReport, danger: true },
+    { id: "edit",     label: "Editar",    icon: Pencil,        roles: ["host"],           onSelect: onEdit },
+    { id: "register", label: "Registrar", icon: ClipboardCheck, roles: ["host"],           onSelect: onRegister },
+    { id: "share",    label: "Compartir", icon: Share2,        roles: ["host", "member"], onSelect: onShare },
+    { id: "delete",   label: "Eliminar",  icon: Trash2,        roles: ["host"],           onSelect: onDelete, danger: true },
+    { id: "report",   label: "Reportar",  icon: Flag,          roles: ["host", "member"], onSelect: onReport, danger: true },
   ].filter(a => typeof a.onSelect === "function");
 }
 
