@@ -85,7 +85,7 @@ const MOCK_THREADS = [
     content: "Major confluence zones aligning across DXY and XAUUSD. Expecting a corrective move before continuation.",
     hashtags: ["#XAUUSD", "#DXY", "#WeeklyBias"],
     status: "active", visibility: "members",
-    author: "Alex H.", timestamp: new Date("2026-05-12T09:00:00"),
+    author: "Luis Morp", timestamp: new Date("2026-05-12T09:00:00"),
     likes: 38, liked: false, commentCount: 12, newUpdates: 3,
     media: [{ type: "image", url: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80", thumb: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&q=70" }],
     updates: [
@@ -98,7 +98,7 @@ const MOCK_THREADS = [
     content: "Price is compressing into a key daily resistance zone. A confirmed break above 1.0940 could lead to a 150–200 pip move.",
     hashtags: ["#EURUSD", "#Breakout", "#Forex"],
     status: "closed", visibility: "public",
-    author: "Alex H.", timestamp: new Date("2026-05-10T16:00:00"),
+    author: "Luis Morp", timestamp: new Date("2026-05-10T16:00:00"),
     likes: 21, liked: true, commentCount: 5, newUpdates: 0,
     media: [{ type: "image", url: "https://images.unsplash.com/photo-1518183214770-9cffbec72538?w=800&q=80", thumb: "https://images.unsplash.com/photo-1518183214770-9cffbec72538?w=400&q=70" }],
     updates: [
@@ -110,7 +110,7 @@ const MOCK_THREADS = [
     content: "Watching the 18,200 support level carefully. A bounce could take NQ back to ATH territory.",
     hashtags: ["#NASDAQ", "#NQ", "#Indices"],
     status: "active", visibility: "members",
-    author: "Alex H.", timestamp: new Date("2026-05-08T08:30:00"),
+    author: "Luis Morp", timestamp: new Date("2026-05-08T08:30:00"),
     likes: 56, liked: false, commentCount: 19, newUpdates: 1,
     media: [],
     updates: [],
@@ -120,7 +120,7 @@ const MOCK_THREADS = [
     content: "Quick heads-up: DXY rejection happening in real-time off the 104.50 zone.",
     hashtags: ["#DXY", "#Live", "#Alert"],
     status: "in_progress", visibility: "members",
-    author: "Alex H.", timestamp: new Date("2026-04-28T11:20:00"),
+    author: "Luis Morp", timestamp: new Date("2026-04-28T11:20:00"),
     likes: 14, liked: false, commentCount: 7, newUpdates: 0,
     media: [],
     updates: [],
@@ -130,7 +130,7 @@ const MOCK_THREADS = [
     content: "Higher timeframe structure is bullish. Looking for pullbacks into the 2280–2300 zone.",
     hashtags: ["#XAUUSD", "#Gold", "#WeeklyBias"],
     status: "closed", visibility: "members",
-    author: "Alex H.", timestamp: new Date("2026-04-20T09:00:00"),
+    author: "Luis Morp", timestamp: new Date("2026-04-20T09:00:00"),
     likes: 44, liked: false, commentCount: 11, newUpdates: 0,
     media: [{ type: "image", url: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800&q=80", thumb: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&q=70" }],
     updates: [],
@@ -140,7 +140,7 @@ const MOCK_THREADS = [
     content: "GBPUSD breaking below key weekly support at 1.2600. Potential move toward 1.2450.",
     hashtags: ["#GBPUSD", "#Structure", "#Forex"],
     status: "closed", visibility: "public",
-    author: "Alex H.", timestamp: new Date("2026-03-15T08:00:00"),
+    author: "Luis Morp", timestamp: new Date("2026-03-15T08:00:00"),
     likes: 29, liked: false, commentCount: 8, newUpdates: 0,
     media: [],
     updates: [],
@@ -247,14 +247,14 @@ function ExpandableText({ text, maxLines, fontSize = 14, lineHeight = 1.65, colo
           <LinkifiedText text={text} />
         ) : (
           <>
-            {truncatedText}<span style={{ color: C.textMuted }}>... </span><span style={{ color: C.teal, fontWeight: 700 }}>Ver más</span>
+            {truncatedText}<span style={{ color: C.textMuted }}>... </span><span style={{ color: C.text, fontWeight: 700 }}>Ver más</span>
           </>
         )}
       </p>
       {expanded && overflowing && (
         <button onClick={() => setExpanded(false)} style={{
           display: "block", marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
-          fontFamily: font, fontSize, fontWeight: 700, color: C.teal,
+          fontFamily: font, fontSize, fontWeight: 700, color: C.text,
         }}>
           Ver menos
         </button>
@@ -1292,7 +1292,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
               <Layers size={14} color={C.teal} />
             </div>
             <div style={{ flex: 1 }}>
-              <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{subtema.author || "Alex H."}</span>
+              <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text }}>{subtema.author || "Luis Morp"}</span>
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(subtema.timestamp)} · {fmtTime(subtema.timestamp)}</span>
                 <PrivacyIcon visibility={parentVisibility} size={10} color={C.textMuted} />
@@ -2179,7 +2179,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       title: data.title, content: data.content || "",
       hashtags: [], status: "active", visibility: "members",
       isSubtema: true,
-      author: "Alex H.", timestamp: new Date(),
+      author: "Luis Morp", timestamp: new Date(),
       likes: 0, liked: false, commentCount: 0, newUpdates: 0,
       media: data.media || [], audio: data.audio || null, links: data.links || [],
       updates: [], subtemas: [],
