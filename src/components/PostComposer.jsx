@@ -39,6 +39,7 @@ import {
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.jsx";
 import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 import { useComposerNavLock } from "../lib/composerLock.jsx";
+import { useImageViewer } from "./GlobalImageViewer.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -62,6 +63,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const [content, setContent]       = useState(initial?.content || "");
   const [mediaFiles, setMediaFiles] = useState(initial?.mediaFiles || []); // [{type,url,file?,existing?}]
   const [thumbnail, setThumbnail]   = useState(initial?.thumbnail || null);
+  const { openGallery, ViewerPortal } = useImageViewer();
   const [visibility, setVisibility] = useState(initial?.visibility || DEFAULT_VISIBILITY);
   const [attachedChecklist, setAttachedChecklist] = useState(initial?.checklist || null);
 
@@ -222,22 +224,30 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const MediaPreviews = () => (
     mediaFiles.length > 0 && (
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-        {mediaFiles.map((m, i) => (
-          <div key={i} style={{ flexShrink: 0, position: "relative", width: 84, height: 84, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
-            {m.type === "image" && <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-            {m.type === "video" && <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-            {m.type === "file" && (
-              <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: C.surface, padding: 6 }}>
-                <FileIcon size={20} color={C.textMuted} />
-                <span style={{ fontFamily: font, fontSize: 9, color: C.textMuted, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{m.name || "Archivo"}</span>
-              </div>
-            )}
-            <button onClick={() => removeMedia(i)}
-              style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-              <X size={11} />
-            </button>
-          </div>
-        ))}
+        {mediaFiles.map((m, i) => {
+          return (
+            <div key={i} style={{ flexShrink: 0, position: "relative", width: 84, height: 84, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
+              {m.type === "image" && (
+                <img src={m.url} alt="" onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
+              )}
+              {m.type === "video" && (
+                <video src={m.url} onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
+              )}
+              {m.type === "file" && (
+                <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: C.surface, padding: 6 }}>
+                  <FileIcon size={20} color={C.textMuted} />
+                  <span style={{ fontFamily: font, fontSize: 9, color: C.textMuted, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{m.name || "Archivo"}</span>
+                </div>
+              )}
+              <button onClick={() => removeMedia(i)}
+                style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                <X size={11} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     )
   );
@@ -400,6 +410,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
         <DiscardConfirmDialog />
 
         <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+        <ViewerPortal />
       </motion.div>
     );
   }
@@ -493,6 +504,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
 
       <DiscardConfirmDialog />
       <LinkExpandModal preview={expandedLink} onClose={() => setExpandedLink(null)} />
+      <ViewerPortal />
     </>
   );
 }

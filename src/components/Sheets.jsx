@@ -5,6 +5,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mic, Image, ChevronLeft, Send, Type, Smile, Pencil } from "lucide-react";
+import { useImageViewer } from "./GlobalImageViewer.jsx";
 
 const font = "'DM Sans', sans-serif";
 const A    = "#f59e0b"; // Announcements orange
@@ -24,6 +25,7 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
   const [recording,  setRecording]  = useState(false);
   const [audioURL,   setAudioURL]   = useState(null);
   const [publishing, setPublishing] = useState(false);
+  const { openGallery, ViewerPortal } = useImageViewer();
   const fileRef    = useRef(null);
   const mediaRecRef = useRef(null);
 
@@ -168,8 +170,10 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
               {mediaFiles.map((m, i) => (
                 <div key={i} style={{ position: "relative", flexShrink: 0 }}>
                   {m.type === "image"
-                    ? <img src={m.url} alt="" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, border: `1px solid ${A}30` }} />
-                    : <video src={m.url} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10 }} />}
+                    ? <img src={m.url} alt="" onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
+                        style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, border: `1px solid ${A}30`, cursor: "pointer" }} />
+                    : <video src={m.url} onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
+                        style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, cursor: "pointer" }} />}
                   <button onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))}
                     style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", cursor: "pointer", color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                 </div>
@@ -191,6 +195,7 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
           {publishing ? "Difundiendo…" : "Difundir"}
         </motion.button>
       </div>
+      <ViewerPortal />
     </motion.div>
   );
 }
