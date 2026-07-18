@@ -157,7 +157,10 @@ function fmtDate(d) {
   if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
   if (diff < 172800) return "Yesterday";
-  return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;
+  const overAYear = diff >= 365 * 86400;
+  return overAYear
+    ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getFullYear()}`
+    : `${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)}`;
 }
 
 function fmtTime(d) {
@@ -708,7 +711,7 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
         {/* Localized gradient behind the title only — rest of the thumbnail keeps its true colors */}
         {thumb && (
           <div style={{
-            position: "absolute", left: 0, right: 0, bottom: 0, height: "52%", pointerEvents: "none",
+            position: "absolute", left: 0, right: 0, bottom: 0, height: "28%", pointerEvents: "none",
             background: "linear-gradient(to top, rgba(8,8,14,0.85) 0%, rgba(8,8,14,0.35) 65%, transparent 100%)",
           }} />
         )}
