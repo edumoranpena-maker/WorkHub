@@ -239,7 +239,7 @@ export async function fetchSubtemas(threadId) {
  * else (audio upload, media upload incl. Archivos, DB insert) is identical,
  * so Subtemas get exactly the same persistence guarantees as Posts.
  */
-async function insertThreadRow({ title, content, privacy, audio, mediaFiles = [], planningPostId = null, parentThreadId = null }, author = "Alex H.") {
+async function insertThreadRow({ title, content, privacy, audio, mediaFiles = [], planningPostId = null, parentThreadId = null }, author = "Luis Morp") {
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
@@ -291,7 +291,7 @@ async function insertThreadRow({ title, content, privacy, audio, mediaFiles = []
 }
 
 /** Create a new top-level recap thread (Post), optionally linked to a planning post. */
-export async function createRecapThread(params, author = "Alex H.") {
+export async function createRecapThread(params, author = "Luis Morp") {
   return insertThreadRow(params, author);
 }
 
@@ -300,7 +300,7 @@ export async function createRecapThread(params, author = "Alex H.") {
  * (parent_thread_id = threadId) — same persistence, same media pipeline,
  * same edit/delete infrastructure as a Post. No client-only state involved.
  */
-export async function createSubtema(parentThreadId, { title, content, audio, mediaFiles = [], visibility } = {}, author = "Alex H.") {
+export async function createSubtema(parentThreadId, { title, content, audio, mediaFiles = [], visibility } = {}, author = "Luis Morp") {
   if (!parentThreadId) { console.error("[recapsApi] createSubtema: parentThreadId is required"); return null; }
   return insertThreadRow({ title, content, audio, mediaFiles, privacy: visibility, parentThreadId }, author);
 }
@@ -309,7 +309,7 @@ export async function createSubtema(parentThreadId, { title, content, audio, med
  * Add an update (sub-message) to an existing thread.
  * Handles audio blob upload + media file uploads.
  */
-export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [] }, author = "Alex H.") {
+export async function addThreadUpdate(threadId, { content, audio, mediaFiles = [] }, author = "Luis Morp") {
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
