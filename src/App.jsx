@@ -20,7 +20,7 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import { createRecapThread } from "./lib/recapsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
-import { WorkContextProvider, useWorkContextStore } from "./lib/workContext.jsx";
+import { WorkContextProvider } from "./lib/workContext.jsx";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
@@ -1678,129 +1678,100 @@ function App({ onGoHome, onOpenSettings }) {
   const MOBILE_TABS = [null, ...allSections.map(s => s.id)]; // null = Perfil/home feed
   const mobileTabIdx = MOBILE_TABS.indexOf(activeSectionId);
 
-  // Swipe horizontal — deliberate (Twitter/Whop style): vertical always wins
+  // ── HORIZONTAL CAROUSEL — Instagram-style continuous section switching ────
+  // All sections live side by side in one translating row and stay
+  // permanently mounted — switching sections no longer toggles display:none,
+  // it slides the row. Each column gets its own independent vertical scroll
+  // container, which is what makes "cada sección conserva su posición de
+  // scroll" true for free now: a real, never-unmounted DOM node naturally
+  // remembers its own scrollTop, no manual save/restore bookkeeping needed
+  // anymore (that machinery existed only because previously all sections
+  // shared ONE scroll position, since only one was ever actually present in
+  // the layout at a time).
   const swipeState = useRef({ x: 0, y: 0, locked: null }); // locked: "h"|"v"|null
+  const [dragX, setDragX] = useState(0);              // live px offset while dragging; also what the settle/cancel tween animates
+  const [dragAnimating, setDragAnimating] = useState(false); // true only during the post-release settle/cancel tween — never during live tracking, so following the finger has zero lag
+  const [isHDragging, setIsHDragging] = useState(false);     // true from the moment a drag is confirmed horizontal until it fully settles — this (not dragX) is what gates interaction, so a vertical scroll gesture is never accidentally blocked
+  const [carouselWidth, setCarouselWidth] = useState(0);
+  const carouselClipRef = useRef(null);
 
-  // ── UNIFIED SCROLL (Instagram-style) ────────────────────────────────────────
-  // Single scroll container holds the profile header + Chips + Feed as one
-  // document. The header disappears naturally as part of the flow, like any
-  // ordinary page header — no special hidden-state tracking needed for it.
-  // Chips are position:sticky so they lock below the topbar automatically.
-  const unifiedScrollRef = useRef(null);
-  const contentWrapperRef = useRef(null); // the section-content div, right after profile+chips
-  const workStore = useWorkContextStore();
-  const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
-
-  // Thread/Subtema are real fullscreen overlays now — position:fixed, siblings
-  // of the document below, which never unmounts and never has its scrollTop
-  // touched. The ONLY thing that needs to happen here is blocking the
-  // underlying document from being scrolled while an overlay covers it (so a
-  // stray touch can't move the feed hidden behind it) — a plain CSS
-  // overflow toggle, nothing measured, nothing saved, nothing restored.
-
-  // Continuously record this section's own scroll position (a plain write to
-  // the shared store, not React state — no re-renders from scrolling).
-  useEffect(() => {
-    const el = unifiedScrollRef.current;
-    if (!el) return;
-    const onScroll = () => { workStore.set(sectionScrollKey, el.scrollTop); };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [sectionScrollKey]); // eslint-disable-line
-
-  // On every section switch: exact restore if there's valid memory for it;
-  // otherwise cap the inherited scroll at this section's own real starting
-  // point (measured from the DOM, not estimated) — never past it, and never
-  // forced further than wherever the user currently is.
   useLayoutEffect(() => {
-    const el = unifiedScrollRef.current;
-    if (!el) return;
-    const apply = () => {
-      const saved = workStore.get(sectionScrollKey);
-      if (saved !== undefined) {
-        el.scrollTop = saved; // within the memory window — exact restore, no correction
-        return;
-      }
-      const cap = contentWrapperRef.current?.offsetTop;
-      if (typeof cap === "number") el.scrollTop = Math.min(el.scrollTop, cap);
-    };
-    apply();
-    // Safety net: the feed swap animates (mode="wait", ~180ms) before the new
-    // section's content actually mounts — reapply once more right after so a
-    // late mount can't leave it in the wrong spot.
-    const t = setTimeout(apply, 220);
-    return () => clearTimeout(t);
-  }, [activeSectionId]); // eslint-disable-line
+    const measure = () => setCarouselWidth(carouselClipRef.current?.clientWidth || 0);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
-  // scrollProps is kept for passing to child sections that have own scroll containers
-  // For sections that DON'T have their own scroll (Perfil), the unified container handles it
-  const handleFeedScroll = useCallback(() => {}, []); // no-op: unified scroll handles everything
   const handleTouchStart = (e) => {
+    if (dragAnimating) return; // don't start a new drag while one is still settling
     swipeState.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
   const handleTouchMove = (e) => {
     const s = swipeState.current;
-    if (s.locked) return;
-    const dx = Math.abs(e.touches[0].clientX - s.x);
-    const dy = Math.abs(e.touches[0].clientY - s.y);
-    // Lock direction once we have 8px of movement
-    if (dx > 8 || dy > 8) {
-      s.locked = dx > dy * 1.5 ? "h" : "v"; // horizontal only if clearly dominant
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    const dx = x - s.x, dy = y - s.y;
+    if (!s.locked) {
+      // Lock direction once we have 8px of movement — vertical wins on ties
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        s.locked = Math.abs(dx) > Math.abs(dy) * 1.5 ? "h" : "v";
+        if (s.locked === "h") setIsHDragging(true);
+      }
+    }
+    if (s.locked === "h") {
+      if (e.cancelable) e.preventDefault(); // this gesture is ours now — don't let it also scroll/bounce natively
+      let next = dx;
+      // Light rubber-band at the ends — Perfil is the first tab, the last
+      // custom section is the last; dragging past either just resists
+      // instead of doing nothing, so it still feels alive in the hand.
+      if ((mobileTabIdx === 0 && next > 0) || (mobileTabIdx === MOBILE_TABS.length - 1 && next < 0)) {
+        next *= 0.35;
+      }
+      setDragX(next);
     }
   };
   const handleTouchEnd = (e) => {
     const s = swipeState.current;
-    if (s.locked !== "h") return; // vertical scroll or undecided → ignore
-    const dx = e.changedTouches[0].clientX - s.x;
-    const dy = Math.abs(e.changedTouches[0].clientY - s.y);
+    const wasHorizontal = s.locked === "h";
     swipeState.current = { x: 0, y: 0, locked: null };
-    // Require strong horizontal swipe: min 72px, ratio 2.5:1 over vertical
-    if (Math.abs(dx) < 72 || Math.abs(dx) < dy * 2.5) return;
-    if (dx < 0 && mobileTabIdx < MOBILE_TABS.length - 1) {
-      setDirection(1);
-      setActiveSectionId(MOBILE_TABS[mobileTabIdx + 1]);
-    } else if (dx > 0 && mobileTabIdx > 0) {
-      setDirection(-1);
-      setActiveSectionId(MOBILE_TABS[mobileTabIdx - 1]);
-    }
+    if (!wasHorizontal) return; // vertical scroll or an undecided tap — nothing to settle
+
+    const dx = e.changedTouches[0].clientX - s.x;
+    const dyEnd = Math.abs(e.changedTouches[0].clientY - s.y);
+    const commit = Math.abs(dx) >= 72 && Math.abs(dx) >= dyEnd * 2.5; // same threshold as before
+
+    const settleTo = (targetId, dir) => {
+      setDragAnimating(true);
+      setDragX(dir * carouselWidth);
+      setTimeout(() => {
+        if (targetId !== undefined) { setDirection(dir); setActiveSectionId(targetId); }
+        setDragX(0);
+        setDragAnimating(false);
+        setIsHDragging(false);
+      }, 280);
+    };
+
+    if (commit && dx < 0 && mobileTabIdx < MOBILE_TABS.length - 1) settleTo(MOBILE_TABS[mobileTabIdx + 1], -1);
+    else if (commit && dx > 0 && mobileTabIdx > 0) settleTo(MOBILE_TABS[mobileTabIdx - 1], 1);
+    else settleTo(undefined, 0); // didn't cross the threshold — glide back to where we started
   };
 
-  // Render del feed móvil según sección activa — sin navegar a página nueva
-  // Sections are rendered ALL AT ONCE and stay permanently mounted — switching
-  // sections only toggles which one is visible (display:none on the rest).
-  // This is what makes Thread/composer-draft/filter state survive navigation
-  // for free: React never tears the component down, so its own useState never
-  // resets. Only the shared scroll document (handled above) still needs an
-  // explicit memory system, because that's the one thing that isn't "a
-  // component's own state" — it's a single number every section shares.
-  const customSections = allSections.filter(s => !["recaps", "announcements", "metrics", "rooms"].includes(s.id));
+  // scrollProps is kept for passing to child sections that have own scroll containers
+  const handleFeedScroll = useCallback(() => {}, []); // no-op: each column's own scroll handles everything now
 
-  function renderMobileSections() {
-    const visible = (id) => ({ display: activeSectionId === id ? "block" : "none", minHeight: "100%" });
-    return (
-      <>
-        <div style={visible(null)}>
-          <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />
-        </div>
-        <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
-        </div>
-        <div style={visible("announcements")}>
-          <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />
-        </div>
-        <div style={visible("metrics")}>
-          <MetricsContent />
-        </div>
-        <div style={visible("rooms")}>
-          <RoomsContent />
-        </div>
-        {customSections.map(cs => (
-          <div key={cs.id} style={visible(cs.id)}>
-            <CustomSectionContent section={cs} checklists={checklists} onChecklistsChange={setChecklists} />
-          </div>
-        ))}
-      </>
-    );
+  const customSections = allSections.filter(s => !["recaps", "announcements", "metrics", "rooms"].includes(s.id));
+  const sectionById = (id) => allSections.find(s => s.id === id) || null;
+
+  // Same per-section content this always rendered — just factored out so
+  // each carousel column can call it with its OWN id, instead of only ever
+  // rendering whichever one happened to be globally "active".
+  function renderSectionBody(id) {
+    if (id === null) return <PerfilContent onNavigate={(target) => { setDirection(1); setActiveSectionId(target); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />;
+    if (id === "recaps") return <Post section={{ ...sectionById("recaps"), label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
+    if (id === "announcements") return <Announcements section={sectionById("announcements")} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />;
+    if (id === "metrics") return <MetricsContent />;
+    if (id === "rooms") return <RoomsContent />;
+    const cs = customSections.find(s => s.id === id);
+    return cs ? <CustomSectionContent section={cs} checklists={checklists} onChecklistsChange={setChecklists} /> : null;
   }
 
   return (
@@ -1821,70 +1792,88 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
 
         {/*
-          ── SINGLE SCROLL CONTAINER — never remounts ─────────────────────────
-          ProfileCard and Chips live here permanently.
-          Only the feed content area transitions between sections.
+          ── CAROUSEL CLIP — never remounts ────────────────────────────────
+          Only this outer clipping box + the row inside it are new. Every
+          column inside keeps the exact same ProfileCard/Chips/content
+          structure the single shared container used to have.
         */}
         <div
-          ref={unifiedScrollRef}
-          style={{
-            flex: 1, overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface,
-            overflowY: insideThread ? "hidden" : "auto", // block the background from scrolling while a Thread overlay covers it
-          }}
+          ref={carouselClipRef}
+          style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 1, background: C.surface }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
         >
-          {/* 1. Profile header — hidden completely while reading a Thread (independent reading mode) */}
-          {!insideThread && (
-            <ProfileCard
-              onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-              profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
-              onEditAvatar={onOpenSettings}
-              followed={followed}
-              onToggleFollow={() => setFollowed(f => !f)}
-              subscribed={subscribed}
-              onToggleSubscribe={() => setSubscribed(s => !s)}
-            />
-          )}
-          {/* 2. Chips — sticky, always mounted, never animates */}
           <div style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 25,
-            flexShrink: 0,
-            background: `${C.surface}fd`,
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            borderBottom: `1px solid ${C.border}`,
+            display: "flex", height: "100%",
+            width: carouselWidth ? MOBILE_TABS.length * carouselWidth : "100%",
+            transform: `translateX(${-mobileTabIdx * carouselWidth + dragX}px)`,
+            // Zero lag while actually tracking the finger — only the
+            // post-release settle/cancel is an animated tween.
+            transition: dragAnimating ? "transform 0.28s cubic-bezier(0.22,1,0.36,1)" : "none",
           }}>
-            <div style={{ padding: "6px 14px 8px" }}>
-              <SectionChips
-                activeSectionId={activeSectionId}
-                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
-                onSections={allSections}
-                onAddSection={() => setShowAddSection(true)}
-              />
-            </div>
-          </div>
+            {MOBILE_TABS.map((id) => {
+              const isActive = id === activeSectionId;
+              // Gate interaction on the CONFIRMED-horizontal flag, not on
+              // dragX !== 0 — that way a vertical scroll gesture (isHDragging
+              // never becomes true) never accidentally loses the ability to
+              // scroll its own section mid-gesture.
+              const interactive = isActive && !isHDragging;
+              return (
+                <div key={id ?? "perfil"}
+                  style={{
+                    flexShrink: 0, width: carouselWidth || "100%", height: "100%",
+                    overflowY: (insideThread && isActive) ? "hidden" : "auto",
+                    overflowX: "hidden", position: "relative",
+                    pointerEvents: interactive ? "auto" : "none",
+                    background: C.surface,
+                  }}
+                >
+                  {/* 1. Profile header — hidden completely while reading a Thread (independent reading mode) */}
+                  {!(insideThread && isActive) && (
+                    <ProfileCard
+                      onNavigate={(target) => { setDirection(1); setActiveSectionId(target); }}
+                      profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+                      onEditAvatar={onOpenSettings}
+                      followed={followed}
+                      onToggleFollow={() => setFollowed(f => !f)}
+                      subscribed={subscribed}
+                      onToggleSubscribe={() => setSubscribed(s => !s)}
+                    />
+                  )}
+                  {/* 2. Chips — sticky, always mounted, never animates */}
+                  <div style={{
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 25,
+                    flexShrink: 0,
+                    background: `${C.surface}fd`,
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    borderBottom: `1px solid ${C.border}`,
+                  }}>
+                    <div style={{ padding: "6px 14px 8px" }}>
+                      <SectionChips
+                        activeSectionId={id}
+                        onNavigate={(target) => { setDirection(MOBILE_TABS.indexOf(target) > MOBILE_TABS.indexOf(id) ? 1 : -1); setActiveSectionId(target); }}
+                        onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+                        onSections={allSections}
+                        onAddSection={() => setShowAddSection(true)}
+                      />
+                    </div>
+                  </div>
 
-          {/* Section content — all sections stay permanently mounted (visibility
-              toggled via CSS in renderMobileSections), so this div's own size
-              is just whichever section is currently visible. minHeight:100%
-              (of the scroll container, not the viewport) guarantees the
-              document is always at least as tall as what's visible, so the
-              browser never clamps scrollTop back down for a short/loading
-              section. Thread/Subtema no longer live here at all — they're
-              position:fixed overlays rendered by Post.jsx itself, completely
-              independent of this container. */}
-          <div
-            ref={contentWrapperRef}
-            style={{ position: "relative", background: C.bg, minHeight: "100%" }}>
-            {renderMobileSections()}
-            <div style={{ height: 40 }} />
+                  {/* 3. This column's own content — permanently mounted, never
+                      unmounts when it's not the active column. */}
+                  <div style={{ position: "relative", background: C.bg, minHeight: "100%" }}>
+                    {renderSectionBody(id)}
+                    <div style={{ height: 40 }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-
         </div>
 
         {/* Role toggle */}
