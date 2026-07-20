@@ -101,8 +101,8 @@ export const DEFAULT_PROFILE_CONFIG = {
       isBuiltIn:    true,
     },
     {
-      id:           "metrics",
-      label:        "Metrics",
+      id:           "stats",
+      label:        "Stats",
       iconId:       "BarChart2",
       subtitle:     "Performance & trade stats",
       accentColor:  "#22d3a0",
