@@ -14,20 +14,27 @@
  *      identical to ThreadView's overlay in Post.jsx: createPortal straight
  *      to document.body (so position:fixed escapes unifiedScrollRef's
  *      clipping on mobile and the animated section wrapper on desktop), with
- *      its own sticky topbar and a Back button. Doers Journal will live
- *      inside it later via <iframe>, keeping its own sticky header, modals,
- *      and scroll completely intact — nothing here or in Doers Journal needs
- *      to change to reconcile the two into one scroll.
+ *      its own sticky topbar and a Back button. Doers Journal now lives
+ *      inside it via <iframe src="https://doers-journal.vercel.app/">,
+ *      keeping its own sticky header, modals, and scroll completely intact —
+ *      nothing here or in Doers Journal needs to change to reconcile the two
+ *      into one scroll.
  *
- * NOT implemented yet (by design, this pass only prepares the shell):
- *   - the actual <iframe src="..."> pointing at Doers Journal
+ * Freezing the section underneath: exactly like Post.jsx reports its Thread
+ * overlay up via onThreadChange, Stats reports its Dashboard overlay up via
+ * onDashboardChange so App.jsx can lock the unified scroll / hide the profile
+ * header while the portal covers the screen (see App.jsx's
+ * insideFullscreenOverlay wiring).
+ *
+ * NOT implemented yet (by design, this pass only validates the visual embed):
  *   - any postMessage bridge / auth handoff between PlanSpace and Doers Journal
- *   - real metric values in the summary grid (still placeholders)
+ *   - metrics sync (the summary grid above stays on placeholder values)
+ *   - the "Registrar Trade" action
  */
-import { useState } from "react";
+import { useState, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ChevronLeft, BarChart2 } from "lucide-react";
+import { ArrowRight, ChevronLeft, Loader } from "lucide-react";
 
 // ─── Design Tokens ──────────────────────────────────────────────────────────
 // Mirrors the token set used by Post.jsx / Announcements.jsx. Kept local to
@@ -43,8 +50,14 @@ const C = {
 };
 const font = "'DM Sans', sans-serif";
 
+const DOERS_JOURNAL_URL = "https://doers-journal.vercel.app/";
+
 // ─── Stats — Level 1, the section itself ───────────────────────────────────
-export default function Stats() {
+// onDashboardChange: notifies App.jsx whenever the fullscreen Dashboard
+// portal opens/closes, same contract as Post.jsx's onThreadChange, so the
+// section underneath (unified scroll + profile header) can be frozen the
+// same way it already is for Thread.
+export default function Stats({ onDashboardChange }) {
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
   // Placeholder — will be populated from Doers Journal once the iframe/bridge
@@ -86,18 +99,40 @@ export default function Stats() {
         <ArrowRight size={17} strokeWidth={2.4} />
       </motion.button>
 
-      <StatsDashboardPortal open={dashboardOpen} onClose={() => setDashboardOpen(false)} />
+      <StatsDashboardPortal
+        open={dashboardOpen}
+        onClose={() => setDashboardOpen(false)}
+        onDashboardChange={onDashboardChange}
+      />
     </div>
   );
 }
 
-// ─── StatsDashboardPortal — Level 2, fullscreen overlay reserved for Doers Journal ─
+// ─── StatsDashboardPortal — Level 2, fullscreen overlay hosting Doers Journal ─
 // Same pattern as ThreadView's overlay (Post.jsx): createPortal(..., document.body)
 // so this escapes any clipping/transformed ancestor regardless of whether Stats
 // is being rendered from the desktop or mobile shell. zIndex 9999 sits above
 // every other fixed element in the app (FABs at 999, role toggle at 9998), so
 // it's a true top-level fullscreen layer, not just visually full-bleed.
-function StatsDashboardPortal({ open, onClose }) {
+//
+// Opens/closes exactly like ThreadView: AnimatePresence fade, mounted only
+// while `open` is true, closed via the topbar Back button — nothing else can
+// dismiss it (no backdrop-click-to-close), same as Thread.
+function StatsDashboardPortal({ open, onClose, onDashboardChange }) {
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+
+  // Reset the loading state each time the portal is reopened, so a second
+  // visit shows the spinner again instead of a stale "loaded" flag from the
+  // previous mount — the iframe itself remounts too (see `open &&` below,
+  // which unmounts it on close).
+  useLayoutEffect(() => { if (open) setIframeLoaded(false); }, [open]);
+
+  // Reports open/closed up to App.jsx — same useLayoutEffect timing as
+  // Post.jsx's `useLayoutEffect(() => { onThreadChange?.(!!openThread) }, ...)`
+  // so the freeze on the section underneath (scroll lock + hidden profile
+  // header) commits before paint, no one-frame flash of the frozen section.
+  useLayoutEffect(() => { onDashboardChange?.(open); }, [open]); // eslint-disable-line
+
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -116,17 +151,37 @@ function StatsDashboardPortal({ open, onClose }) {
             </span>
           </div>
 
-          {/* Reserved space for Doers Journal — mounted here later as an
-              <iframe>. This container imposes no scroll or layout of its own
-              beyond flex:1, so Doers Journal keeps its own sticky header,
-              modals, and scroll exactly as-is once embedded. */}
-          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, padding: 24, textAlign: "center" }}>
-              <BarChart2 size={30} color={C.textMuted} strokeWidth={1.6} />
-              <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted, maxWidth: 260, lineHeight: 1.5 }}>
-                Aquí vivirá Doers Journal, embebido como iframe con su propio scroll, header sticky y modales.
-              </p>
-            </div>
+          {/* Doers Journal — fills all remaining space below the topbar.
+              flex:1 + position:relative with no overflow/scroll of its own
+              imposed here; the iframe is sized to 100%/100% so Doers Journal's
+              own layout (sticky header, modals, scroll) drives everything
+              inside it, completely independent of PlanSpace's scroll. */}
+          <div style={{ flex: 1, position: "relative", overflow: "hidden", background: C.bg }}>
+            {/* Loading state — shown until the iframe fires onLoad */}
+            {!iframeLoaded && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, background: C.bg, zIndex: 1 }}>
+                <Loader size={20} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                <span style={{ fontFamily: font, fontSize: 13, color: C.textMuted }}>Cargando Dashboard…</span>
+                <style>{"@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }"}</style>
+              </div>
+            )}
+
+            <iframe
+              key="doers-journal-iframe"
+              src={DOERS_JOURNAL_URL}
+              title="Doers Journal Dashboard"
+              onLoad={() => setIframeLoaded(true)}
+              style={{
+                position: "absolute", inset: 0,
+                width: "100%", height: "100%",
+                border: "none", display: "block",
+                background: C.bg,
+              }}
+              // No sandbox restrictions — Doers Journal needs its own scripts,
+              // storage and forms to run normally. Revisit once the
+              // PlanSpace ↔ Doers Journal bridge (postMessage/auth) is defined.
+              allow="clipboard-write"
+            />
           </div>
         </motion.div>
       )}
