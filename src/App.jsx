@@ -15,6 +15,7 @@ import PostComposer     from "./components/PostComposer.jsx";
 import PublishProgressBar from "./components/PublishProgressBar.jsx";
 import Post          from "./sections/Post";
 import Announcements, { StoryViewer } from "./sections/Announcements";
+import Stats          from "./sections/Stats";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
@@ -437,10 +438,10 @@ function LatestTradesCard({ onNavigate }) {
     { symbol: "GBPUSD", pnl: "+1.8R",  win: true  },
   ];
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "14px 15px", flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onNavigate("metrics")}>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "14px 15px", flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onNavigate("stats")}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Latest Trades</span>
-        <span style={{ fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600 }}>→ Metrics</span>
+        <span style={{ fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600 }}>→ Stats</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {trades.map((t, i) => (
@@ -798,33 +799,7 @@ function ReviewsContent({ onBack }) {
   );
 }
 
-// ─── Metrics Placeholder ─────────────────────────────────────────────────────
-function MetricsContent() {
-  const stats = [
-    { label: "Total Trades",    value: "147",   color: C.accentLight },
-    { label: "Win Rate",        value: "68%",   color: C.green       },
-    { label: "Avg RR",          value: "1:2.8", color: C.amber       },
-    { label: "Best Month",      value: "+22R",  color: C.green       },
-    { label: "Current Streak",  value: "5W",    color: C.green       },
-    { label: "Realized P&L",    value: "+83R",  color: C.green       },
-  ];
-  return (
-    <div style={{ padding: "20px 18px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {stats.map((s, i) => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-            style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 18px" }}>
-            <p style={{ margin: "0 0 4px", fontFamily: font, fontSize: 10, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{s.label}</p>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 24, fontWeight: 800, color: s.color, letterSpacing: "-0.02em" }}>{s.value}</p>
-          </motion.div>
-        ))}
-      </div>
 
-    </div>
-  );
-}
-
-// ─── Community Chat ───────────────────────────────────────────────────────────
 function CommunityChatContent({ section }) {
   const [messages, setMessages] = useState([
     { id: 1, author: "Marco V.", text: "Just closed a great XAUUSD long! +120 pips 🔥", time: "2m ago",   avatar: "M" },
@@ -1530,9 +1505,9 @@ function App({ onGoHome, onOpenSettings }) {
     // planning removed
     if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
-    if (activeSectionId === "metrics")       return <MetricsContent />;
+    if (activeSectionId === "stats")         return <Stats />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
-    const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","metrics","rooms"].includes(activeSectionId));
+    const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","stats","rooms"].includes(activeSectionId));
     if (customSec) return <CustomSectionContent section={customSec} checklists={checklists} onChecklistsChange={setChecklists} />;
     return null;
   }
@@ -1773,7 +1748,7 @@ function App({ onGoHome, onOpenSettings }) {
   // resets. Only the shared scroll document (handled above) still needs an
   // explicit memory system, because that's the one thing that isn't "a
   // component's own state" — it's a single number every section shares.
-  const customSections = allSections.filter(s => !["recaps", "announcements", "metrics", "rooms"].includes(s.id));
+  const customSections = allSections.filter(s => !["recaps", "announcements", "stats", "rooms"].includes(s.id));
 
   function renderMobileSections() {
     const visible = (id) => ({ display: activeSectionId === id ? "block" : "none", minHeight: "100%" });
@@ -1788,8 +1763,8 @@ function App({ onGoHome, onOpenSettings }) {
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />
         </div>
-        <div style={visible("metrics")}>
-          <MetricsContent />
+        <div style={visible("stats")}>
+          <Stats />
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
