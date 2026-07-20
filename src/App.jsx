@@ -1398,10 +1398,15 @@ function App({ onGoHome, onOpenSettings }) {
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [checklists,      setChecklists]      = useState([]); // master checklist store
   const [fabOpen,           setFabOpen]           = useState(false);
-  const [insideThread,      setInsideThread]      = useState(false);
+  // Freezes whichever section is mounted underneath (unified scroll + hidden
+  // profile header) while ANY fullscreen portal overlay is open on top of it —
+  // Thread (Post.jsx) or the Stats Dashboard portal. Both report in via the
+  // same boolean, same as Post.jsx's onThreadChange / Stats.jsx's
+  // onDashboardChange contracts.
+  const [insideFullscreenOverlay, setInsideFullscreenOverlay] = useState(false);
 
   // Close the purple speed-dial and reset thread flag whenever the section changes
-  useEffect(() => { setFabOpen(false); setInsideThread(false); }, [activeSectionId]);
+  useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
 
   const [showNewStory,      setShowNewStory]      = useState(false);
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
@@ -1503,9 +1508,9 @@ function App({ onGoHome, onOpenSettings }) {
   function renderContent() {
     if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
     // planning removed
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
+    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
     if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
-    if (activeSectionId === "stats")         return <Stats />;
+    if (activeSectionId === "stats")         return <Stats onDashboardChange={setInsideFullscreenOverlay} />;
     if (activeSectionId === "rooms")         return <RoomsContent />;
     const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","stats","rooms"].includes(activeSectionId));
     if (customSec) return <CustomSectionContent section={customSec} checklists={checklists} onChecklistsChange={setChecklists} />;
@@ -1578,7 +1583,7 @@ function App({ onGoHome, onOpenSettings }) {
       </div>
 
       {/* ── PURPLE FAB — desktop: Post feed ── */}
-      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideThread && (
+      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideFullscreenOverlay && (
         <>
           <AnimatePresence>
             {fabOpen && (
@@ -1758,13 +1763,13 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideThread} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} />
         </div>
         <div style={visible("stats")}>
-          <Stats />
+          <Stats onDashboardChange={setInsideFullscreenOverlay} />
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
@@ -1804,14 +1809,14 @@ function App({ onGoHome, onOpenSettings }) {
           ref={unifiedScrollRef}
           style={{
             flex: 1, overflowX: "hidden", position: "relative", zIndex: 1, background: C.surface,
-            overflowY: insideThread ? "hidden" : "auto", // block the background from scrolling while a Thread overlay covers it
+            overflowY: insideFullscreenOverlay ? "hidden" : "auto", // block the background from scrolling while a Thread/Dashboard overlay covers it
           }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* 1. Profile header — hidden completely while reading a Thread (independent reading mode) */}
-          {!insideThread && (
+          {/* 1. Profile header — hidden completely while a fullscreen overlay (Thread or the Stats Dashboard) covers the screen */}
+          {!insideFullscreenOverlay && (
             <ProfileCard
               onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
               profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
@@ -1897,7 +1902,7 @@ function App({ onGoHome, onOpenSettings }) {
           Shows on: Home, Profile, Post main feed.
           Hidden on: inside a thread, settings, modals.
       ══════════════════════════════════════════════════════════════════════════ */}
-      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideThread ? (
+      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideFullscreenOverlay ? (
         <>
           {/* Backdrop */}
           <AnimatePresence>
