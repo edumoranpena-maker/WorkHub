@@ -19,7 +19,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical } from "lucide-react";
-import { Pencil, ClipboardCheck, Trash2, Share2, Flag } from "lucide-react";
+import { Pencil, ClipboardCheck, Trash2, Share2, Flag, Pin, PinOff } from "lucide-react";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -35,6 +35,11 @@ const C = {
  * it inserts "Registrar" right after "Editar"; omit it anywhere else (Update,
  * Subtema) and it simply doesn't appear, same as any other action here.
  *
+ * onTogglePin is optional too, only used by PostCard (top-level Posts in
+ * PostFeed — pinning doesn't apply to Updates or Subtemas). Pass `pinned`
+ * alongside it so the label/icon flip between "Fijar post" and "Desfijar
+ * post". Appended last, after every existing action, per product decision.
+ *
  * `roles` on each action is NOT enforced anywhere yet (no role system wired
  * up per product decision) — it's there so that later, filtering by the
  * current user's role is a one-line change wherever this is called:
@@ -44,13 +49,14 @@ const C = {
  * Only pass the callbacks that make sense for the calling context — an
  * action is included only if its onSelect was actually provided.
  */
-export function buildContentMenuActions({ onEdit, onRegister, onShare, onDelete, onReport }) {
+export function buildContentMenuActions({ onEdit, onRegister, onShare, onDelete, onReport, pinned, onTogglePin }) {
   return [
     { id: "edit",     label: "Editar",    icon: Pencil,        roles: ["host"],           onSelect: onEdit },
     { id: "register", label: "Registrar", icon: ClipboardCheck, roles: ["host"],           onSelect: onRegister },
     { id: "share",    label: "Compartir", icon: Share2,        roles: ["host", "member"], onSelect: onShare },
     { id: "delete",   label: "Eliminar",  icon: Trash2,        roles: ["host"],           onSelect: onDelete, danger: true },
     { id: "report",   label: "Reportar",  icon: Flag,          roles: ["host", "member"], onSelect: onReport, danger: true },
+    { id: "pin",      label: pinned ? "Desfijar post" : "Fijar post", icon: pinned ? PinOff : Pin, roles: ["host"], onSelect: onTogglePin },
   ].filter(a => typeof a.onSelect === "function");
 }
 
