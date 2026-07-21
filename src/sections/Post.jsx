@@ -866,8 +866,10 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
         </div>
       )}
 
-      {/* Thumbnail area */}
-      <div style={{ position: "relative", aspectRatio: "16/9", background: thumb ? "transparent" : `linear-gradient(135deg, ${C.accentDim}44, ${C.tealDim})`, overflow: "hidden" }}>
+      {/* Thumbnail area — taller, closer to an IG Reels proportion, and now
+          purely visual: no text/gradient overlay, the title lives in the
+          info zone below instead. */}
+      <div style={{ position: "relative", aspectRatio: "2/3", background: thumb ? "transparent" : `linear-gradient(135deg, ${C.accentDim}44, ${C.tealDim})`, overflow: "hidden" }}>
         {thumb ? (
           <img
             src={thumb}
@@ -879,33 +881,13 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
             <FileText size={28} color={C.textDim} strokeWidth={1.5} />
           </div>
         )}
-
-        {/* Localized gradient behind the title only — rest of the thumbnail keeps its true colors */}
-        {thumb && (
-          <div style={{
-            position: "absolute", left: 0, right: 0, bottom: 0, height: "28%", pointerEvents: "none",
-            background: "linear-gradient(to top, rgba(8,8,14,0.85) 0%, rgba(8,8,14,0.35) 65%, transparent 100%)",
-          }} />
-        )}
-
-        {/* Title overlay on image */}
-        {thumb && (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "10px 12px 8px" }}>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              {thread.title || "Untitled"}
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Card body */}
+      {/* Card body / info zone — title always lives here now, never over the thumbnail */}
       <div style={{ padding: "10px 12px 12px" }}>
-        {/* Title (image-less cards only — thumbnail cards show title over the image) */}
-        {!thumb && (
-          <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-            {thread.title || "Untitled"}
-          </p>
-        )}
+        <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+          {thread.title || "Untitled"}
+        </p>
 
         {/* Status + 3-dot menu, same line, menu pinned to the right margin */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
