@@ -20,9 +20,9 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-mo
 import {
   ChevronLeft, Search, X, Heart, MessageCircle, Plus,
   Send, Mic, Square, Image, Video,
-  Loader, FileText, Check, ChevronRight,
+  Loader, FileText, Check, ChevronRight, ChevronDown,
   Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
-  Play, Pause, Sparkles,
+  Play, Pause, Sparkles, Pin, PinOff,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -40,6 +40,7 @@ import {
   fetchThreadComments,
   fetchSubtemas,
   createSubtema,
+  toggleThreadPin,
 } from "../lib/recapsApi.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
@@ -186,6 +187,25 @@ function groupByMonth(list) {
     groups[k].push(t);
   });
   return groups;
+}
+
+// ─── Pinned posts ────────────────────────────────────────────────────────────
+const PIN_LIMIT = 4;
+
+// Splits an already-filtered/sorted thread list into { pinned, rest }.
+// pinned: most-recently-pinned first, capped at PIN_LIMIT (defense in depth —
+// the real cap is enforced where pinning happens, in handleTogglePin).
+// rest: everything else, in its original order untouched — groupByMonth
+// keeps working on it exactly as before, so chronological grouping never
+// has to know pinning exists.
+function splitPinned(list) {
+  const pinned = list
+    .filter(t => t.pinned)
+    .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
+    .slice(0, PIN_LIMIT);
+  if (pinned.length === 0) return { pinned: [], rest: list };
+  const pinnedIds = new Set(pinned.map(t => t.id));
+  return { pinned, rest: list.filter(t => !pinnedIds.has(t.id)) };
 }
 
 
@@ -352,12 +372,49 @@ function Avatar({ name, size = 32 }) {
   );
 }
 
-// ─── MonthDivider ──────────────────────────────────────────────────────────────
-function MonthDivider({ label }) {
+// ─── MonthDivider — also used for the "Fijados" section header ─────────────
+// Same label styling as before (untouched) plus a chevron toggle. The
+// separator itself always stays visible even when collapsed — only the
+// content below it (passed as children by the caller, PostFeed) is what
+// animates open/closed.
+function MonthDivider({ label, pinned, collapsed, onToggle }) {
   return (
-    <div style={{ padding: "18px 0 8px" }}>
-      <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
-    </div>
+    <button
+      onClick={onToggle}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, width: "100%",
+        padding: "18px 0 8px", background: "none", border: "none", cursor: "pointer",
+      }}
+    >
+      {pinned && <Pin size={11} color={C.teal} strokeWidth={2.4} />}
+      <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: pinned ? C.teal : C.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        {label}
+      </span>
+      <div style={{ flex: 1 }} />
+      <ChevronDown size={13} color={C.textMuted} strokeWidth={2.4}
+        style={{ transform: collapsed ? "rotate(-90deg)" : "none", transition: "transform 0.2s ease" }} />
+    </button>
+  );
+}
+
+// Wraps a section's content so it can collapse/expand with a smooth height
+// animation, while MonthDivider (the header) above it stays always visible.
+function CollapsibleSection({ collapsed, children }) {
+  return (
+    <AnimatePresence initial={false}>
+      {!collapsed && (
+        <motion.div
+          key="content"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          style={{ overflow: "hidden" }}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -757,18 +814,23 @@ const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFi
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport }) {
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport, onTogglePin, canPin = true }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
   const opt = STATUS_OPTIONS.find(o => o.id === thread.status) || STATUS_OPTIONS[0];
 
+  // Pinning is always offered when already pinned (so it can be undone), but
+  // only offered to pin when under the PIN_LIMIT cap — past the cap, the
+  // option simply doesn't appear rather than being clickable-but-a-no-op.
   const menuActions = buildContentMenuActions({
-    onEdit:     onEdit   && (() => onEdit(thread)),
-    onRegister: () => {}, // placeholder — no functionality defined yet, UI-only per request
-    onDelete:   onDelete && (() => setConfirmDelete(true)),
-    onShare:    onShare  && (() => onShare(thread)),
-    onReport:   onReport && (() => onReport(thread)),
+    onEdit:      onEdit   && (() => onEdit(thread)),
+    onRegister:  () => {}, // placeholder — no functionality defined yet, UI-only per request
+    onDelete:    onDelete && (() => setConfirmDelete(true)),
+    onShare:     onShare  && (() => onShare(thread)),
+    onReport:    onReport && (() => onReport(thread)),
+    pinned:      !!thread.pinned,
+    onTogglePin: onTogglePin && (thread.pinned || canPin) && (() => onTogglePin(thread)),
   });
 
   return (
@@ -794,6 +856,13 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
       {unseenCount > 0 && (
         <div style={{ position: "absolute", top: 8, right: 8, zIndex: 5, background: C.teal, borderRadius: 99, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, boxShadow: `0 0 10px ${C.teal}80` }}>
           <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, color: "#000" }}>+{unseenCount}</span>
+        </div>
+      )}
+
+      {/* Pinned indicator — discreet, top-left corner, doesn't compete with the unread badge */}
+      {thread.pinned && (
+        <div style={{ position: "absolute", top: 8, left: 8, zIndex: 5, width: 20, height: 20, borderRadius: "50%", background: "rgba(8,8,14,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Pin size={10} color={C.teal} strokeWidth={2.4} fill={C.teal} />
         </div>
       )}
 
@@ -901,13 +970,31 @@ function getFilteredThreads(threads, searchQuery, filters) {
   return list;
 }
 
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
   const filtered = useMemo(
     () => getFilteredThreads(threads, searchQuery, filters),
     [threads, searchQuery, filters]
   );
 
-  const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
+  // Pinned zone is derived from the same filtered/sorted list PostFeed always
+  // rendered from — it doesn't touch getFilteredThreads (feedOrder, used for
+  // Thread prev/next navigation, is computed from that function separately
+  // and never sees this split), so search/filter/navigation behavior is
+  // unchanged. "rest" keeps flowing into groupByMonth exactly as before.
+  const { pinned, rest } = useMemo(() => splitPinned(filtered), [filtered]);
+  const grouped = useMemo(() => groupByMonth(rest), [rest]);
+
+  // Per-section collapse state, keyed by section id ("pinned" or a month
+  // label). Plain component state — same pattern this file already uses for
+  // `threads` itself (see the STATE ARCHITECTURE note at the top of this
+  // file): PostSection never unmounts while the user stays inside the Post
+  // tab (mobile: hidden via CSS, not torn down; desktop: only remounts on
+  // switching to a different top-level section), so this survives opening a
+  // Thread, closing it, scrolling away and back — no persistence layer needed.
+  const [collapsed, setCollapsed] = useState({});
+  const toggleSection = useCallback((key) => {
+    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   if (filtered.length === 0) {
     return (
@@ -920,15 +1007,33 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
 
   return (
     <>
+      {pinned.length > 0 && (
+        <div>
+          <MonthDivider label="Fijados" pinned collapsed={!!collapsed.pinned} onToggle={() => toggleSection("pinned")} />
+          <CollapsibleSection collapsed={!!collapsed.pinned}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+              {pinned.map(t => (
+                <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
+                  onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} />
+              ))}
+            </div>
+          </CollapsibleSection>
+        </div>
+      )}
+
       {Object.entries(grouped).map(([month, items]) => (
         <div key={month}>
-          <MonthDivider label={month} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
-            {items.map(t => (
-              <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread} />
-            ))}
-          </div>
+          <MonthDivider label={month} collapsed={!!collapsed[month]} onToggle={() => toggleSection(month)} />
+          <CollapsibleSection collapsed={!!collapsed[month]}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+              {items.map(t => (
+                <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
+                  onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} />
+              ))}
+            </div>
+          </CollapsibleSection>
         </div>
       ))}
       <div style={{ height: 80 }} />
@@ -2165,6 +2270,24 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     enqueueFeedPublish("Eliminando post…", async () => { await deleteRecapThread(thread.id); });
   }, [enqueueFeedPublish]);
 
+  // Pin/unpin a thread from the feed's 3-dot menu. Optimistic UI update (same
+  // pattern as handleStatusChange above) + background persistence via
+  // toggleThreadPin — pinned/pinned_at live in the DB, so the pinned state
+  // survives a reload, not just a client-side flag. The PIN_LIMIT cap is
+  // re-checked here too (not just in PostCard's `canPin` prop) so a stale
+  // menu render can't slip a 5th pin through.
+  const handleTogglePin = useCallback((thread) => {
+    const nextPinned = !thread.pinned;
+    if (nextPinned) {
+      const currentlyPinned = threads.filter(t => t.pinned).length;
+      if (currentlyPinned >= PIN_LIMIT) return;
+    }
+    const pinnedAt = nextPinned ? new Date() : null;
+    setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, pinned: nextPinned, pinnedAt } : t));
+    setOpenThread(t => t?.id === thread.id ? { ...t, pinned: nextPinned, pinnedAt } : t);
+    enqueueFeedPublish(nextPinned ? "Fijando post…" : "Desfijando post…", async () => { await toggleThreadPin(thread.id, nextPinned); });
+  }, [threads, enqueueFeedPublish]);
+
   // Feed-level edit (triggered from the 3-dot menu on a PostCard, without opening the thread first)
   const [editingFeedThread, setEditingFeedThread] = useState(null);
   const handleFeedEditSubmit = useCallback(({ title, content, visibility }) => {
@@ -2287,7 +2410,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 ) : (
                   <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
                     onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                    unseenSubtemas={unseenSubtemas} />
+                    onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
                 )}
               </div>
             </div>
@@ -2351,7 +2474,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           ) : (
             <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
                       onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                      unseenSubtemas={unseenSubtemas} />
+                      onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
           )}
         </div>
       </div>
