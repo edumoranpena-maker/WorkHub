@@ -38,6 +38,16 @@ const font = "'DM Sans', sans-serif"; // still needed for non-themed static stri
 // Fallback C for module-level code (replaced by useTheme() inside components)
 const C = tokensToC(resolveTheme("dark-purple"));
 
+// ─── New Brand Identity (transición en curso) ────────────────────────────────
+// PlanSpace's incoming visual identity. NOT a replacement for the theme
+// system above — existing components keep using C.accent/etc (today's
+// purple) until the full color refactor happens. These two constants are
+// only for genuinely NEW or redesigned UI (starting with the TabBar below),
+// so new work stops extending the old purple branding without having to
+// touch every existing surface today.
+const BRAND_PRIMARY = "#6B7DFF"; // blue-gray — the new primary
+const BRAND_ACCENT   = "#2DD4BF"; // teal — active states, indicators, key interactive elements
+
 // ─── Section resolver ─────────────────────────────────────────────────────────
 // Converts a config section object (JSON-safe) to a render-ready object with
 // the actual icon component resolved from the registry.
@@ -63,11 +73,6 @@ const PREVIEW_POSTS = {
 };
 
 // ─── Animations ───────────────────────────────────────────────────────────────
-const slideVariants = {
-  enter:  (d) => ({ x: d > 0 ? "100%" : "-100%", opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit:   (d) => ({ x: d > 0 ? "-100%" : "100%", opacity: 0 }),
-};
 // Feed-only transitions: subtle fade + slight horizontal shift
 // No full-screen slide — ProfileCard and Chips stay anchored
 const feedVariants = {
@@ -76,8 +81,6 @@ const feedVariants = {
   exit:   (d) => ({ x: d > 0 ? -32 : 32, opacity: 0 }),
 };
 const feedTrans = { duration: 0.18, ease: [0.22, 1, 0.36, 1] };
-const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
-const fadeTrans   = { duration: 0.2, ease: "easeOut" };
 
 // ─── useIsDesktop ─────────────────────────────────────────────────────────────
 function useIsDesktop() {
@@ -257,151 +260,80 @@ function ProfileHeader({ onNavigate, hideButtons, profile, onEditAvatar,
 // this is now an integrated page header (see ProfileHeader above).
 const ProfileCard = ProfileHeader;
 
-// ─── Section Chips ─────────────────────────────────────────────────────────────
-// Shared logic, used by both mobile and desktop chip bars
-function SectionChips({ activeSectionId, onNavigate, onHome, scrollRef, onSections, onAddSection }) {
-  const chipStyle = (active, color) => ({
-    flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-    padding: "7px 14px", borderRadius: 99,
-    border: `1px solid ${active ? color + "60" : C.border}`,
-    background: active ? `${color}18` : "transparent",
-    cursor: "pointer", transition: "all 0.15s",
-  });
+// ─── TabBar ─────────────────────────────────────────────────────────────────
+// Replaces the old chip bar entirely — used identically on mobile and desktop
+// (per the nav redesign: "quiero que este mismo sistema se utilice tanto en
+// la app móvil como en la versión web"). No per-tab border/background, no
+// per-section color: the whole strip reads as a single piece, only the
+// active tab's text + a sliding underline (both BRAND_ACCENT) differ from
+// the discreet gray of the rest.
+//
+// The underline is a single element that stays mounted the entire time —
+// only its `left`/`width` animate (via framer-motion's `animate` prop) when
+// the active tab changes, so it glides continuously to the new position
+// instead of disappearing/reappearing.
+function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
+  const containerRef = useRef(null);
+  const tabRefs = useRef({});
+  const [indicator, setIndicator] = useState({ left: 0, width: 0, ready: false });
+
+  const tabs = [{ id: null, label: "Perfil" }, ...(onSections || SECTIONS).map(s => ({ id: s.id, label: s.label, badge: s.badge }))];
+  const activeKey = activeSectionId ?? "__perfil__";
+
+  const measure = useCallback(() => {
+    const el = tabRefs.current[activeKey];
+    if (!el) return;
+    setIndicator({ left: el.offsetLeft, width: el.offsetWidth, ready: true });
+  }, [activeKey]);
+
+  useLayoutEffect(() => { measure(); }, [measure, tabs.length]);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [measure]);
 
   return (
-    <div ref={scrollRef} style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", padding: "0 1px" }}>
-      {/* Perfil chip (home) */}
-      <motion.button whileTap={{ scale: 0.93 }} onClick={onHome} style={chipStyle(!activeSectionId, C.accent)}>
-        <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: !activeSectionId ? C.accent : C.textMuted, whiteSpace: "nowrap" }}>Perfil</span>
-      </motion.button>
-
-      {(onSections || SECTIONS).map(s => {
-        const active = s.id === activeSectionId;
+    <div ref={containerRef} style={{ position: "relative", display: "flex", overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+      {tabs.map(t => {
+        const key = t.id ?? "__perfil__";
+        const active = key === activeKey;
         return (
-          <motion.button key={s.id} whileTap={{ scale: 0.93 }} onClick={() => onNavigate(s.id)} style={chipStyle(active, s.accentColor)}>
-            <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: active ? s.accentColor : C.textMuted, whiteSpace: "nowrap" }}>{s.label}</span>
-            {s.badge && !active && (
-              <span style={{ fontSize: 9, fontWeight: 800, color: s.accentColor, background: `${s.accentColor}22`, border: `1px solid ${s.accentColor}35`, borderRadius: 99, padding: "1px 5px", fontFamily: font }}>{s.badge}</span>
+          <button
+            key={key}
+            ref={el => { if (el) tabRefs.current[key] = el; }}
+            onClick={() => (t.id ? onNavigate(t.id) : onHome())}
+            style={{ flexShrink: 0, position: "relative", background: "none", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <span style={{ fontFamily: font, fontSize: 13, fontWeight: active ? 700 : 600, color: active ? BRAND_ACCENT : C.textMuted, whiteSpace: "nowrap", transition: "color 0.15s" }}>
+              {t.label}
+            </span>
+            {t.badge && !active && (
+              <span style={{ fontSize: 9, fontWeight: 800, color: C.textMuted, background: C.border, borderRadius: 99, padding: "1px 5px", fontFamily: font }}>{t.badge}</span>
             )}
-          </motion.button>
+          </button>
         );
       })}
-      {/* Añadir sección */}
+
       {onAddSection && (
-        <motion.button whileTap={{ scale: 0.93 }} onClick={onAddSection}
-          style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 99, border: `1px dashed ${C.border}`, background: "transparent", cursor: "pointer" }}>
-          <Plus size={11} color={C.textMuted} strokeWidth={2.5} />
+        <button onClick={onAddSection} style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, padding: "10px 14px", background: "none", border: "none", cursor: "pointer" }}>
+          <Plus size={12} color={C.textMuted} strokeWidth={2.5} />
           <span style={{ fontFamily: font, fontSize: 12, fontWeight: 600, color: C.textMuted, whiteSpace: "nowrap" }}>Añadir</span>
-        </motion.button>
+        </button>
       )}
+
+      {/* Sliding indicator — see component doc above */}
+      <motion.div
+        animate={{ left: indicator.left, width: indicator.width, opacity: indicator.ready ? 1 : 0 }}
+        transition={{ type: "spring", stiffness: 420, damping: 38 }}
+        style={{ position: "absolute", bottom: 0, height: 3, borderRadius: 3, background: BRAND_ACCENT, boxShadow: `0 0 8px ${BRAND_ACCENT}70`, pointerEvents: "none" }}
+      />
     </div>
   );
 }
 
-// ─── Desktop Chip Bar with arrow controls ─────────────────────────────────────
-function DesktopSectionBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
-  const scrollRef = useRef(null);
-  const [canLeft,  setCanLeft]  = useState(false);
-  const [canRight, setCanRight] = useState(false);
-
-  const updateArrows = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanLeft(el.scrollLeft > 4);
-    setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    updateArrows();
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", updateArrows, { passive: true });
-    const ro = new ResizeObserver(updateArrows);
-    ro.observe(el);
-    return () => { el.removeEventListener("scroll", updateArrows); ro.disconnect(); };
-  }, [updateArrows]);
-
-  const scroll = (dir) => scrollRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
-
-  const ArrowBtn = ({ dir, enabled }) => (
-    <motion.button whileTap={{ scale: 0.88 }} onClick={() => scroll(dir)}
-      style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, border: `1px solid ${enabled ? C.border : C.border + "44"}`, background: enabled ? C.card : "transparent", color: enabled ? C.textMuted : C.textDim, display: "flex", alignItems: "center", justifyContent: "center", cursor: enabled ? "pointer" : "default", transition: "all 0.15s", opacity: enabled ? 1 : 0.3 }}>
-      {dir < 0 ? <ChevronLeft size={13} strokeWidth={2.2} /> : <ChevronRight size={13} strokeWidth={2.2} />}
-    </motion.button>
-  );
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <ArrowBtn dir={-1} enabled={canLeft} />
-      <SectionChips activeSectionId={activeSectionId} onNavigate={onNavigate} onHome={onHome} scrollRef={scrollRef} onSections={onSections} onAddSection={onAddSection} />
-      <ArrowBtn dir={1} enabled={canRight} />
-    </div>
-  );
-}
-
-// ─── Desktop Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
-  return (
-    <motion.aside
-      initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      style={{ width: 234, flexShrink: 0, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-
-      <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "center" }}>
-        <motion.button whileTap={{ scale: 0.96 }} onClick={onHome}
-          style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 20, fontWeight: 900, letterSpacing: "-0.04em", color: "#eaeaf5" }}>
-            Plan<span style={{ color: "#a78bfa" }}>Space</span>
-          </span>
-        </motion.button>
-      </div>
-
-      <div style={{ padding: "10px 10px 4px" }}>
-        {(() => {
-          const active = !activeSectionId;
-          return (
-            <motion.button whileHover={{ x: active ? 0 : 2 }} whileTap={{ scale: 0.97 }} onClick={onHome}
-              style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 14, width: "100%", textAlign: "left", cursor: active ? "default" : "pointer", border: active ? `1px solid ${C.accent}35` : "1px solid transparent", background: active ? `${C.accent}10` : "transparent", transition: "all 0.15s" }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: `${C.accent}${active ? "22" : "14"}`, border: `1px solid ${C.accent}${active ? "38" : "22"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Users size={16} color={C.accent} strokeWidth={1.8} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: active ? 700 : 500, color: active ? C.accent : C.textMuted }}>Perfil</p>
-                {active && <p style={{ margin: "1px 0 0", fontFamily: font, fontSize: 10, color: C.accent, fontWeight: 600, opacity: 0.75 }}>Home</p>}
-              </div>
-              {active && <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.accent, boxShadow: `0 0 8px ${C.accent}`, flexShrink: 0 }} />}
-            </motion.button>
-          );
-        })()}
-      </div>
-
-      <div style={{ margin: "4px 18px", borderTop: `1px solid ${C.border}` }} />
-
-      <div style={{ padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
-        {(onSections || SECTIONS).map(s => {
-          const active = s.id === activeSectionId;
-          return (
-            <motion.button key={s.id} whileHover={{ x: active ? 0 : 2 }} whileTap={{ scale: 0.97 }}
-              onClick={() => !active && onNavigate(s.id)}
-              style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 14, border: active ? `1px solid ${s.accentColor}35` : "1px solid transparent", background: active ? `${s.accentColor}10` : "transparent", cursor: active ? "default" : "pointer", textAlign: "left", width: "100%", transition: "all 0.15s" }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: `${s.accentColor}${active ? "22" : "14"}`, border: `1px solid ${s.accentColor}${active ? "38" : "22"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <s.icon size={16} color={s.accentColor} strokeWidth={1.8} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: active ? 700 : 500, color: active ? s.accentColor : C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</p>
-                {active && <p style={{ margin: "1px 0 0", fontFamily: font, fontSize: 10, color: s.accentColor, fontWeight: 600, opacity: 0.75 }}>You are here</p>}
-              </div>
-              {active
-                ? <div style={{ width: 7, height: 7, borderRadius: "50%", background: s.accentColor, boxShadow: `0 0 8px ${s.accentColor}`, flexShrink: 0 }} />
-                : s.badge && <span style={{ fontSize: 10, fontWeight: 700, color: s.accentColor, background: `${s.accentColor}18`, border: `1px solid ${s.accentColor}30`, borderRadius: 20, padding: "2px 7px", fontFamily: font, flexShrink: 0 }}>{s.badge}</span>
-              }
-            </motion.button>
-          );
-        })}
-      </div>
-    </motion.aside>
-  );
-}
 
 // ─── Mobile Top Bar ───────────────────────────────────────────────────────────
 function MobileTopBar({ onHome, profileName, onOpenSettings }) {
@@ -1505,156 +1437,16 @@ function App({ onGoHome, onOpenSettings }) {
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
 
-  function renderContent() {
-    if (!activeSectionId)                    return <PerfilContent onNavigate={navigate} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={(text) => { navigateTo("recaps"); }} />;
-    // planning removed
-    if (activeSectionId === "recaps")        return <Post          section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />;
-    if (activeSectionId === "announcements") return <Announcements section={activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} />;
-    if (activeSectionId === "stats")         return <Stats onDashboardChange={setInsideFullscreenOverlay} />;
-    if (activeSectionId === "rooms")         return <RoomsContent />;
-    const customSec = allSections.find(s => s.id === activeSectionId && !["recaps","announcements","stats","rooms"].includes(activeSectionId));
-    if (customSec) return <CustomSectionContent section={customSec} checklists={checklists} onChecklistsChange={setChecklists} />;
-    return null;
-  }
-
-  // ── DESKTOP ──────────────────────────────────────────────────────────────────
-  if (isDesktop) {
-    return (
-      <ThemeProvider themeConfig={profileConfig.theme}>
-      <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", overflow: "hidden" }}>
-        <Sidebar activeSectionId={activeSectionId} onNavigate={navigate} onHome={goHome} onSections={allSections} onAddSection={() => setShowAddSection(true)} />
-
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-          {/* Top bar — Perfil web: profile name left, actions right */}
-          <div style={{ flexShrink: 0, zIndex: 30, background: `${C.surface}f4`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "10px 24px", display: "flex", alignItems: "center" }}>
-            {/* Left: profile name */}
-            <span style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", flexShrink: 0 }}>
-              {profileConfig.identity.name}
-            </span>
-
-            {/* Center spacer */}
-            <div style={{ flex: 1 }} />
-
-            {/* Right: actions */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              <IconBtn icon={Search} />
-              <IconBtn icon={MessageSquare} />
-              <IconBtn icon={Bell} badge />
-              <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "4px 10px" }}>
-                <span style={{ fontFamily: font, fontSize: 10, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{isHost ? "Host" : "Member"}</span>
-                <button onClick={() => setIsHost(h => !h)} style={{ width: 34, height: 18, borderRadius: 9, border: "none", background: isHost ? C.accent : C.border, cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                  <motion.div animate={{ x: isHost ? 16 : 2 }} transition={{ type: "spring", stiffness: 400, damping: 28 }} style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2 }} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Profile card on desktop Perfil view */}
-          <AnimatePresence>
-            {!activeSectionId && (
-              <motion.div key="profile_desktop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fadeTrans} style={{ flexShrink: 0 }}>
-                <ProfileCard
-                  onNavigate={navigate}
-                  profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
-                  onEditAvatar={onOpenSettings}
-                  followed={followed}
-                  onToggleFollow={() => setFollowed(f => !f)}
-                  subscribed={subscribed}
-                  onToggleSubscribe={() => setSubscribed(s => !s)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-
-
-          {/* Animated content */}
-          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            <AnimatePresence mode="sync" custom={direction}>
-              <motion.div key={activeSectionId ?? "perfil"} custom={direction} variants={slideVariants}
-                initial="enter" animate="center" exit="exit" transition={springTrans}
-                style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-                {renderContent()}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-
-      {/* ── PURPLE FAB — desktop: Post feed ── */}
-      {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideFullscreenOverlay && (
-        <>
-          <AnimatePresence>
-            {fabOpen && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setFabOpen(false)}
-                style={{ position: "fixed", inset: 0, zIndex: 998, background: "rgba(8,8,14,0.55)", backdropFilter: "blur(6px)" }}
-              />
-            )}
-          </AnimatePresence>
-          <AnimatePresence>
-            {fabOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 16, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 16, scale: 0.92 }}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                style={{ position: "fixed", bottom: 100, right: 20, zIndex: 999, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}
-              >
-                {[
-                  { label: "Crear Post",     icon: FileText,  color: C.accent, action: () => { setFabOpen(false); setShowFullPostSheet(true); } },
-                  { label: "Crear Difusión", icon: Megaphone, color: C.orange, action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnComposerSignal(n => n + 1), 300); } },
-                  { label: "Crear Story",    icon: Zap,       color: C.gold,   action: () => { setFabOpen(false); navigateTo("announcements"); setTimeout(() => setAnnStorySignal(n => n + 1), 300); } },
-                ].map((opt, i) => (
-                  <motion.div key={opt.label} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ delay: i * 0.05 }}
-                    style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "8px 14px", whiteSpace: "nowrap", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-                      {opt.label}
-                    </span>
-                    <motion.button whileTap={{ scale: 0.88 }} onClick={opt.action}
-                      style={{ width: 46, height: 46, borderRadius: "50%", background: `${opt.color}22`, border: `2px solid ${opt.color}55`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: `0 4px 16px ${opt.color}40` }}>
-                      <opt.icon size={18} color={opt.color} />
-                    </motion.button>
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }} onClick={() => setFabOpen(v => !v)}
-            style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.accent}, #5c2fff)`, boxShadow: fabOpen ? `0 4px 20px rgba(0,0,0,0.5)` : `0 6px 28px ${C.accent}70, 0 0 0 1px ${C.accent}30` }}>
-            <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
-              <Plus size={26} color="#fff" strokeWidth={2.5} />
-            </motion.div>
-          </motion.button>
-        </>
-      )}
-
-      {/* ── ORANGE FAB — desktop: Announcements ── */}
-      {isHost && activeSectionId === "announcements" && (
-        <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.88 }}
-          onClick={() => setAnnComposerSignal(n => n + 1)}
-          style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #f59e0b, #d97706)", boxShadow: "0 6px 28px rgba(245,158,11,0.7), 0 0 0 1px rgba(245,158,11,0.3)" }}>
-          <Plus size={26} color="#000" strokeWidth={2.5} />
-        </motion.button>
-      )}
-
-      {/* Full New Post Sheet */}
-      <AnimatePresence>
-        {showFullPostSheet && (
-          <PostComposer
-            mode="post"
-            checklists={checklists}
-            onSubmit={handlePublishNewPost}
-            onClose={() => setShowFullPostSheet(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      </ThemeProvider>
-    );
-  }
-
-  // ── MOBILE ── Tabs integradas: perfil fijo arriba, feed cambia por chip/swipe
+  // ── UNIFIED SHELL ────────────────────────────────────────────────────────
+  // One layout for both desktop and mobile now (per the nav redesign: "quiero
+  // que la web tenga prácticamente la misma experiencia que la app móvil, no
+  // dos aplicaciones diferentes"). The old desktop-only branch (Sidebar +
+  // separate top bar + slide-per-section transitions) is gone; `isDesktop`
+  // now only adjusts widths/paddings below, it no longer picks between two
+  // different render trees. This also removes a latent hooks-order risk the
+  // old code had: every hook from here down used to only run when
+  // `isDesktop` was false, which is unsound if isDesktop can change after
+  // mount (it can, on window resize).
   const MOBILE_TABS = [null, ...allSections.map(s => s.id)]; // null = Perfil/home feed
   const mobileTabIdx = MOBILE_TABS.indexOf(activeSectionId);
 
@@ -1786,7 +1578,15 @@ function App({ onGoHome, onOpenSettings }) {
   return (
     <ThemeProvider themeConfig={profileConfig.theme}>
     <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", justifyContent: "center" }}>
-      <div style={{ width: "100%", maxWidth: 430, height: "100vh", background: C.surface, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 0 80px rgba(0,0,0,0.7)" }}>
+      {/* Column width: mobile stays the original phone-width column; desktop
+          widens considerably (per the redesign: no more sidebar eating a
+          fixed 234px, the whole page now centers around this single column
+          instead) but still centers rather than stretching edge-to-edge —
+          "no quiero desperdiciar espacio horizontal" doesn't mean full-bleed,
+          it means not leaving the width tied to a leftover mobile constant.
+          The phone drop-shadow only makes sense at phone width, so it's
+          dropped on desktop too. */}
+      <div style={{ width: "100%", maxWidth: isDesktop ? 640 : 430, height: "100vh", background: C.surface, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: isDesktop ? "none" : "0 0 80px rgba(0,0,0,0.7)" }}>
 
         {/* Ambient glow */}
         <div style={{ position: "absolute", top: -60, left: "50%", transform: "translateX(-50%)", width: 300, height: 120, borderRadius: "50%", background: `radial-gradient(ellipse, ${C.accentDim}55 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0 }} />
@@ -1839,7 +1639,7 @@ function App({ onGoHome, onOpenSettings }) {
             borderBottom: `1px solid ${C.border}`,
           }}>
             <div style={{ padding: "6px 14px 8px" }}>
-              <SectionChips
+              <TabBar
                 activeSectionId={activeSectionId}
                 onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
                 onHome={() => { setDirection(-1); setActiveSectionId(null); }}
