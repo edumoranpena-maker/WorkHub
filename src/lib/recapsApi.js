@@ -46,6 +46,8 @@ function rowToThread(row, media = [], updates = [], subtemas = []) {
     status: row.status,
     visibility: row.visibility,
     edited: wasEdited(row),
+    pinned: row.pinned ?? false,
+    pinnedAt: row.pinned_at ? new Date(row.pinned_at) : null,
     author: row.author,
     authorRole: row.author_role,
     timestamp: new Date(row.created_at),
@@ -426,6 +428,19 @@ export async function addThreadComment(threadId, { author, text }) {
 export async function updateThreadStatus(threadId, status) {
   const { error } = await supabase.from("recap_threads").update({ status }).eq("id", threadId);
   if (error) console.error("[recapsApi] updateThreadStatus:", error.message);
+  return !error;
+}
+
+/** Pin or unpin a thread (Post). pinned_at drives "most recently pinned
+ *  first" ordering in the feed — set to now() when pinning, cleared when
+ *  unpinning. Like updateThreadStatus, doesn't touch updated_at: pinning
+ *  isn't a content edit and shouldn't trigger the "Editado" indicator. */
+export async function toggleThreadPin(threadId, pinned) {
+  const { error } = await supabase
+    .from("recap_threads")
+    .update({ pinned, pinned_at: pinned ? new Date().toISOString() : null })
+    .eq("id", threadId);
+  if (error) console.error("[recapsApi] toggleThreadPin:", error.message);
   return !error;
 }
 
