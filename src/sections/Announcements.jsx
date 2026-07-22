@@ -1185,33 +1185,6 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
     <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Desktop top bar — back + title + actions, NO inner sidebar */}
-        <div style={{ position: "sticky", top: 0, zIndex: 30, background: `${C.surface}f2`, backdropFilter: "blur(24px)", borderBottom: `1px solid ${C.border}`, padding: "14px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: A, fontFamily: font, fontSize: 14, fontWeight: 600, padding: 0, marginRight: 4 }}>
-              <ChevronLeft size={17} strokeWidth={2.2} /> Back
-            </button>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: `${A}20`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Megaphone size={18} color={A} strokeWidth={1.8} />
-            </div>
-            <div>
-              <h2 style={{ margin: 0, fontFamily: font, fontSize: 18, fontWeight: 800, color: C.text }}>Announcements</h2>
-              <p style={{ margin: 0, fontFamily: font, fontSize: 12, color: C.textMuted }}>Official updates from leadership</p>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: isHost ? A : C.textMuted, background: isHost ? `${A}18` : "transparent", border: `1px solid ${isHost ? A + "30" : C.border}`, borderRadius: 6, padding: "3px 8px" }}>
-              {isHost ? "Host" : "Member"}
-            </span>
-            {isHost && (
-              <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowComposer(true)}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 12, background: `linear-gradient(135deg, ${A}, #d97706)`, border: "none", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700, color: "#000", boxShadow: `0 2px 12px ${A}44` }}>
-                <Plus size={15} strokeWidth={2.5} /> New Post
-              </motion.button>
-            )}
-          </div>
-        </div>
-
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px" }}>
             <FeedPanel />
