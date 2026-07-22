@@ -16,10 +16,12 @@
  * for enqueueing the actual save via publishQueue.jsx so the composer can
  * close instantly while the upload keeps running in the background.
  *
- * Media chips (Imagen / Video / Archivo / Miniatura):
- *   None are highlighted by default. A chip highlights only while content of
- *   that type is attached — pressing it never blocks attaching more of the
- *   same type.
+ * Attachments (gallery / drag & drop / paste — see AttachmentZone.jsx and
+ * lib/attachments.js):
+ *   Replaces the old Imagen/Video/Archivo chips. mediaFiles keeps growing as
+ *   the user adds more — nothing is ever replaced, only appended. Miniatura
+ *   stays a separate, image-only, single-file concept (post mode only) with
+ *   its own Cambiar/Quitar controls.
  *
  * Links: no manual chip. Any URL typed in title/content is auto-detected via
  * useLinkPreviews and shown as a preview row (kept out of the DB — the URL
@@ -34,12 +36,13 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, X, Plus, Mic, Loader, Layers, CheckSquare, ChevronRight,
-  Image as ImageIcon, Video as VideoIcon, Paperclip, ImagePlus, File as FileIcon,
 } from "lucide-react";
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPreview.jsx";
 import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 import { useComposerNavLock } from "../lib/composerLock.jsx";
 import { useImageViewer } from "./GlobalImageViewer.jsx";
+import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
+import AttachmentGallery from "./AttachmentZone.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -47,13 +50,6 @@ const C = {
   border: "#1c1c2e", text: "#fafafa", textMuted: "#8e8e8e",
   teal: "#22d3a0", accent: "#7c4dff", accentLight: "#9d71ff", red: "#ff4f6a",
 };
-
-const MEDIA_TABS = [
-  { id: "image",     label: "Imagen",    kind: "image",     accept: "image/*", icon: ImageIcon },
-  { id: "video",     label: "Video",     kind: "video",     accept: "video/*", icon: VideoIcon },
-  { id: "file",      label: "Archivo",   kind: "file",      accept: "*",       icon: Paperclip },
-  { id: "thumbnail", label: "Miniatura", kind: "thumbnail", accept: "image/*", icon: ImagePlus },
-];
 
 export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], onSubmit, onClose }) {
   const isPost = mode === "post";
@@ -75,9 +71,6 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const [showCancel, setShowCancel] = useState(false);
   const [expandedLink, setExpandedLink] = useState(null);
 
-  const imageRef = useRef(null);
-  const videoRef = useRef(null);
-  const fileRef  = useRef(null);
   const thumbRef = useRef(null);
   const mediaRecRef = useRef(null);
 
@@ -108,22 +101,20 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const requestClose = () => { isDirty ? setShowCancel(true) : onClose(); };
 
   // ── Media handling ──────────────────────────────────────────────────────────
-  const hasType = (kind) => kind === "thumbnail" ? !!thumbnail : mediaFiles.some(m => m.type === kind);
-
-  const pick = (tab) => {
-    if (tab.kind === "thumbnail") { thumbRef.current?.click(); return; }
-    const ref = tab.kind === "image" ? imageRef : tab.kind === "video" ? videoRef : fileRef;
-    ref.current && (ref.current.accept = tab.accept);
-    ref.current?.click();
-  };
-
-  const handleFiles = (e, kind) => {
-    const files = Array.from(e.target.files || []);
-    const mapped = files.map(f => ({ type: kind, url: URL.createObjectURL(f), file: f, name: f.name }));
+  // Single entry point for every source of new attachments — the gallery's
+  // own click-to-pick, drag & drop, and paste-to-attach all funnel through
+  // here. `mediaFiles` (already in {type,url,file,name} shape by the time
+  // they arrive) are appended, never replacing what's already there. First
+  // image attached still auto-fills the post thumbnail if none was set yet,
+  // same behavior as before.
+  const handleFilesAdded = (mapped) => {
     setMediaFiles(prev => [...prev, ...mapped]);
-    if (isPost && !thumbnail && kind === "image" && mapped.length > 0) setThumbnail(mapped[0].url);
-    e.target.value = "";
+    if (isPost && !thumbnail) {
+      const firstImage = mapped.find(m => m.type === "image");
+      if (firstImage) setThumbnail(firstImage.url);
+    }
   };
+  usePasteAttachments(files => handleFilesAdded(mapFilesToMedia(files)));
 
   const handleThumb = (e) => {
     const f = e.target.files?.[0];
@@ -189,67 +180,19 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
     subtema: { header: isEditing ? "Editar Subtema" : "Crear Subtema", submit: isEditing ? "Guardar cambios" : "Crear Subtema" },
   }[mode];
 
-  const HiddenInputs = (
-    <>
-      <input ref={imageRef} type="file" multiple accept="image/*" style={{ display: "none" }} onChange={e => handleFiles(e, "image")} />
-      <input ref={videoRef} type="file" multiple accept="video/*" style={{ display: "none" }} onChange={e => handleFiles(e, "video")} />
-      <input ref={fileRef}  type="file" multiple style={{ display: "none" }} onChange={e => handleFiles(e, "file")} />
-      <input ref={thumbRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleThumb} />
-    </>
-  );
+  // Only the thumbnail picker stays as its own dedicated input — it's a
+  // single, image-only, separate concept from the attachment gallery below
+  // (a post's thumbnail vs. its attached media).
+  const ThumbInput = <input ref={thumbRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleThumb} />;
 
   // ── Shared blocks ────────────────────────────────────────────────────────────
-  const MediaChips = () => (
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-      {(isPost ? MEDIA_TABS : MEDIA_TABS.filter(t => t.kind !== "thumbnail")).map(tab => {
-        const active = hasType(tab.kind);
-        const Icon = tab.icon;
-        return (
-          <motion.button key={tab.id} whileTap={{ scale: 0.93 }} onClick={() => pick(tab)}
-            style={{
-              flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
-              background: active ? `${C.teal}16` : C.surface,
-              border: `1px solid ${active ? C.teal + "55" : C.border}`,
-              borderRadius: 99, padding: "7px 14px", cursor: "pointer",
-              color: active ? C.teal : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
-            }}>
-            <Icon size={13} strokeWidth={2} />
-            {tab.label}
-          </motion.button>
-        );
-      })}
-    </div>
-  );
-
-  const MediaPreviews = () => (
-    mediaFiles.length > 0 && (
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-        {mediaFiles.map((m, i) => {
-          return (
-            <div key={i} style={{ flexShrink: 0, position: "relative", width: 84, height: 84, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
-              {m.type === "image" && (
-                <img src={m.url} alt="" onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
-              )}
-              {m.type === "video" && (
-                <video src={m.url} onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
-              )}
-              {m.type === "file" && (
-                <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: C.surface, padding: 6 }}>
-                  <FileIcon size={20} color={C.textMuted} />
-                  <span style={{ fontFamily: font, fontSize: 9, color: C.textMuted, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{m.name || "Archivo"}</span>
-                </div>
-              )}
-              <button onClick={() => removeMedia(i)}
-                style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.72)", border: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                <X size={11} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    )
+  const Attachments = () => (
+    <AttachmentGallery
+      mediaFiles={mediaFiles}
+      onAdd={handleFilesAdded}
+      onRemove={removeMedia}
+      onOpenViewer={i => openGallery({ items: mediaFiles, startIndex: i })}
+    />
   );
 
   const LinkPreviews = () => (
@@ -373,8 +316,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
           </motion.button>
         </div>
 
-        <div style={{ padding: "14px 16px 4px", borderBottom: `1px solid ${C.border}` }}><MediaChips /></div>
-        {HiddenInputs}
+        {ThumbInput}
 
         <div style={{ padding: "16px 16px 40px", display: "flex", flexDirection: "column", gap: 16 }}>
           {thumbnail && (
@@ -382,12 +324,18 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
               <img src={thumbnail} alt="thumbnail" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 10, border: `1px solid ${C.border}` }} />
               <div>
                 <p style={{ margin: 0, fontFamily: font, fontSize: 12, fontWeight: 700, color: C.text }}>Miniatura</p>
-                <button onClick={() => setThumbnail(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, padding: 0 }}>Quitar</button>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => thumbRef.current?.click()} style={{ background: "none", border: "none", cursor: "pointer", color: C.teal, fontFamily: font, fontSize: 11, fontWeight: 600, padding: 0 }}>Cambiar</button>
+                  <button onClick={() => setThumbnail(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, fontFamily: font, fontSize: 11, padding: 0 }}>Quitar</button>
+                </div>
               </div>
             </div>
           )}
 
-          <MediaPreviews />
+          <div>
+            <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Adjuntos</p>
+            <Attachments />
+          </div>
 
           <div>
             <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Title</p>
@@ -480,9 +428,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
               </div>
             )}
 
-            <MediaChips />
-            {HiddenInputs}
-            <MediaPreviews />
+            <Attachments />
             <LinkPreviews />
             <div style={{ height: 8 }} />
           </div>

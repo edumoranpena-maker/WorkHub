@@ -6,6 +6,8 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Mic, Image, ChevronLeft, Send, Type, Smile, Pencil } from "lucide-react";
 import { useImageViewer } from "./GlobalImageViewer.jsx";
+import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
+import AttachmentGallery from "./AttachmentZone.jsx";
 
 const font = "'DM Sans', sans-serif";
 const A    = "#f59e0b"; // Announcements orange
@@ -26,7 +28,6 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
   const [audioURL,   setAudioURL]   = useState(null);
   const [publishing, setPublishing] = useState(false);
   const { openGallery, ViewerPortal } = useImageViewer();
-  const fileRef    = useRef(null);
   const mediaRecRef = useRef(null);
 
   const POST_TYPES = [
@@ -35,14 +36,9 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
     { id: "reveal", label: "Reveal" },
   ];
 
-  const handleFile = (e) => {
-    const files = Array.from(e.target.files || []);
-    const mapped = files.map(f => ({
-      type: f.type.startsWith("video") ? "video" : "image",
-      url: URL.createObjectURL(f),
-    }));
-    setMediaFiles(prev => [...prev, ...mapped]);
-  };
+  const handleFilesAdded = (mapped) => setMediaFiles(prev => [...prev, ...mapped]);
+  const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
+  usePasteAttachments(files => handleFilesAdded(mapFilesToMedia(files)));
 
   const toggleRecord = async () => {
     if (recording) {
@@ -144,42 +140,14 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
         {/* Media insert */}
         <div>
           <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Insertar</p>
-          <input ref={fileRef} type="file" multiple accept="image/*,video/*" style={{ display: "none" }} onChange={handleFile} />
-          <div style={{ display: "flex", gap: 8 }}>
-            {[
-              { label: "Imagen",      accept: "image/*",  icon: "🖼" },
-              { label: "Tomar foto",  accept: "image/*",  icon: "📷", capture: true },
-              { label: "GIF",         accept: "image/gif",icon: "🎞" },
-            ].map(opt => (
-              <button key={opt.label} onClick={() => {
-                fileRef.current.accept = opt.accept;
-                if (opt.capture) fileRef.current.setAttribute("capture", "environment");
-                else fileRef.current.removeAttribute("capture");
-                fileRef.current.click();
-              }}
-                style={{ flex: 1, padding: "10px 6px", borderRadius: 12, border: `1px solid ${A}30`, background: `${A}0a`, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 600, color: A, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <span style={{ fontSize: 20 }}>{opt.icon}</span>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Media previews */}
-          {mediaFiles.length > 0 && (
-            <div style={{ display: "flex", gap: 8, marginTop: 10, overflowX: "auto" }}>
-              {mediaFiles.map((m, i) => (
-                <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                  {m.type === "image"
-                    ? <img src={m.url} alt="" onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
-                        style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, border: `1px solid ${A}30`, cursor: "pointer" }} />
-                    : <video src={m.url} onClick={() => openGallery({ items: mediaFiles, startIndex: i })}
-                        style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 10, cursor: "pointer" }} />}
-                  <button onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))}
-                    style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,0.7)", border: "none", cursor: "pointer", color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
+          <AttachmentGallery
+            mediaFiles={mediaFiles}
+            onAdd={handleFilesAdded}
+            onRemove={removeMedia}
+            onOpenViewer={i => openGallery({ items: mediaFiles, startIndex: i })}
+            accent={A}
+            accept="image/*,video/*"
+          />
         </div>
 
         {/* Tag people */}
