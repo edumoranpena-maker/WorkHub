@@ -38,7 +38,11 @@ import {
   updateRecapThread,
   updateThreadUpdate,
   fetchThreadComments,
-  fetchSubtemas,
+  fetchSubtemasCached,
+  getCachedSubtemas,
+  addCachedSubtema,
+  patchCachedSubtema,
+  removeCachedSubtema,
   createSubtema,
   toggleThreadPin,
 } from "../lib/recapsApi.js";
@@ -52,6 +56,7 @@ import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, LinkifiedText, merge
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory } from "../lib/workContext.jsx";
+import { PageContainer } from "../lib/layout.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -78,6 +83,10 @@ const C = {
   teal: "#22d3a0", tealDim: "rgba(34,211,160,0.14)",
 };
 const font = "'DM Sans', sans-serif";
+
+// Container widths now come from lib/layout.jsx's shared PageContainer —
+// Thread/Subtema use variant="reading" (800px), PostSection's own feed uses
+// variant="feed" (1200px). See that file for the full system.
 
 // ─── Mock data ─────────────────────────────────────────────────────────────────
 const MOCK_THREADS = [
@@ -966,6 +975,13 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
   const { pinned, rest } = useMemo(() => splitPinned(filtered), [filtered]);
   const grouped = useMemo(() => groupByMonth(rest), [rest]);
 
+  // Cards keep their original mobile size — widening a 2-column grid's
+  // columns to fill a much wider desktop container is exactly the "phone UI
+  // stretched" look this pass fixes. 3 columns on desktop instead keeps each
+  // card close to its original width while using the extra room.
+  const isDesktop = useIsDesktop();
+  const gridStyle = { display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr 1fr", gap: 10, marginBottom: 4 };
+
   // Per-section collapse state, keyed by section id ("pinned" or a month
   // label). Plain component state — same pattern this file already uses for
   // `threads` itself (see the STATE ARCHITECTURE note at the top of this
@@ -993,7 +1009,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
         <div>
           <MonthDivider label="Fijados" pinned collapsed={!!collapsed.pinned} onToggle={() => toggleSection("pinned")} />
           <CollapsibleSection collapsed={!!collapsed.pinned}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+            <div style={gridStyle}>
               {pinned.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
                   onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
@@ -1008,7 +1024,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
         <div key={month}>
           <MonthDivider label={month} collapsed={!!collapsed[month]} onToggle={() => toggleSection(month)} />
           <CollapsibleSection collapsed={!!collapsed[month]}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+            <div style={gridStyle}>
               {items.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
                   onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
@@ -1251,6 +1267,31 @@ function CommentsSheet({ threadId, onClose }) {
 
 
 // ─── SubtemaCard — compact card shown inside ThreadView ───────────────────────
+// Mirrors SubtemaCard's exact box model (padding, border-radius, marginBottom,
+// icon size) so swapping skeleton → real cards causes zero layout shift.
+// Shimmer via the "post-kf" @keyframes sheet already injected at the top of
+// this file (shimmer used elsewhere for other loading states in the app).
+function SubtemaCardSkeleton() {
+  const bar = (w, h = 10) => (
+    <div style={{
+      width: w, height: h, borderRadius: 5, marginTop: h === 10 ? 0 : 6,
+      background: `linear-gradient(90deg, ${C.card} 25%, ${C.cardHover} 50%, ${C.card} 75%)`,
+      backgroundSize: "200% 100%", animation: "shimmer 1.6s ease-in-out infinite",
+    }} />
+  );
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "12px 14px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, background: `linear-gradient(90deg, ${C.card} 25%, ${C.cardHover} 50%, ${C.card} 75%)`, backgroundSize: "200% 100%", animation: "shimmer 1.6s ease-in-out infinite" }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {bar("58%")}
+          {bar("34%", 8)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SubtemaCard({ subtema, onClick }) {
   const [hov, setHov] = useState(false);
   return (
@@ -1290,6 +1331,7 @@ function SubtemaCard({ subtema, onClick }) {
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
 function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor }) {
+  const isDesktop = useIsDesktop();
   const [subtema, setSubtema] = useState(initialSubtema);
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingSubtema, setEditingSubtema] = useState(false);
@@ -1367,6 +1409,8 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
           </span>
         </motion.div>
 
+        {/* Body content — capped + centered; only the TopBar above stays full width */}
+        <PageContainer isDesktop={isDesktop} variant="reading">
         {/* Subtema header */}
         <div style={{
           background: justEntered ? `${C.teal}10` : C.card,
@@ -1443,6 +1487,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <p style={{ textAlign: "center", color: C.textMuted, fontFamily: font, fontSize: 13, padding: "24px 0" }}>No updates yet.</p>
           )}
         </div>
+        </PageContainer>
       </div>
 
       {/* Composer overlay — create update */}
@@ -1555,13 +1600,18 @@ function buildThreadMediaSequence(thread) {
 }
 
 function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+  const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
-  const [thread, setThread] = useState(initialThread);
+  const [thread, setThread] = useState(() => {
+    const cached = getCachedSubtemas(initialThread.id);
+    return cached ? { ...initialThread, subtemas: cached } : initialThread;
+  });
   const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ scrollTop: 0, openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
   const [showComments, setShowComments] = useState(false);
   const [openSubtema, setOpenSubtema] = useState(null); // resolved once thread.subtemas loads — see fetch effect below
+  const [subtemasLoading, setSubtemasLoading] = useState(() => !getCachedSubtemas(initialThread.id));
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingThread, setEditingThread] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
@@ -1601,17 +1651,37 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const threadLinks = useLinkPreviews(thread.content);
   const threadMedia = mergeLinksIntoMedia(thread.media, threadLinks);
 
-  // Subtemas are persisted (recap_threads rows) — load them when the Thread opens.
+  // Subtemas are persisted (recap_threads rows) — load them when the Thread
+  // opens. Cache-first: fetchSubtemasCached only hits Supabase on the FIRST
+  // open of a given thread.id this session; every reopen after that resolves
+  // from memory (see getCachedSubtemas/fetchSubtemasCached in recapsApi.js).
   useEffect(() => {
     let cancelled = false;
-    fetchSubtemas(thread.id).then(subtemas => {
-      if (cancelled) return;
-      setThread(t => ({ ...t, subtemas }));
-      // Restore whichever Subtema was open, now that we have real data to find it in.
+
+    // Restoring whichever Subtema was open needs the resolved list either
+    // way (cache hit or real fetch) — pulled out so both paths share it.
+    const applyRestoration = (subtemas) => {
       if (tmem.openSubtemaId) {
         const found = subtemas.find(s => s.id === tmem.openSubtemaId);
         if (found) setOpenSubtema(found);
       }
+    };
+
+    const cached = getCachedSubtemas(thread.id);
+    if (cached) {
+      // Already resolved (thread state above was seeded from this same
+      // cache) — nothing to fetch, no skeleton, just restore selection.
+      setSubtemasLoading(false);
+      applyRestoration(cached);
+      return;
+    }
+
+    setSubtemasLoading(true);
+    fetchSubtemasCached(thread.id).then(subtemas => {
+      if (cancelled) return;
+      setThread(t => ({ ...t, subtemas }));
+      setSubtemasLoading(false);
+      applyRestoration(subtemas);
     });
     return () => { cancelled = true; };
   }, [thread.id]); // eslint-disable-line
@@ -1817,6 +1887,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
           </span>
         </motion.div>
 
+        {/* Body content — capped + centered; only the TopBar above stays full width */}
+        <PageContainer isDesktop={isDesktop} variant="reading">
         {/* Root Post */}
         <div style={{
           background: tint ? `${C.teal}10` : C.card,
@@ -1930,7 +2002,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
         </div>
 
         {/* Subtemas */}
-        {(subtemas.length > 0 || isHost) && (
+        {(subtemas.length > 0 || isHost || (interactive && subtemasLoading)) && (
           <div style={{ padding: "16px 16px 0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <div style={{ height: 1, flex: 1, background: `linear-gradient(90deg, ${C.teal}30, transparent)` }} />
@@ -1939,13 +2011,25 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               </span>
               <div style={{ height: 1, flex: 1, background: `linear-gradient(270deg, ${C.teal}30, transparent)` }} />
             </div>
-            {subtemas.map((sub) => (
-              <SubtemaCard key={sub.id} subtema={sub} onClick={interactive ? (() => openSubtemaView(sub)) : undefined} />
-            ))}
+            <AnimatePresence mode="wait">
+              {interactive && subtemasLoading ? (
+                <motion.div key="skeleton" exit={{ opacity: 0 }} transition={{ duration: 0.22 }}>
+                  <SubtemaCardSkeleton />
+                  <SubtemaCardSkeleton />
+                </motion.div>
+              ) : (
+                <motion.div key="real" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
+                  {subtemas.map((sub) => (
+                    <SubtemaCard key={sub.id} subtema={sub} onClick={interactive ? (() => openSubtemaView(sub)) : undefined} />
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
         <div style={{ height: 90 }} />
+        </PageContainer>
       </>
     );
   };
@@ -2003,8 +2087,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
               <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
                 parentVisibility={thread.visibility}
-                onSubtemaEdited={(subId, patch) => setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) }))}
-                onSubtemaDeleted={(subId) => setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) }))}
+                onSubtemaEdited={(subId, patch) => { setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) })); patchCachedSubtema(thread.id, subId, patch); }}
+                onSubtemaDeleted={(subId) => { setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) })); removeCachedSubtema(thread.id, subId); }}
                 showComposer={showComposer && composerMode === "update"}
                 onHideComposer={onHideComposer}
                 openGalleryFor={openGalleryFor} />
@@ -2199,8 +2283,6 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const openComposer = (mode) => { setFabMenuOpen(false); setActiveComposer(mode); };
   const closeComposer = () => setActiveComposer(null);
 
-  const isDesktop = useIsDesktop();
-
   // ── Load from Supabase ─────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -2346,81 +2428,25 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
   // ── Feed panel ─────────────────────────────────────────────────────────────
-  // Two modes:
-  //   Desktop: absolute-positioned full-height flex column (own scroll)
-  //   Mobile:  normal document flow — no height constraint, no inner overflow
-  //            Parent (unified scroll in App.jsx) handles scroll
-
-  // ── DESKTOP ────────────────────────────────────────────────────────────────
+  // Single render path for both platforms now — Post's own width, height and
+  // scroll are entirely delegated to the App-level layout system (PageContainer
+  // caps the width, unifiedScrollRef owns the actual scrolling). Post never
+  // sizes or centers itself. Thread is a real fullscreen overlay portaled to
+  // document.body, independent of whatever height this feed panel happens to
+  // have — that's what makes it safe to live inside a content-driven
+  // (non-fixed-height) ancestor chain instead of needing its own internal
+  // `height:100%` + `overflow:hidden` scroll box.
   // fabProps: passed to module-level GreenFAB to keep its reference stable.
   const fabProps = { fabVisible, fabMenuOpen, setFabMenuOpen, openComposer };
-  if (isDesktop) {
-    return (
-      <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          {/* ── Desktop feed / thread panel (inlined — no wrapper component) ── */}
-          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-              <div style={{ padding: "12px 28px 10px", flexShrink: 0 }}>
-                <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
-              </div>
-              <div ref={feedContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 28px 24px" }}>
-                {loadingThreads ? (
-                  <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                    <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                    <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
-                  </div>
-                ) : (
-                  <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                    onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                    onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
-                )}
-              </div>
-            </div>
+  const isDesktop = useIsDesktop();
 
-            {/* Thread — real overlay. PostFeed above never unmounts, its scroll never moves.
-                Static key: this shell only mounts/unmounts on true open/close, never on
-                switching between adjacent threads (only ThreadView remounts, below). */}
-            <AnimatePresence>
-              {openThread && (
-                <motion.div key="thread-overlay" {...isolateOverlayGestures}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-                  style={{ position: "absolute", inset: 0, zIndex: 50, background: C.surface }}>
-                  <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
-                    onNavigateAdjacent={navigateAdjacentThread}
-                    adjacentThreads={adjacentThreads}
-                    onStatusChange={handleStatusChange}
-                    onThreadEdited={handleThreadEdited}
-                    onThreadDeleted={handleDeleteThread}
-                    showComposer={activeComposer !== null}
-                    composerMode={activeComposer}
-                    onHideComposer={closeComposer}
-                    onSubtemaChange={setSubtemaOpen}
-                    onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-        {isHost && openThread && <GreenFAB {...fabProps} isInSubtema={subtemaOpen} />}
-        {editingFeedThread && (
-          <PostComposer mode="post" isEditing
-            initial={{ title: editingFeedThread.title, content: editingFeedThread.content, visibility: editingFeedThread.visibility, mediaFiles: editingFeedThread.media }}
-            onSubmit={handleFeedEditSubmit}
-            onClose={() => setEditingFeedThread(null)} />
-        )}
-      </div>
-    );
-  }
-
-  // ── MOBILE ─────────────────────────────────────────────────────────────────
   // PostFeed is always mounted, in normal flow (unified scroll in App.jsx
   // handles its scrolling). Thread is a real fullscreen overlay — a sibling,
   // never a replacement — so the feed underneath never unmounts, never loses
   // its scroll position, and needs no restoration logic when the overlay closes.
   return (
     <>
+      <PageContainer isDesktop={isDesktop} variant="feed">
       <div style={{ background: C.surface, minHeight: 400 }}>
         {/* Filter bar */}
         <div style={{ padding: "12px 14px 10px" }}>
@@ -2441,6 +2467,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
           )}
         </div>
       </div>
+      </PageContainer>
 
       {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement.
           key is static ("thread-overlay"), NOT tied to openThread.id — this wrapper only
@@ -2470,7 +2497,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 composerMode={activeComposer}
                 onHideComposer={closeComposer}
                 onSubtemaChange={setSubtemaOpen}
-                onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
+                onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); addCachedSubtema(threadId, sub); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
               />
             </motion.div>
           )}
