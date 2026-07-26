@@ -207,15 +207,18 @@ export async function fetchSubtemas(threadId) {
 
   const subtemaIds = subtemas.map(s => s.id);
 
-  const { data: allMedia } = await supabase.from("thread_media").select("*").in("thread_id", subtemaIds);
+  // thread_media and thread_updates don't depend on each other — only on
+  // subtemaIds, which we already have — so they run concurrently instead of
+  // one waiting for the other. This is the only place the original sequence
+  // had a needless wait; update_media below still has to wait for
+  // allUpdates, since it depends on knowing which update rows exist.
+  const [{ data: allMedia }, { data: allUpdates }] = await Promise.all([
+    supabase.from("thread_media").select("*").in("thread_id", subtemaIds),
+    supabase.from("thread_updates").select("*").in("thread_id", subtemaIds).order("created_at", { ascending: true }),
+  ]);
+
   const mediaMap = {};
   (allMedia ?? []).forEach(m => { (mediaMap[m.thread_id] ??= []).push(m); });
-
-  const { data: allUpdates } = await supabase
-    .from("thread_updates")
-    .select("*")
-    .in("thread_id", subtemaIds)
-    .order("created_at", { ascending: true });
 
   const updateIds = (allUpdates ?? []).map(u => u.id);
   const { data: allUpdateMedia } = updateIds.length
@@ -231,6 +234,55 @@ export async function fetchSubtemas(threadId) {
   });
 
   return subtemas.map(s => rowToThread(s, mediaMap[s.id] ?? [], updatesBySubtema[s.id] ?? []));
+}
+
+// ─── Subtemas cache (per-thread, session-scoped) ────────────────────────────
+// A plain module-level Map, not React state — it lives as long as the page
+// does (cleared only on a full reload), independent of any component
+// mounting/unmounting. ThreadView is recreated every time a Thread portal
+// opens, so without this the fetch would repeat on every single open; with
+// it, only the FIRST open of a given thread ever touches the network.
+//
+// Kept here (not inside Post.jsx) so it's the data layer's cache, not one
+// component's private state — any future caller that needs a thread's
+// Subtemas goes through the same cache automatically instead of each
+// consumer inventing its own.
+//
+// Mutations (create/edit/delete a Subtema) patch this map directly — see
+// addCachedSubtema/patchCachedSubtema/removeCachedSubtema — so the cache
+// never goes stale relative to what's shown on screen, and a later re-open
+// never "resurrects" pre-edit data.
+const subtemasCache = new Map();
+
+export function getCachedSubtemas(threadId) {
+  return subtemasCache.get(threadId);
+}
+
+/** Cache-aware wrapper around fetchSubtemas. First call for a given
+ *  threadId hits Supabase and populates the cache; every subsequent call for
+ *  the same threadId resolves from memory — no network request at all. */
+export async function fetchSubtemasCached(threadId) {
+  if (subtemasCache.has(threadId)) return subtemasCache.get(threadId);
+  const subtemas = await fetchSubtemas(threadId);
+  subtemasCache.set(threadId, subtemas);
+  return subtemas;
+}
+
+export function addCachedSubtema(threadId, subtema) {
+  const list = subtemasCache.get(threadId);
+  subtemasCache.set(threadId, list ? [...list, subtema] : [subtema]);
+}
+
+export function patchCachedSubtema(threadId, subtemaId, patch) {
+  const list = subtemasCache.get(threadId);
+  if (!list) return;
+  subtemasCache.set(threadId, list.map(s => s.id === subtemaId ? { ...s, ...patch } : s));
+}
+
+export function removeCachedSubtema(threadId, subtemaId) {
+  const list = subtemasCache.get(threadId);
+  if (!list) return;
+  subtemasCache.set(threadId, list.filter(s => s.id !== subtemaId));
 }
 
 
