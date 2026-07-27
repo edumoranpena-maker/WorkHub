@@ -8,6 +8,19 @@ import { X, Mic, Image, ChevronLeft, Send, Type, Smile, Pencil } from "lucide-re
 import { useImageViewer } from "./GlobalImageViewer.jsx";
 import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
 import AttachmentGallery from "./AttachmentZone.jsx";
+import { PageContainer } from "../lib/layout.jsx";
+
+// Local per-file copy, same convention as every other file (Post.jsx,
+// Announcements.jsx, Stats.jsx, App.jsx each keep their own).
+function useIsDesktop() {
+  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setV(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return v;
+}
 
 const font = "'DM Sans', sans-serif";
 const A    = "#f59e0b"; // Announcements orange
@@ -20,6 +33,7 @@ const springTrans = { type: "spring", stiffness: 380, damping: 38 };
 
 // ─── NewDiffusionSheet ────────────────────────────────────────────────────────
 export function NewDiffusionSheet({ onClose, onPublish }) {
+  const isDesktop = useIsDesktop();
   const [postType,   setPostType]   = useState("post"); // post | poll | reveal
   const [text,       setText]       = useState("");
   const [status,     setStatus]     = useState("vigente");
@@ -89,6 +103,7 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
       </div>
 
       {/* Post type chips */}
+      <PageContainer isDesktop={isDesktop} variant="feed">
       <div style={{ display: "flex", gap: 8, padding: "14px 16px 10px", borderBottom: `1px solid ${A}20` }}>
         {POST_TYPES.map(t => (
           <button key={t.id} onClick={() => setPostType(t.id)}
@@ -163,6 +178,7 @@ export function NewDiffusionSheet({ onClose, onPublish }) {
           {publishing ? "Difundiendo…" : "Difundir"}
         </motion.button>
       </div>
+      </PageContainer>
       <ViewerPortal />
     </motion.div>
   );

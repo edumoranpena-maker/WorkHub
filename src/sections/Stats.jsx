@@ -7,34 +7,67 @@
  *   1. Stats (default export) — an ordinary PlanSpace section, mounted by
  *      App.jsx exactly like Post/Announcements. Same behavior as any other
  *      section (unified scroll, hideable profile, sticky chips, etc). Shows
- *      a welcome blurb, a placeholder grid of headline metrics (wired to
- *      Doers Journal later), and a CTA into the full Dashboard.
+ *      a welcome blurb, a grid of native PlanSpace cards fed by real
+ *      All-Time metrics from Doers Journal, and a CTA into the full
+ *      Dashboard.
  *
  *   2. StatsDashboardPortal — a real fullscreen overlay, architecturally
  *      identical to ThreadView's overlay in Post.jsx: createPortal straight
- *      to document.body (so position:fixed escapes unifiedScrollRef's
- *      clipping on mobile and the animated section wrapper on desktop), with
- *      its own sticky topbar and a Back button. Doers Journal now lives
- *      inside it via <iframe src="https://doers-journal.vercel.app/">,
- *      keeping its own sticky header, modals, and scroll completely intact —
- *      nothing here or in Doers Journal needs to change to reconcile the two
- *      into one scroll.
+ *      to document.body, its own sticky topbar, Doers Journal embedded via
+ *      <iframe>. This is also the only place the postMessage bridge lives —
+ *      the iframe here is the single source of truth; PlanSpace never mounts
+ *      a second, hidden copy of the Dashboard just to fetch data.
  *
- * Freezing the section underneath: exactly like Post.jsx reports its Thread
- * overlay up via onThreadChange, Stats reports its Dashboard overlay up via
- * onDashboardChange so App.jsx can lock the unified scroll / hide the profile
- * header while the portal covers the screen (see App.jsx's
- * insideFullscreenOverlay wiring).
+ * ── The integration (this pass) ─────────────────────────────────────────
+ * Protocol lives in lib/doersJournalBridge.js (shared, versioned, namespaced
+ * envelope — see that file for the full message catalogue and the types
+ * reserved for later features).
  *
- * NOT implemented yet (by design, this pass only validates the visual embed):
- *   - any postMessage bridge / auth handoff between PlanSpace and Doers Journal
- *   - metrics sync (the summary grid above stays on placeholder values)
- *   - the "Registrar Trade" action
+ * Flow, every time the Dashboard portal opens:
+ *   1. iframe loads → onLoad fires.
+ *   2. PlanSpace posts MSG.READY, then MSG.STATS_REQUEST { scope: "all-time" }.
+ *   3. Doers Journal responds with MSG.STATS_ALL_TIME { winrate, expectancy,
+ *      totalTrades, profit } — always the All-Time totals, regardless of
+ *      whatever timeframe (1M/3M/YTD/...) is selected inside the Dashboard's
+ *      own UI. Doers Journal may also push this message again later on its
+ *      own (e.g. right after the user logs a trade) — PlanSpace just keeps
+ *      listening for as long as the portal is mounted.
+ *   3. Stats (the parent) stores the parsed result and renders it into its
+ *      own native cards — Doers Journal's visuals are never read/scraped.
+ *
+ * Because the only channel is the iframe inside the portal, the summary
+ * cards keep showing "—" until the user opens the Dashboard at least once
+ * per Stats mount. Once received, the values persist in Stats' own state
+ * (so closing/reopening the portal doesn't re-blank the cards) until the
+ * whole Stats component unmounts.
+ *
+ * NOT implemented yet (by design, this pass only covers the read-only sync):
+ *   - "Nuevo Trade" (MSG type reserved: trade:open-form)
+ *   - profile metric sync (MSG type reserved: profile:metric-update)
+ *   - any timeframe other than All-Time
  */
-import { useState, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ChevronLeft, Loader } from "lucide-react";
+import {
+  DOERS_JOURNAL_URL, MSG,
+  postToDoersJournal, readBridgeMessage, parseAllTimeStatsPayload,
+} from "../lib/doersJournalBridge.js";
+import { PageContainer } from "../lib/layout.jsx";
+
+// ─── useIsDesktop ───────────────────────────────────────────────────────────
+// Local per-file copy, same convention as every other section (Post.jsx,
+// Announcements.jsx, App.jsx each keep their own).
+function useIsDesktop() {
+  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setV(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return v;
+}
 
 // ─── Design Tokens ──────────────────────────────────────────────────────────
 // Mirrors the token set used by Post.jsx / Announcements.jsx. Kept local to
@@ -50,7 +83,27 @@ const C = {
 };
 const font = "'DM Sans', sans-serif";
 
-const DOERS_JOURNAL_URL = "https://doers-journal.vercel.app/";
+// Container widths now come from lib/layout.jsx's shared PageContainer — the
+// main Stats screen uses variant="feed" (1200px), the Dashboard portal uses
+// variant="dashboard" (1400px, wide enough for Doers Journal's tables/charts).
+
+// ─── Display formatting ─────────────────────────────────────────────────────
+// Pure presentation — Doers Journal sends raw numbers, PlanSpace decides how
+// its own cards render them (kept in one place so it's easy to change later
+// without touching the bridge contract).
+const fmtWinrate    = v => `${Math.round(v)}%`;
+const fmtExpectancy = v => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
+const fmtTrades     = v => `${v}`;
+const fmtProfit     = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}R`;
+
+function summaryFromStats(stats) {
+  return [
+    { label: "Winrate",    value: stats ? fmtWinrate(stats.winrate)       : "—", color: !stats ? C.textMuted : stats.winrate >= 50 ? C.green : C.red },
+    { label: "Expectancy", value: stats ? fmtExpectancy(stats.expectancy) : "—", color: !stats ? C.textMuted : stats.expectancy >= 0 ? C.green : C.red },
+    { label: "Trades",     value: stats ? fmtTrades(stats.totalTrades)    : "—", color: C.accentLight },
+    { label: "Profit",     value: stats ? fmtProfit(stats.profit)         : "—", color: !stats ? C.textMuted : stats.profit >= 0 ? C.green : C.red },
+  ];
+}
 
 // ─── Stats — Level 1, the section itself ───────────────────────────────────
 // onDashboardChange: notifies App.jsx whenever the fullscreen Dashboard
@@ -58,18 +111,18 @@ const DOERS_JOURNAL_URL = "https://doers-journal.vercel.app/";
 // section underneath (unified scroll + profile header) can be frozen the
 // same way it already is for Thread.
 export default function Stats({ onDashboardChange }) {
+  const isDesktop = useIsDesktop();
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
-  // Placeholder — will be populated from Doers Journal once the iframe/bridge
-  // is wired up. Keys chosen to match the metrics Doers Journal exposes.
-  const summary = [
-    { label: "Winrate",    value: "—", color: C.green       },
-    { label: "Expectancy", value: "—", color: C.accentLight },
-    { label: "Trades",     value: "—", color: C.amber       },
-    { label: "Profit",     value: "—", color: C.green       },
-  ];
+  // All-Time summary as last received from Doers Journal. null until the
+  // user has opened the Dashboard at least once — see summaryFromStats,
+  // which falls back to "—" placeholders while this is null.
+  const [allTimeStats, setAllTimeStats] = useState(null);
+
+  const summary = summaryFromStats(allTimeStats);
 
   return (
+    <PageContainer isDesktop={isDesktop} variant="feed">
     <div style={{ padding: "20px 18px 32px" }}>
       {/* Welcome message */}
       <div style={{ marginBottom: 18 }}>
@@ -77,11 +130,11 @@ export default function Stats({ onDashboardChange }) {
           Tus Stats
         </h2>
         <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.5 }}>
-          Un resumen rápido de tu desempeño. Abre el Dashboard completo para el detalle día a día de Doers Journal.
+          Resumen All-Time desde Doers Journal. Abre el Dashboard completo para el detalle día a día.
         </p>
       </div>
 
-      {/* Summary grid — headline metrics, filled in from Doers Journal later */}
+      {/* Summary grid — native PlanSpace cards, fed by Doers Journal's All-Time stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
         {summary.map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
@@ -91,6 +144,12 @@ export default function Stats({ onDashboardChange }) {
           </motion.div>
         ))}
       </div>
+
+      {!allTimeStats && (
+        <p style={{ margin: "-10px 0 20px", fontFamily: font, fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
+          Abre el Dashboard para sincronizar tus métricas.
+        </p>
+      )}
 
       {/* CTA — opens the fullscreen Dashboard portal, not a navigation/replace */}
       <motion.button whileTap={{ scale: 0.97 }} onClick={() => setDashboardOpen(true)}
@@ -103,8 +162,10 @@ export default function Stats({ onDashboardChange }) {
         open={dashboardOpen}
         onClose={() => setDashboardOpen(false)}
         onDashboardChange={onDashboardChange}
+        onStatsUpdate={setAllTimeStats}
       />
     </div>
+    </PageContainer>
   );
 }
 
@@ -118,13 +179,18 @@ export default function Stats({ onDashboardChange }) {
 // Opens/closes exactly like ThreadView: AnimatePresence fade, mounted only
 // while `open` is true, closed via the topbar Back button — nothing else can
 // dismiss it (no backdrop-click-to-close), same as Thread.
-function StatsDashboardPortal({ open, onClose, onDashboardChange }) {
+//
+// onStatsUpdate: bubbles a parsed { winrate, expectancy, totalTrades, profit }
+// up to Stats every time a valid "stats:all-time" message arrives.
+function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate }) {
+  const isDesktop = useIsDesktop();
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const iframeRef = useRef(null);
 
   // Reset the loading state each time the portal is reopened, so a second
   // visit shows the spinner again instead of a stale "loaded" flag from the
-  // previous mount — the iframe itself remounts too (see `open &&` below,
-  // which unmounts it on close).
+  // previous mount — the iframe itself remounts too (unmounted entirely on
+  // close, since this whole tree is `{open && (...)}`).
   useLayoutEffect(() => { if (open) setIframeLoaded(false); }, [open]);
 
   // Reports open/closed up to App.jsx — same useLayoutEffect timing as
@@ -132,6 +198,38 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange }) {
   // so the freeze on the section underneath (scroll lock + hidden profile
   // header) commits before paint, no one-frame flash of the frozen section.
   useLayoutEffect(() => { onDashboardChange?.(open); }, [open]); // eslint-disable-line
+
+  // The bridge: listens for postMessage from the iframe for as long as the
+  // portal is open, tears the listener down on close/unmount. Only accepts
+  // messages whose origin AND source window match this exact iframe.
+  useEffect(() => {
+    if (!open) return;
+    function handleMessage(event) {
+      const msg = readBridgeMessage(event, iframeRef.current?.contentWindow);
+      if (!msg) return; // wrong origin/source/envelope — ignore, don't throw
+      if (msg.type === MSG.STATS_ALL_TIME) {
+        const parsed = parseAllTimeStatsPayload(msg.payload);
+        if (parsed) onStatsUpdate?.(parsed);
+        // A malformed payload is silently dropped rather than blanking out
+        // whatever the cards were already showing.
+      }
+      // Unknown types are ignored on purpose — forward-compatible with
+      // message types this build doesn't handle yet (see bridge file).
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [open]); // eslint-disable-line
+
+  // Once the iframe has actually loaded, tell Doers Journal PlanSpace is
+  // ready and ask for the All-Time snapshot. Explicit request (rather than
+  // relying purely on Doers Journal pushing on its own) so a fresh mount
+  // always gets a snapshot instead of waiting for the next data change.
+  const handleIframeLoad = () => {
+    setIframeLoaded(true);
+    const target = iframeRef.current?.contentWindow;
+    postToDoersJournal(target, MSG.READY);
+    postToDoersJournal(target, MSG.STATS_REQUEST, { scope: "all-time" });
+  };
 
   return createPortal(
     <AnimatePresence>
@@ -157,31 +255,38 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange }) {
               own layout (sticky header, modals, scroll) drives everything
               inside it, completely independent of PlanSpace's scroll. */}
           <div style={{ flex: 1, position: "relative", overflow: "hidden", background: C.bg }}>
-            {/* Loading state — shown until the iframe fires onLoad */}
-            {!iframeLoaded && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, background: C.bg, zIndex: 1 }}>
-                <Loader size={20} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                <span style={{ fontFamily: font, fontSize: 13, color: C.textMuted }}>Cargando Dashboard…</span>
-                <style>{"@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }"}</style>
-              </div>
-            )}
+            {/* Capped + centered workspace column — the iframe lives in here,
+                sized to fill it (100%/100%), while the outer flex:1 area above
+                keeps showing background:C.bg on the sides, same "chrome vs
+                content" split used everywhere else in this redesign. */}
+            <PageContainer isDesktop={isDesktop} variant="dashboard" style={{ position: "relative", height: "100%" }}>
+              {/* Loading state — shown until the iframe fires onLoad */}
+              {!iframeLoaded && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, background: C.bg, zIndex: 1 }}>
+                  <Loader size={20} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                  <span style={{ fontFamily: font, fontSize: 13, color: C.textMuted }}>Cargando Dashboard…</span>
+                  <style>{"@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }"}</style>
+                </div>
+              )}
 
-            <iframe
-              key="doers-journal-iframe"
-              src={DOERS_JOURNAL_URL}
-              title="Doers Journal Dashboard"
-              onLoad={() => setIframeLoaded(true)}
-              style={{
-                position: "absolute", inset: 0,
-                width: "100%", height: "100%",
-                border: "none", display: "block",
-                background: C.bg,
-              }}
-              // No sandbox restrictions — Doers Journal needs its own scripts,
-              // storage and forms to run normally. Revisit once the
-              // PlanSpace ↔ Doers Journal bridge (postMessage/auth) is defined.
-              allow="clipboard-write"
-            />
+              <iframe
+                ref={iframeRef}
+                key="doers-journal-iframe"
+                src={DOERS_JOURNAL_URL}
+                title="Doers Journal Dashboard"
+                onLoad={handleIframeLoad}
+                style={{
+                  position: "absolute", inset: 0,
+                  width: "100%", height: "100%",
+                  border: "none", display: "block",
+                  background: C.bg,
+                }}
+                // No sandbox restrictions — Doers Journal needs its own scripts,
+                // storage and forms to run normally. Revisit once "Nuevo Trade"
+                // and auth handoff are in scope.
+                allow="clipboard-write"
+              />
+            </PageContainer>
           </div>
         </motion.div>
       )}

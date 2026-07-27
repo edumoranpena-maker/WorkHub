@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { InstagramStoryCreator, NewDiffusionSheet } from "../components/Sheets.jsx";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
+import { PageContainer } from "../lib/layout.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
 import {
   ChevronLeft, Plus, X, Heart, MessageCircle, Share2, Bookmark,
@@ -9,7 +9,6 @@ import {
   Globe, Users, Lock, Send, ChevronRight, ChevronDown,
   BarChart2, Clock, Eye, EyeOff, CalendarDays, FileText,
   Megaphone, Hash, MessageSquare, Volume2, Play, Pause,
-Loader,
 } from "lucide-react";
 import {
   fetchAnnouncements,
@@ -1124,8 +1123,10 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
   };
 
   // ── Feed panel (shared between mobile and desktop) ─────────────────────────
+  // overflowY is always "visible" now — scrolling is the ancestor's job
+  // (unifiedScrollRef in App.jsx) on both platforms, never this panel's own.
   const FeedPanel = () => (
-    <div style={{ flex: 1, overflowY: isDesktop ? "auto" : "visible", padding: "0 0 40px" }}>
+    <div style={{ padding: "0 0 40px" }}>
       {/* News / Stories bar */}
       <div style={{ padding: "0 16px 4px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 4 }}>
@@ -1145,70 +1146,44 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
     </div>
   );
 
-  // ── Mobile layout ──────────────────────────────────────────────────────────
-  if (!isDesktop) {
-    return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: C.surface }}>
-        {/* Top bar — hidden when used as tab inside mobile profile */}
-        {!mobileTab && (
-          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-            style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f2`, backdropFilter: "blur(24px)", flexShrink: 0 }}>
-            <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: A, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-              <ChevronLeft size={19} strokeWidth={2.2} /> Back
-            </button>
-            <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, textAlign: "center" }}>Announcements</span>
-            {isHost && (
-              <motion.button whileTap={{ scale: 0.88 }} onClick={() => onShowComposer ? onShowComposer() : setShowComposer(true)}
-                style={{ width: 34, height: 34, borderRadius: 10, background: `${A}18`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                <Plus size={18} color={A} strokeWidth={2.5} />
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-
-        <FeedPanel />
-
-        {/* Story viewer — rendered by App.jsx on mobile to escape transform stacking context */}
-
-        {/* Story uploader — rendered by App.jsx on mobile to escape transform stacking context */}
-        {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile />}
-
-        {/* Post composer — rendered by App.jsx on mobile to escape transform stacking context */}
-
-        {/* Orange FAB rendered from App.jsx to stay fixed regardless of scroll */}
-      </div>
-    );
-  }
-
-  // ── Desktop layout ─────────────────────────────────────────────────────────
+  // ── Single render path for both platforms ───────────────────────────────────
+  // Width, height and scrolling are entirely delegated to the App-level layout
+  // system now (PageContainer caps the width, unifiedScrollRef owns the actual
+  // scroll) — Announcements never sizes or centers itself. The old desktop-only
+  // fork had its own `height:"100%"` + internal `overflowY:"auto"` scrollbox
+  // AND its own `maxWidth:760` wrapper, both of which duplicated decisions
+  // PageContainer now makes once for the whole app; its Story viewer/uploader/
+  // composer AnimatePresence blocks were dead code in practice too — App.jsx's
+  // single call site always provides onShowStoryViewer/onShowComposer/etc, so
+  // those overlays were already rendered at the App level for every platform.
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden", background: C.bg }}>
+    <div style={{ background: C.surface }}>
+      {/* Top bar — hidden when used as tab inside mobile profile (mobileTab is
+          always true from App.jsx's single call site, so this stays hidden;
+          kept as a fallback for any future standalone usage) */}
+      {!mobileTab && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f2`, backdropFilter: "blur(24px)", flexShrink: 0 }}>
+          <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 3, color: A, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+            <ChevronLeft size={19} strokeWidth={2.2} /> Back
+          </button>
+          <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 17, fontWeight: 700, textAlign: "center" }}>Announcements</span>
+          {isHost && (
+            <motion.button whileTap={{ scale: 0.88 }} onClick={() => onShowComposer ? onShowComposer() : setShowComposer(true)}
+              style={{ width: 34, height: 34, borderRadius: 10, background: `${A}18`, border: `1px solid ${A}30`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <Plus size={18} color={A} strokeWidth={2.5} />
+            </motion.button>
+          )}
+        </motion.div>
+      )}
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-          <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 24px" }}>
-            <FeedPanel />
-          </div>
-        </div>
-      </div>
+      <PageContainer isDesktop={isDesktop} variant="reading">
+        <FeedPanel />
+      </PageContainer>
 
-      {/* Story viewer */}
-      <AnimatePresence>
-        {viewingStory !== null && (
-          <StoryViewer stories={stories} startIndex={viewingStory} onClose={() => setViewingStory(null)} isHost={isHost} />
-        )}
-      </AnimatePresence>
-
-      {/* Story uploader */}
-      <AnimatePresence>
-        {showUploader && <InstagramStoryCreator onClose={() => setShowUploader(false)} onPublish={(data) => { handlePublishStory && handlePublishStory(data); setShowUploader(false); }} />}
-        {false && <StoryUploader onClose={() => setShowUploader(false)} onPublish={handlePublishStory} isMobile={false} />}
-      </AnimatePresence>
-
-      {/* Post composer */}
-      <AnimatePresence>
-        {showComposer && <NewDiffusionSheet onClose={() => setShowComposer(false)} onPublish={(data) => { handlePublishPost && handlePublishPost({ type: data.postType, content: data.text, imgPreview: data.mediaFiles?.[0]?.url || null, status: data.status }); setShowComposer(false); }} />}
-      </AnimatePresence>
+      {/* Story viewer / uploader / composer — rendered by App.jsx (both
+          platforms) to escape transform stacking context; see onShowStory /
+          onShowComposer above */}
     </div>
   );
 }

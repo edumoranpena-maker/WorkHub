@@ -43,6 +43,7 @@ import { useComposerNavLock } from "../lib/composerLock.jsx";
 import { useImageViewer } from "./GlobalImageViewer.jsx";
 import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
 import AttachmentGallery from "./AttachmentZone.jsx";
+import { PageContainer, CONTAINER_WIDTHS } from "../lib/layout.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -51,7 +52,20 @@ const C = {
   teal: "#22d3a0", accent: "#7c4dff", accentLight: "#9d71ff", red: "#ff4f6a",
 };
 
+// Local per-file copy, same convention as every other file (Post.jsx,
+// Announcements.jsx, App.jsx each keep their own).
+function useIsDesktop() {
+  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setV(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return v;
+}
+
 export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], onSubmit, onClose }) {
+  const isDesktop = useIsDesktop();
   const isPost = mode === "post";
   const isSubtema = mode === "subtema";
 
@@ -318,6 +332,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
 
         {ThumbInput}
 
+        <PageContainer isDesktop={isDesktop} variant="feed">
         <div style={{ padding: "16px 16px 40px", display: "flex", flexDirection: "column", gap: 16 }}>
           {thumbnail && (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -354,6 +369,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
           <VisibilitySelector />
           <ChecklistAttach />
         </div>
+        </PageContainer>
 
         <DiscardConfirmDialog />
 
@@ -376,7 +392,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
         <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
           transition={{ type: "spring", stiffness: 380, damping: 38 }}
           onClick={e => e.stopPropagation()}
-          style={{ width: "100%", maxWidth: 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${C.teal}28`, borderBottom: "none", padding: "0 0 36px", display: "flex", flexDirection: "column", maxHeight: "92vh", overflow: "hidden" }}>
+          style={{ width: "100%", maxWidth: isDesktop ? CONTAINER_WIDTHS.feed : 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${C.teal}28`, borderBottom: "none", padding: "0 0 36px", display: "flex", flexDirection: "column", maxHeight: "92vh", overflow: "hidden" }}>
 
           <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4, flexShrink: 0 }}>
             <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
