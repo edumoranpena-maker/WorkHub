@@ -37,7 +37,7 @@
  * — trade:open-form, profile:metric-update — see that file for the full
  * catalogue.
  */
-import { useState, useRef, useLayoutEffect, useEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ChevronLeft, Loader } from "lucide-react";
@@ -86,7 +86,7 @@ const font = "'DM Sans', sans-serif";
 const fmtWinrate    = v => `${Math.round(v)}%`;
 const fmtExpectancy = v => `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
 const fmtTrades     = v => `${v}`;
-const fmtProfit     = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}R`;
+const fmtProfit     = v => `${v >= 0 ? "+" : "-"}$${Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
 function summaryFromStats(stats) {
   return [
@@ -107,25 +107,29 @@ export default function Stats({ onDashboardChange }) {
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
   // All-Time summary. Populated automatically on mount via a direct read
-  // (fetchAllTimeStats → v_alltime_stats) — independent of the Dashboard
+  // (fetchAllTimeStats → v_alltime_stats), independent of the Dashboard
   // portal. `statsLoaded` distinguishes "haven't fetched yet" from "fetched,
   // genuinely nothing to show" so the empty-state message below only
   // appears once we actually know there are no trades, not during the brief
-  // initial load. onStatsUpdate (passed to the portal below) can still
-  // overwrite this with a live push from Doers Journal while the Dashboard
-  // is open — see the file header for why that path is kept.
+  // initial load.
+  //
+  // Stats stays permanently mounted while the app is open (App.jsx toggles
+  // it with display:none/block on tab switch, it never unmounts) — so a
+  // plain mount-only fetch would go stale forever after the first load and
+  // never notice a trade edited later. refreshStats is called again when the
+  // Dashboard portal closes (the moment the user is most likely to have just
+  // edited something in Doers Journal), so the cards catch up right after.
   const [allTimeStats, setAllTimeStats] = useState(null);
   const [statsLoaded, setStatsLoaded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshStats = useCallback(() => {
     fetchAllTimeStats().then(stats => {
-      if (cancelled) return;
       setAllTimeStats(stats);
       setStatsLoaded(true);
     });
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => { refreshStats(); }, [refreshStats]);
 
   const summary = summaryFromStats(allTimeStats);
 
@@ -168,7 +172,7 @@ export default function Stats({ onDashboardChange }) {
 
       <StatsDashboardPortal
         open={dashboardOpen}
-        onClose={() => setDashboardOpen(false)}
+        onClose={() => { setDashboardOpen(false); refreshStats(); }}
         onDashboardChange={onDashboardChange}
         onStatsUpdate={setAllTimeStats}
       />
