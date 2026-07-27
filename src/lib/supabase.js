@@ -51,6 +51,18 @@ export async function deleteFile(bucket, path) {
 }
 
 /**
+ * Delete multiple files from the same bucket in a single Storage call.
+ * Same underlying request as calling deleteFile() once per path, just
+ * batched — for callers (like recapsApi.js's cleanup after deleting a
+ * thread) that already have a bucket → paths[] grouping and want one
+ * request per bucket instead of one per file.
+ */
+export async function deleteFiles(bucket, paths) {
+  const { error } = await supabase.storage.from(bucket).remove(paths);
+  if (error) console.error(`[Storage] Bulk delete failed for ${bucket} (${paths.length} files):`, error.message);
+}
+
+/**
  * Generate a unique storage path for a given file.
  * Example: "posts/1716000000000-photo.jpg"
  */

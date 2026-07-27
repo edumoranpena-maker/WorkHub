@@ -3,7 +3,7 @@
  * All Supabase data operations for the Recaps & Updates section.
  */
 
-import { supabase, uploadFile, storagePath, deleteFile } from "./supabase.js";
+import { supabase, uploadFile, storagePath, deleteFile, deleteFiles } from "./supabase.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -524,9 +524,7 @@ async function removeStorageObjects(rows) {
     (byBucket[bucket] ??= []).push(r.storage_path);
   }
   await Promise.all(
-    Object.entries(byBucket).map(([bucket, paths]) =>
-      supabase.storage.from(bucket).remove(paths).catch(e => console.error(`[recapsApi] storage cleanup (${bucket}):`, e.message))
-    )
+    Object.entries(byBucket).map(([bucket, paths]) => deleteFiles(bucket, paths))
   );
 }
 
