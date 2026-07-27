@@ -14,37 +14,28 @@
  *   2. StatsDashboardPortal — a real fullscreen overlay, architecturally
  *      identical to ThreadView's overlay in Post.jsx: createPortal straight
  *      to document.body, its own sticky topbar, Doers Journal embedded via
- *      <iframe>. This is also the only place the postMessage bridge lives —
- *      the iframe here is the single source of truth; PlanSpace never mounts
- *      a second, hidden copy of the Dashboard just to fetch data.
+ *      <iframe>. PlanSpace never mounts a second, hidden copy of the
+ *      Dashboard just to fetch data — it doesn't need to anymore (see below).
  *
- * ── The integration (this pass) ─────────────────────────────────────────
- * Protocol lives in lib/doersJournalBridge.js (shared, versioned, namespaced
- * envelope — see that file for the full message catalogue and the types
- * reserved for later features).
+ * ── Where the summary cards' data comes from ────────────────────────────
+ * lib/statsApi.js#fetchAllTimeStats() — a direct Supabase read against the
+ * `v_alltime_stats` view (same Postgres project Doers Journal itself writes
+ * to, after the shared-Supabase migration). Fetched once when Stats mounts,
+ * completely independent of whether the user ever opens the Dashboard
+ * portal — that's the whole point: the cards are real data from the moment
+ * the user lands on the section, no iframe load required. Doers Journal and
+ * PlanSpace read the exact same view, so there's no duplicated calculation
+ * logic anywhere.
  *
- * Flow, every time the Dashboard portal opens:
- *   1. iframe loads → onLoad fires.
- *   2. PlanSpace posts MSG.READY, then MSG.STATS_REQUEST { scope: "all-time" }.
- *   3. Doers Journal responds with MSG.STATS_ALL_TIME { winrate, expectancy,
- *      totalTrades, profit } — always the All-Time totals, regardless of
- *      whatever timeframe (1M/3M/YTD/...) is selected inside the Dashboard's
- *      own UI. Doers Journal may also push this message again later on its
- *      own (e.g. right after the user logs a trade) — PlanSpace just keeps
- *      listening for as long as the portal is mounted.
- *   3. Stats (the parent) stores the parsed result and renders it into its
- *      own native cards — Doers Journal's visuals are never read/scraped.
- *
- * Because the only channel is the iframe inside the portal, the summary
- * cards keep showing "—" until the user opens the Dashboard at least once
- * per Stats mount. Once received, the values persist in Stats' own state
- * (so closing/reopening the portal doesn't re-blank the cards) until the
- * whole Stats component unmounts.
- *
- * NOT implemented yet (by design, this pass only covers the read-only sync):
- *   - "Nuevo Trade" (MSG type reserved: trade:open-form)
- *   - profile metric sync (MSG type reserved: profile:metric-update)
- *   - any timeframe other than All-Time
+ * ── The postMessage bridge (lib/doersJournalBridge.js) ──────────────────
+ * Still lives here, still wired into StatsDashboardPortal via onStatsUpdate
+ * — if Doers Journal happens to push a fresher stats:all-time message while
+ * the Dashboard is open (e.g. right after the user logs a trade in there),
+ * the cards pick it up live. But it's no longer the ONLY way the cards get
+ * data, and it's not what populates them on first load. Its real reason for
+ * being here going forward is the message types reserved for later features
+ * — trade:open-form, profile:metric-update — see that file for the full
+ * catalogue.
  */
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -54,6 +45,7 @@ import {
   DOERS_JOURNAL_URL, MSG,
   postToDoersJournal, readBridgeMessage, parseAllTimeStatsPayload,
 } from "../lib/doersJournalBridge.js";
+import { fetchAllTimeStats } from "../lib/statsApi.js";
 import { PageContainer } from "../lib/layout.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
@@ -114,10 +106,26 @@ export default function Stats({ onDashboardChange }) {
   const isDesktop = useIsDesktop();
   const [dashboardOpen, setDashboardOpen] = useState(false);
 
-  // All-Time summary as last received from Doers Journal. null until the
-  // user has opened the Dashboard at least once — see summaryFromStats,
-  // which falls back to "—" placeholders while this is null.
+  // All-Time summary. Populated automatically on mount via a direct read
+  // (fetchAllTimeStats → v_alltime_stats) — independent of the Dashboard
+  // portal. `statsLoaded` distinguishes "haven't fetched yet" from "fetched,
+  // genuinely nothing to show" so the empty-state message below only
+  // appears once we actually know there are no trades, not during the brief
+  // initial load. onStatsUpdate (passed to the portal below) can still
+  // overwrite this with a live push from Doers Journal while the Dashboard
+  // is open — see the file header for why that path is kept.
   const [allTimeStats, setAllTimeStats] = useState(null);
+  const [statsLoaded, setStatsLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllTimeStats().then(stats => {
+      if (cancelled) return;
+      setAllTimeStats(stats);
+      setStatsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const summary = summaryFromStats(allTimeStats);
 
@@ -145,9 +153,9 @@ export default function Stats({ onDashboardChange }) {
         ))}
       </div>
 
-      {!allTimeStats && (
+      {!allTimeStats && statsLoaded && (
         <p style={{ margin: "-10px 0 20px", fontFamily: font, fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
-          Abre el Dashboard para sincronizar tus métricas.
+          Aún no hay trades registrados en Doers Journal.
         </p>
       )}
 
