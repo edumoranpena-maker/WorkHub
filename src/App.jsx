@@ -399,7 +399,7 @@ function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection 
 // regardless of how wide the left cluster (chevron + wordmark) or right
 // cluster (icons) end up being — flex space-between would bias the center
 // toward whichever side is narrower.
-function TopBar({ onHome, profileName, onOpenSettings, isDesktop }) {
+function TopBar({ onHome, profileName, onOpenSettings, isDesktop, showProfileName }) {
   return (
     <div style={{
       display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center",
@@ -423,11 +423,23 @@ function TopBar({ onHome, profileName, onOpenSettings, isDesktop }) {
         )}
       </div>
 
-      {/* Center — profile name, truly centered via the grid, independent of
-          how wide either side ends up being */}
-      <span style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: isDesktop ? 320 : 160, justifySelf: "center" }}>
-        {profileName}
-      </span>
+      {/* Center — profile name. Contextual: only shown once the Profile
+          Header has scrolled out of view (see profileVisible/IntersectionObserver
+          in the root component) — the identity lives in exactly one place on
+          screen at a time, never duplicated. Grid keeps it truly centered
+          regardless of how wide either side ends up being, whether the name
+          is currently mounted or not. */}
+      <AnimatePresence mode="wait">
+        {showProfileName && (
+          <motion.span
+            key="topbar-profile-name"
+            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: isDesktop ? 320 : 160, justifySelf: "center" }}>
+            {profileName}
+          </motion.span>
+        )}
+      </AnimatePresence>
 
       {/* Right — actions, flush to the far edge */}
       <div style={{ display: "flex", alignItems: "center", gap: 5, justifySelf: "end", flexShrink: 0 }}>
@@ -1553,6 +1565,31 @@ function App({ onGoHome, onOpenSettings }) {
   const workStore = useWorkContextStore();
   const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
 
+  // ── Profile ↔ TopBar name handoff ────────────────────────────────────────
+  // The TopBar's center name only shows once the Profile Header has
+  // scrolled out of view — the identity lives in exactly one place on
+  // screen at a time, never both. This genuinely needs JS (not just the
+  // sticky-positioning fix above): the TopBar and the Profile Header are
+  // different subtrees of the DOM, so nothing in CSS alone lets the topbar
+  // react to the header's scroll position. An IntersectionObserver watching
+  // profileAnchorRef against unifiedScrollRef (the actual scrolling
+  // ancestor) as its root is the standard, lightweight way to do this —
+  // no scroll-position math, no fixed positioning, just "is it visible".
+  const profileAnchorRef = useRef(null);
+  const [profileVisible, setProfileVisible] = useState(true);
+
+  useEffect(() => {
+    const root = unifiedScrollRef.current;
+    const target = profileAnchorRef.current;
+    if (!root || !target) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setProfileVisible(entry.isIntersecting),
+      { root, threshold: 0 }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [insideFullscreenOverlay]); // re-attach once the Profile Header remounts after an overlay closes
+
   // Thread/Subtema are real fullscreen overlays now — position:fixed, siblings
   // of the document below, which never unmounts and never has its scrollTop
   // touched. The ONLY thing that needs to happen here is blocking the
@@ -1683,6 +1720,7 @@ function App({ onGoHome, onOpenSettings }) {
         profileName={profileConfig.identity.name}
         onOpenSettings={onOpenSettings}
         isDesktop={isDesktop}
+        showProfileName={!profileVisible}
       />
 
       {/*
@@ -1703,34 +1741,52 @@ function App({ onGoHome, onOpenSettings }) {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <PageContainer isDesktop={isDesktop} variant="feed">
-          {/* 1. Profile header — hidden completely while a fullscreen overlay (Thread or the Stats Dashboard) covers the screen.
-              Profile+TabBar are persistent app chrome (not "a section"), so they
-              always use the feed-width container regardless of which section
-              tab happens to be active below them. */}
-          {!insideFullscreenOverlay && (
-            <ProfileCard
-              onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-              profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
-              onEditAvatar={onOpenSettings}
-              followed={followed}
-              onToggleFollow={() => setFollowed(f => !f)}
-              subscribed={subscribed}
-              onToggleSubscribe={() => setSubscribed(s => !s)}
-              isDesktop={isDesktop}
-            />
-          )}
-          {/* 2. Chips — sticky, always mounted, never animates */}
-          <div style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 25,
-            flexShrink: 0,
-            background: `${C.surface}fd`,
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            borderBottom: `1px solid ${C.border}`,
-          }}>
+        {/* Profile header — its own feed-width container, in normal flow.
+            Split out from the TabBar's container below (they used to share
+            one PageContainer) specifically so the sticky bar isn't boxed in
+            by a container exactly as tall as itself — see the comment on
+            the TabBar wrapper for why that broke sticky. */}
+        {!insideFullscreenOverlay && (
+          <div ref={profileAnchorRef}>
+            <PageContainer isDesktop={isDesktop} variant="feed">
+              <ProfileCard
+                onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
+                profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+                onEditAvatar={onOpenSettings}
+                followed={followed}
+                onToggleFollow={() => setFollowed(f => !f)}
+                subscribed={subscribed}
+                onToggleSubscribe={() => setSubscribed(s => !s)}
+                isDesktop={isDesktop}
+              />
+            </PageContainer>
+          </div>
+        )}
+
+        {/* Chips — sticky, always mounted, never animates.
+            This div is now a DIRECT child of unifiedScrollRef (the actual
+            scrolling ancestor), a sibling of contentWrapperRef below rather
+            than nested inside the same short PageContainer as ProfileCard.
+            That's the fix: position:sticky is bounded by its own parent's
+            box — when this div's parent was a PageContainer containing only
+            [ProfileCard, this div], that box was exactly as tall as the two
+            of them combined, so the moment you scrolled past it there was
+            nothing left to stick to and the bar scrolled away with it.
+            Making it a direct sibling of the (tall) content area gives it
+            the full scrollable page height to stay stuck within — the
+            actual bug from the desktop layout refactor, not anything about
+            PageContainer's width logic, which is untouched here. */}
+        <div style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 25,
+          flexShrink: 0,
+          background: `${C.surface}fd`,
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: `1px solid ${C.border}`,
+        }}>
+          <PageContainer isDesktop={isDesktop} variant="feed">
             <div style={{ padding: "6px 14px 8px" }}>
               <TabBar
                 activeSectionId={activeSectionId}
@@ -1740,8 +1796,8 @@ function App({ onGoHome, onOpenSettings }) {
                 onAddSection={() => setShowAddSection(true)}
               />
             </div>
-          </div>
-        </PageContainer>
+          </PageContainer>
+        </div>
 
         {/* Section content — all sections stay permanently mounted (visibility
             toggled via CSS in renderMobileSections), so this div's own size
