@@ -122,5 +122,16 @@ export const DEFAULT_PROFILE_CONFIG = {
       order:        4,
       isBuiltIn:    true,
     },
+    {
+      id:           "tools",
+      label:        "Tools",
+      iconId:       "Wrench",
+      subtitle:     "Trading utilities & calculators",
+      accentColor:  "#d4a843",
+      badge:        null,
+      visible:      true,
+      order:        5,
+      isBuiltIn:    true,
+    },
   ],
 };
