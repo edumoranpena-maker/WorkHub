@@ -15,7 +15,7 @@ import {
   Layers, FolderPlus, BookOpen, Zap, Globe, Lock,
   Bell, Search, Heart, Target, Award, Flame,
   PieChart, Activity, Briefcase, Coffee, Mic,
-  Video, Image, Link, Tag, Bookmark,
+  Video, Image, Link, Tag, Bookmark, Wrench,
 } from "lucide-react";
 
 export const ICON_REGISTRY = {
@@ -52,6 +52,7 @@ export const ICON_REGISTRY = {
   Link,
   Tag,
   Bookmark,
+  Wrench,
 };
 
 /**
@@ -85,4 +86,5 @@ export const ICON_OPTIONS = [
   { id: "Award",        label: "Badges",     group: "personal"  },
   { id: "Flame",        label: "Streak",     group: "personal"  },
   { id: "Zap",          label: "Quick",      group: "personal"  },
+  { id: "Wrench",       label: "Tools",      group: "personal"  },
 ];
