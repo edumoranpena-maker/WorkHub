@@ -16,6 +16,7 @@ import PublishProgressBar from "./components/PublishProgressBar.jsx";
 import Post          from "./sections/Post";
 import Announcements, { StoryViewer } from "./sections/Announcements";
 import Stats          from "./sections/Stats";
+import Tools          from "./sections/Tools";
 import { PageContainer } from "./lib/layout.jsx";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
@@ -1379,7 +1380,7 @@ function App({ onGoHome, onOpenSettings }) {
   // resets. Only the shared scroll document (handled above) still needs an
   // explicit memory system, because that's the one thing that isn't "a
   // component's own state" — it's a single number every section shares.
-  const customSections = allSections.filter(s => !["recaps", "announcements", "stats", "rooms"].includes(s.id));
+  const customSections = allSections.filter(s => !["recaps", "announcements", "stats", "rooms", "tools"].includes(s.id));
 
   function renderMobileSections() {
     const visible = (id) => ({ display: activeSectionId === id ? "block" : "none", minHeight: "100%" });
@@ -1399,6 +1400,9 @@ function App({ onGoHome, onOpenSettings }) {
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
+        </div>
+        <div style={visible("tools")}>
+          <Tools onToolsPortalChange={setInsideFullscreenOverlay} />
         </div>
         {customSections.map(cs => (
           <div key={cs.id} style={visible(cs.id)}>
