@@ -4,8 +4,8 @@ import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
   Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil, CheckSquare,
-  Globe, Instagram, Youtube, Twitter, Linkedin, Github, Link as LinkIcon,
 } from "lucide-react";
+import ProfileRegion from "./components/ProfileRegion.jsx";
 import HomeFeed      from "./HomeFeed.jsx";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import ChecklistBlock   from "./components/ChecklistBlock.jsx";
@@ -82,7 +82,7 @@ const PREVIEW_POSTS = {
 
 // ─── Animations ───────────────────────────────────────────────────────────────
 // Feed-only transitions: subtle fade + slight horizontal shift
-// No full-screen slide — ProfileCard and Chips stay anchored
+// No full-screen slide — ProfileRegion stays anchored
 const feedVariants = {
   enter:  (d) => ({ x: d > 0 ? 32 : -32, opacity: 0 }),
   center: { x: 0, opacity: 1 },
@@ -114,283 +114,6 @@ function IconBtn({ icon: Icon, badge, onClick }) {
   );
 }
 
-// ─── Premium Profile Card ─────────────────────────────────────────────────────
-// State (followed/subscribed) is owned by App so it survives section changes.
-// ProfileCard is purely presentational for those toggles.
-// Maps a social platform id to an icon. Falls back to a generic globe icon for
-// anything not explicitly listed yet — new platforms can be added here later
-// without touching the rendering logic below.
-const SOCIAL_ICON_MAP = {
-  instagram: Instagram,
-  x:         Twitter,
-  twitter:   Twitter,
-  youtube:   Youtube,
-  linkedin:  Linkedin,
-  github:    Github,
-  website:   Globe,
-};
-
-function ProfileHeader({ onNavigate, hideButtons, profile, onEditAvatar,
-                       followed, onToggleFollow, subscribed, onToggleSubscribe, isDesktop }) {
-  const stats = profile?.stats ?? [
-    { key: "followers", label: "Followers", value: "12.4k" },
-    { key: "posts",      label: "Posts",     value: "86" },
-    { key: "ev",         label: "Exp Value", value: "2.8R" },
-  ];
-  const socials = profile?.socials ?? [];
-
-  const Avatar = ({ size }) => (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
-        <div style={{
-          width: size, height: size, borderRadius: "50%",
-          background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
-          padding: 3,
-          boxShadow: `0 0 10px ${C.orange}30`,
-        }}>
-          <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.bg}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: font, fontSize: size * 0.33, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
-          </div>
-        </div>
-      </div>
-      {profile?.showLiveDot !== false && (
-        <div style={{ position: "absolute", bottom: 5, right: 5, width: 14, height: 14, borderRadius: "50%", background: C.green, border: `2px solid ${C.bg}`, boxShadow: `0 0 6px ${C.green}70` }} />
-      )}
-      {onEditAvatar && (
-        <motion.button whileTap={{ scale: 0.88 }} onClick={onEditAvatar}
-          style={{ position: "absolute", bottom: 0, left: 0, width: 25, height: 25, borderRadius: "50%", background: C.accent, border: `2px solid ${C.bg}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <Pencil size={11} color="#fff" strokeWidth={2.5} />
-        </motion.button>
-      )}
-    </div>
-  );
-
-  const Socials = () => socials.length > 0 && (
-    <div style={{ display: "flex", gap: 10 }}>
-      {socials.map((s) => {
-        const Icon = SOCIAL_ICON_MAP[s.platform] ?? LinkIcon;
-        return (
-          <motion.a key={s.platform + s.url} href={s.url} target="_blank" rel="noopener noreferrer" whileTap={{ scale: 0.88 }}
-            style={{ width: 34, height: 34, borderRadius: "50%", background: C.card, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, cursor: "pointer" }}>
-            <Icon size={15} strokeWidth={2} />
-          </motion.a>
-        );
-      })}
-    </div>
-  );
-
-  const Buttons = ({ style }) => !hideButtons && (
-    <div style={{ display: "flex", gap: 9, ...style }}>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleFollow}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em", background: followed ? "transparent" : C.accent, border: followed ? `1.5px solid ${C.accent}` : "none", color: followed ? C.accent : "#fff", transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-        {followed ? "Following" : "Follow"}
-      </motion.button>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleSubscribe}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em", background: subscribed ? "transparent" : C.gold, border: subscribed ? `1.5px solid ${C.gold}` : "none", color: subscribed ? C.gold : "#1a0f00", transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-        {subscribed ? "Subscribed" : "Subscribe"}
-      </motion.button>
-      <motion.button whileTap={{ scale: 0.95 }}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em", background: C.blue, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        Message
-      </motion.button>
-    </div>
-  );
-
-  const Stats = ({ align = "center" }) => (profile?.showStats !== false) && (
-    <div style={{ display: "flex", gap: isDesktop ? 28 : 0 }}>
-      {stats.map((s, i) => (
-        <div key={s.label} style={{
-          flex: isDesktop ? "0 0 auto" : 1, textAlign: isDesktop ? align : "center", padding: isDesktop ? 0 : "0 8px",
-          borderLeft: !isDesktop && i > 0 ? `1px solid ${C.border}` : "none",
-        }}>
-          <p style={{ margin: 0, fontFamily: font, fontSize: isDesktop ? 20 : 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>{s.value}</p>
-          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 11, color: C.textMuted }}>{s.label}</p>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── Desktop — horizontal header: avatar left, identity+actions right.
-  // This is the actual fix for "se ve como mobile estirado": instead of
-  // everything piled vertically and centered (fine on a narrow phone
-  // screen, wasteful on a wide one), the avatar sits beside the info
-  // instead of above it, stats read left-to-right instead of as a centered
-  // strip, and the action buttons move beside the name (their natural
-  // desktop position, e.g. GitHub/Twitter) instead of stretching edge to
-  // edge. Nothing here is "bigger" than mobile — the avatar is only
-  // modestly larger — it's simply arranged for a wide, short row instead of
-  // a narrow, tall column.
-  if (isDesktop) {
-    return (
-      <motion.div
-        data-profile-card="1"
-        initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-        style={{ padding: "32px 0 24px" }}>
-
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 22 }}>
-          <Avatar size={104} />
-
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <h2 style={{ margin: 0, fontFamily: font, fontSize: 21, fontWeight: 800, color: C.text, letterSpacing: "-0.015em" }}>{profile?.name ?? "Luis Morp"}</h2>
-                  {profile?.verified && (
-                    <div style={{ width: 17, height: 17, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <span style={{ fontSize: 10, color: "#fff" }}>✓</span>
-                    </div>
-                  )}
-                </div>
-                <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 13, color: C.textMuted, fontWeight: 600 }}>{profile?.handle ?? "@luismorp"}</p>
-              </div>
-              <Buttons style={{ flexShrink: 0 }} />
-            </div>
-
-            {(profile?.showBio !== false) && (
-              <p style={{ margin: 0, fontFamily: font, fontSize: 13.5, color: C.text, lineHeight: 1.6, maxWidth: 480 }}>
-                {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
-                {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
-              </p>
-            )}
-
-            <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <Stats align="left" />
-              <Socials />
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
-
-  // ── Mobile — unchanged: centered vertical stack ──────────────────────────
-  return (
-    <motion.div
-      data-profile-card="1"
-      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      style={{ padding: "28px 20px 0" }}>
-
-      {/* Avatar + name + handle — centered, like the leading social apps */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Avatar size={84} />
-        <div style={{ textAlign: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <h2 style={{ margin: 0, fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
-            {profile?.verified && (
-              <div style={{ width: 15, height: 15, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 9, color: "#fff" }}>✓</span>
-              </div>
-            )}
-          </div>
-          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 12, color: C.textMuted, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@luismorp"}</p>
-        </div>
-      </div>
-
-      {/* Stats — the main information block, full width, plenty of room */}
-      <div style={{ marginTop: 20 }}><Stats /></div>
-
-      {/* Bio */}
-      {(profile?.showBio !== false) && (
-        <p style={{ margin: "18px 0 0", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, textAlign: "center" }}>
-          {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
-          {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
-        </p>
-      )}
-
-      {/* Social links — ready for future integrations; empty by default, renders nothing until connected */}
-      {socials.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 14 }}>
-          <Socials />
-        </div>
-      )}
-
-      {/* Action buttons — same functions, much quieter presentation */}
-      <Buttons style={{ marginTop: 20, paddingBottom: 18 }} />
-    </motion.div>
-  );
-}
-// Backward-compatible alias — "Profile Card" no longer exists as a concept,
-// this is now an integrated page header (see ProfileHeader above).
-const ProfileCard = ProfileHeader;
-
-// ─── TabBar ─────────────────────────────────────────────────────────────────
-// Replaces the old chip bar entirely — used identically on mobile and desktop
-// (per the nav redesign: "quiero que este mismo sistema se utilice tanto en
-// la app móvil como en la versión web"). No per-tab border/background, no
-// per-section color: the whole strip reads as a single piece, only the
-// active tab's text + a sliding underline (both BRAND_ACCENT) differ from
-// the discreet gray of the rest.
-//
-// The underline is a single element that stays mounted the entire time —
-// only its `left`/`width` animate (via framer-motion's `animate` prop) when
-// the active tab changes, so it glides continuously to the new position
-// instead of disappearing/reappearing.
-function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection }) {
-  const containerRef = useRef(null);
-  const tabRefs = useRef({});
-  const [indicator, setIndicator] = useState({ left: 0, width: 0, ready: false });
-
-  const tabs = [{ id: null, label: "Perfil" }, ...(onSections || SECTIONS).map(s => ({ id: s.id, label: s.label, badge: s.badge }))];
-  const activeKey = activeSectionId ?? "__perfil__";
-
-  const measure = useCallback(() => {
-    const el = tabRefs.current[activeKey];
-    if (!el) return;
-    setIndicator({ left: el.offsetLeft, width: el.offsetWidth, ready: true });
-  }, [activeKey]);
-
-  useLayoutEffect(() => { measure(); }, [measure, tabs.length]);
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [measure]);
-
-  return (
-    <div ref={containerRef} style={{ position: "relative", display: "flex", overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
-      {tabs.map(t => {
-        const key = t.id ?? "__perfil__";
-        const active = key === activeKey;
-        return (
-          <button
-            key={key}
-            ref={el => { if (el) tabRefs.current[key] = el; }}
-            onClick={() => (t.id ? onNavigate(t.id) : onHome())}
-            style={{ flexShrink: 0, position: "relative", background: "none", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", gap: 5 }}
-          >
-            <span style={{ fontFamily: font, fontSize: 13, fontWeight: active ? 700 : 600, color: active ? BRAND_ACCENT : C.textMuted, whiteSpace: "nowrap", transition: "color 0.15s" }}>
-              {t.label}
-            </span>
-            {t.badge && !active && (
-              <span style={{ fontSize: 9, fontWeight: 800, color: C.textMuted, background: C.border, borderRadius: 99, padding: "1px 5px", fontFamily: font }}>{t.badge}</span>
-            )}
-          </button>
-        );
-      })}
-
-      {onAddSection && (
-        <button onClick={onAddSection} style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, padding: "10px 14px", background: "none", border: "none", cursor: "pointer" }}>
-          <Plus size={12} color={C.textMuted} strokeWidth={2.5} />
-          <span style={{ fontFamily: font, fontSize: 12, fontWeight: 600, color: C.textMuted, whiteSpace: "nowrap" }}>Añadir</span>
-        </button>
-      )}
-
-      {/* Sliding indicator — see component doc above */}
-      <motion.div
-        animate={{ left: indicator.left, width: indicator.width, opacity: indicator.ready ? 1 : 0 }}
-        transition={{ type: "spring", stiffness: 420, damping: 38 }}
-        style={{ position: "absolute", bottom: 0, height: 3, borderRadius: 3, background: BRAND_ACCENT, boxShadow: `0 0 8px ${BRAND_ACCENT}70`, pointerEvents: "none" }}
-      />
-    </div>
-  );
-}
-
-
-// ─── Mobile Top Bar ───────────────────────────────────────────────────────────
 // ─── TopBar ───────────────────────────────────────────────────────────────────
 // The one bar in the whole app that's deliberately edge-to-edge, full
 // viewport width — everything else (Profile, TabBar, feeds) lives inside
@@ -1566,29 +1289,13 @@ function App({ onGoHome, onOpenSettings }) {
   const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
 
   // ── Profile ↔ TopBar name handoff ────────────────────────────────────────
-  // The TopBar's center name only shows once the Profile Header has
-  // scrolled out of view — the identity lives in exactly one place on
-  // screen at a time, never both. This genuinely needs JS (not just the
-  // sticky-positioning fix above): the TopBar and the Profile Header are
-  // different subtrees of the DOM, so nothing in CSS alone lets the topbar
-  // react to the header's scroll position. An IntersectionObserver watching
-  // profileAnchorRef against unifiedScrollRef (the actual scrolling
-  // ancestor) as its root is the standard, lightweight way to do this —
-  // no scroll-position math, no fixed positioning, just "is it visible".
-  const profileAnchorRef = useRef(null);
+  // The single derived value this region of the app produces: whether the
+  // Profile Header is currently visible. The detection mechanism itself
+  // (IntersectionObserver) now lives inside ProfileRegion — App.jsx just
+  // holds the resulting boolean and hands it to TopBar. One piece of state,
+  // one source of truth, consumed by two places (TopBar's name, implicitly
+  // the tab strip's sticky CSS which needs no state of its own at all).
   const [profileVisible, setProfileVisible] = useState(true);
-
-  useEffect(() => {
-    const root = unifiedScrollRef.current;
-    const target = profileAnchorRef.current;
-    if (!root || !target) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setProfileVisible(entry.isIntersecting),
-      { root, threshold: 0 }
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [insideFullscreenOverlay]); // re-attach once the Profile Header remounts after an overlay closes
 
   // Thread/Subtema are real fullscreen overlays now — position:fixed, siblings
   // of the document below, which never unmounts and never has its scrollTop
@@ -1741,63 +1448,33 @@ function App({ onGoHome, onOpenSettings }) {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Profile header — its own feed-width container, in normal flow.
-            Split out from the TabBar's container below (they used to share
-            one PageContainer) specifically so the sticky bar isn't boxed in
-            by a container exactly as tall as itself — see the comment on
-            the TabBar wrapper for why that broke sticky. */}
+        {/* ── ProfileRegion — the one persistent identity region ──────────────
+            Avatar, name, bio, stats, action buttons and the tab strip, all
+            mounted here once. Rendered directly inside unifiedScrollRef (not
+            wrapped in any extra container of its own) so it introduces zero
+            new scroll — there is still exactly one scroll container in the
+            whole app. isOwner is hardcoded false for now: there's no auth
+            yet, so every visitor sees the same "viewer" actions (Follow/
+            Subscribe/Message) — see ProfileRegion.jsx's file header for how
+            this becomes real once auth exists. */}
         {!insideFullscreenOverlay && (
-          <div ref={profileAnchorRef}>
-            <PageContainer isDesktop={isDesktop} variant="feed">
-              <ProfileCard
-                onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }}
-                profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
-                onEditAvatar={onOpenSettings}
-                followed={followed}
-                onToggleFollow={() => setFollowed(f => !f)}
-                subscribed={subscribed}
-                onToggleSubscribe={() => setSubscribed(s => !s)}
-                isDesktop={isDesktop}
-              />
-            </PageContainer>
-          </div>
+          <ProfileRegion
+            profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+            isOwner={false}
+            onEditAvatar={onOpenSettings}
+            followed={followed}
+            onToggleFollow={() => setFollowed(f => !f)}
+            subscribed={subscribed}
+            onToggleSubscribe={() => setSubscribed(s => !s)}
+            activeSectionId={activeSectionId}
+            onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+            onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+            onSections={allSections}
+            onAddSection={() => setShowAddSection(true)}
+            isDesktop={isDesktop}
+            onVisibilityChange={setProfileVisible}
+          />
         )}
-
-        {/* Chips — sticky, always mounted, never animates.
-            This div is now a DIRECT child of unifiedScrollRef (the actual
-            scrolling ancestor), a sibling of contentWrapperRef below rather
-            than nested inside the same short PageContainer as ProfileCard.
-            That's the fix: position:sticky is bounded by its own parent's
-            box — when this div's parent was a PageContainer containing only
-            [ProfileCard, this div], that box was exactly as tall as the two
-            of them combined, so the moment you scrolled past it there was
-            nothing left to stick to and the bar scrolled away with it.
-            Making it a direct sibling of the (tall) content area gives it
-            the full scrollable page height to stay stuck within — the
-            actual bug from the desktop layout refactor, not anything about
-            PageContainer's width logic, which is untouched here. */}
-        <div style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 25,
-          flexShrink: 0,
-          background: `${C.surface}fd`,
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderBottom: `1px solid ${C.border}`,
-        }}>
-          <PageContainer isDesktop={isDesktop} variant="feed">
-            <div style={{ padding: "6px 14px 8px" }}>
-              <TabBar
-                activeSectionId={activeSectionId}
-                onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-                onHome={() => { setDirection(-1); setActiveSectionId(null); }}
-                onSections={allSections}
-                onAddSection={() => setShowAddSection(true)}
-              />
-            </div>
-          </PageContainer>
-        </div>
 
         {/* Section content — all sections stay permanently mounted (visibility
             toggled via CSS in renderMobileSections), so this div's own size
