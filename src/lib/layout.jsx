@@ -1,20 +1,27 @@
 /**
  * layout.jsx
  *
- * PlanSpace's definitive desktop container system. Three named widths, each
+ * PlanSpace's definitive desktop container system. Four named widths, each
  * tied to a type of experience — nobody picks an arbitrary pixel value
- * anymore, every section/composer/portal picks ONE of these three:
+ * anymore, every section/composer/portal picks ONE of these:
  *
  *   reading   (800px)  — Thread, Subtema, Announcements. Anywhere the user is
  *                         mainly reading. Comfortable for long reading
  *                         sessions, not a wide scanning layout.
  *   feed      (1200px) — Home, Perfil, Post feed, Rooms, Stats' main screen,
- *                         and every composer (Post/Announcement/Update).
- *                         PlanSpace's main container — wide, modern, never
- *                         reads as "mobile UI stretched".
+ *                         Tools' grid, and every composer (Post/Announcement/
+ *                         Update). PlanSpace's main container — wide,
+ *                         modern, never reads as "mobile UI stretched".
  *   dashboard (1400px) — The Stats Dashboard portal, and any future
  *                         analytics/table/chart-heavy view where horizontal
  *                         room matters more than reading comfort.
+ *   workspace (760px)  — Focused single-task tool portals (Risk Calculator
+ *                         and future Tools). Narrower than "feed" on purpose:
+ *                         a calculator or a single-purpose utility reads
+ *                         better as a tight working column than a wide
+ *                         browsing layout — same "chrome vs content" split
+ *                         as the other portals (their own topbar stays full
+ *                         width, only the body caps here).
  *
  * The architecture this plugs into (unchanged, this file only replaces the
  * width decision itself):
@@ -33,6 +40,7 @@ export const CONTAINER_WIDTHS = {
   reading: 800,
   feed: 1200,
   dashboard: 1400,
+  workspace: 760,
 };
 
 export function PageContainer({ variant = "feed", isDesktop, children, style }) {
