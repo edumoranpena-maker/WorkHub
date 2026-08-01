@@ -89,6 +89,15 @@ export default function RiskCalculatorInput({ value, onChange, onStep, step = 1,
   valueRef.current = value;
 
   const fireStep = useCallback((direction) => {
+    // A +/- press is navigation, not editing — if the text field still has
+    // focus from a previous manual entry, force it to let go. Without this,
+    // preventDefault() on the button's touchend (needed below to stop the
+    // synthetic click) also blocks the browser's normal focus-shift, so the
+    // field would never blur: the keyboard stays open, and the display
+    // sync effect above — gated on "not focused" — never re-runs, making
+    // the number look frozen even though the value underneath already
+    // moved to the new group.
+    if (document.activeElement === inputRef.current) inputRef.current.blur();
     if (onStep) { onStep(direction); return; }
     const factor = 10 ** decimals;
     const next = (Number(valueRef.current) || 0) + direction * step;
