@@ -11,14 +11,19 @@
  * $5000usd.csv). NAS100/SP500/US30 are all 1 in that sheet, which is why the
  * reference UI shows "$1.00" for all three defaults.
  *
- * `slChips` — the quick-select SL presets for that instrument. Per-
- * instrument (not shared) because a sensible NAS100 stop is a wildly
- * different number than a sensible SP500 stop. These are step 1 of the
- * "chips" feature — hand-picked defaults, easy to tune right here. Step 2
- * (chips that learn the user's most-used SL per instrument and gradually
- * replace these) is intentionally not built yet — see
- * riskCalculatorService.js's comment on where that would plug in without
- * touching this file's shape.
+ * `lotStep` / `minLot` — the broker's real lot granularity for this
+ * instrument. This is what turns the continuous "ideal" lot from the risk
+ * formula into an actually tradeable lot size, and is the foundation the
+ * whole group-navigation system in riskCalculatorService.js is built on.
+ * Confirmed 0.01/0.01 for all three current instruments — kept per-
+ * instrument (not a shared constant) because a future instrument may well
+ * use a coarser broker step.
+ *
+ * `slChips` was removed — chips are no longer static presets. They're
+ * generated dynamically from real lot-groups around `defaultSL` (see
+ * riskCalculatorService.js's generateGroupChips), so they always reflect
+ * the current balance/risk/instrument instead of going stale when those
+ * change.
  */
 export const INSTRUMENTS = {
   NAS100: {
@@ -28,8 +33,9 @@ export const INSTRUMENTS = {
     badge: "NQ",
     color: "#4fa3ff",
     pointValue: 1,
+    lotStep: 0.01,
+    minLot: 0.01,
     defaultSL: 61.24,
-    slChips: [40, 50.5, 60, 70.5, 80, 100.5, 120],
   },
   SP500: {
     id: "SP500",
@@ -38,8 +44,9 @@ export const INSTRUMENTS = {
     badge: "SP",
     color: "#ef4444",
     pointValue: 1,
+    lotStep: 0.01,
+    minLot: 0.01,
     defaultSL: 7.61,
-    slChips: [5, 7.5, 10, 12.5, 15, 17.5, 20],
   },
   US30: {
     id: "US30",
@@ -48,8 +55,9 @@ export const INSTRUMENTS = {
     badge: "DJ",
     color: "#8b5cf6",
     pointValue: 1,
+    lotStep: 0.01,
+    minLot: 0.01,
     defaultSL: 102.35,
-    slChips: [60, 80, 100.5, 120, 140.5, 160, 180],
   },
 };
 

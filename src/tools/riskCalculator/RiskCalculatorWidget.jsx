@@ -9,10 +9,10 @@
  * layer can serialize all three from one place" work without this file
  * needing to know persistence exists.
  */
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown } from "lucide-react";
 import { INSTRUMENTS, INSTRUMENT_LIST } from "./instrumentConfig.js";
-import { roundedLot, findNextLotState, realRiskFromLot, getSlChips } from "./riskCalculatorService.js";
+import { optimalLot, nextGroupStart, realRiskFromLot, generateGroupChips } from "./riskCalculatorService.js";
 import RiskCalculatorInput from "./RiskCalculatorInput.jsx";
 import RiskCalculatorChipRow from "./RiskCalculatorChipRow.jsx";
 import RiskCalculatorResult from "./RiskCalculatorResult.jsx";
@@ -43,15 +43,22 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
 
-  // `state.sl` is the value actually displayed and used everywhere below —
-  // typing or tapping a chip sets it directly (an exact, deliberate value).
-  // `state.slExact` mirrors the last value the user typed/selected by hand,
-  // kept separately so the +/- navigation below (which moves `sl` to a lot
-  // *state*, not necessarily the exact number the user last entered) never
-  // overwrites what the user actually asked for.
-  const currentLot = roundedLot(riskDollar, state.sl, instrument.pointValue);
+  // `state.sl` is the value actually displayed and used everywhere below.
+  // `state.slExact` mirrors the last value the user *typed* by hand — kept
+  // separately so the group navigation below (which can land `sl` on a
+  // group representative that isn't the exact number the user entered)
+  // never overwrites what they actually asked for.
+  const currentLot = optimalLot(riskDollar, state.sl, instrument.pointValue, instrument.lotStep, instrument.minLot);
   const realRisk = realRiskFromLot(currentLot, state.sl, instrument.pointValue);
-  const chips = getSlChips(instrument);
+
+  // Chips are group representatives generated from the current instrument/
+  // balance/risk — memoized so they hold still (muscle memory) across
+  // re-renders that don't actually change any of those three things, and
+  // only regenerate when one of them does.
+  const chips = useMemo(
+    () => generateGroupChips(instrument.defaultSL, riskDollar, instrument.pointValue, instrument.lotStep, instrument.minLot, 14),
+    [instrument.id, instrument.defaultSL, instrument.pointValue, instrument.lotStep, instrument.minLot, riskDollar]
+  );
 
   const selectInstrument = (id) => {
     const next = INSTRUMENTS[id];
@@ -62,15 +69,20 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
     setMenuOpen(false);
   };
 
-  // Manual entry (typing or a chip tap) — respected exactly as given, and
-  // it's what "exact SL" means going forward until the user types again.
+  // Manual entry — respected exactly as typed: shows that exact SL and
+  // computes its own optimal lot, never snapped to a group representative.
   const handleTypedSl = (sl) => onChange({ ...state, sl, slExact: sl });
 
-  // +/- buttons — jump to the next SL where the rounded lot actually
-  // changes, skipping every value in between since they're the same
-  // execution state. `slExact` is deliberately left untouched here.
+  // A chip is a fast lane into a real group, not a precise value — tapping
+  // one behaves like a navigation step (only `sl` moves), not like typing.
+  const handleChipSelect = (sl) => onChange({ ...state, sl });
+
+  // +/- buttons — always re-derive which group the *currently shown* SL
+  // belongs to (regardless of whether it got there by typing or by a
+  // previous nav step) and jump to the next/previous group's
+  // representative. `slExact` is deliberately left untouched here.
   const handleStepSl = (direction) => {
-    const nextSl = findNextLotState(state.sl, direction, riskDollar, instrument.pointValue);
+    const nextSl = nextGroupStart(state.sl, direction, riskDollar, instrument.pointValue, instrument.lotStep, instrument.minLot);
     onChange({ ...state, sl: nextSl });
   };
 
@@ -120,7 +132,7 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
         values={chips}
         activeValue={state.sl}
         accentColor={instrument.color}
-        onSelect={handleTypedSl}
+        onSelect={handleChipSelect}
       />
 
       <RiskCalculatorResult lot={currentLot} riskDollar={realRisk} accentColor={instrument.color} />

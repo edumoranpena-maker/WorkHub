@@ -5,7 +5,7 @@
  *   - Global account config (balance, riskPercent, riskDollar) — kept in
  *     two-way sync here (see the three handlers below) using the pure
  *     conversion functions from riskCalculatorService.js.
- *   - One state slot per widget ({ instrumentId, sl }) — an array, not
+ *   - One state slot per widget ({ instrumentId, sl, slExact }) — an array, not
  *     three separate useState calls, specifically so a future persistence
  *     effect has one single value per concern to serialize instead of
  *     several scattered ones. See the persistence note near the bottom.
