@@ -20,15 +20,17 @@
  *      as a tight working column than a wide browsing layout.
  *
  * ── Adding a future tool ─────────────────────────────────────────────────
- * Add one object to the TOOLS array below: { id, name, icon, available }.
- * That's it — the grid and the portal-opening mechanism are both driven
- * entirely by that list, nothing else needs to change. `available: false`
- * renders a dimmed, non-interactive card (exactly what the two placeholder
- * tools below are) — flip it to true once the real tool exists.
+ * Add one object to the TOOLS array below: { id, name, icon, available,
+ * component }. `component` is optional — omit it (or leave `available:
+ * false`) and the portal falls back to a "Próximamente" placeholder, same
+ * as every tool besides Risk Calculator does today.
+ *
+ * Risk Calculator's own UI/logic lives entirely under src/tools/
+ * riskCalculator/ — this file only wires it into the grid + portal
+ * mechanism, it doesn't know anything about SL, lots, or instruments.
  *
  * NOT implemented yet (by design, this pass is infrastructure only):
- *   - Risk Calculator's actual fields/logic — ToolPortal's body is an empty
- *     placeholder container, see the TODO comment inside it.
+ *   - Position Sizer / R Multiple Converter — mock cards, no component yet.
  *   - Supabase, persistence, categories, favorites, search, permissions,
  *     deep links — explicitly out of scope for this pass.
  */
@@ -37,6 +39,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Calculator } from "lucide-react";
 import { PageContainer } from "../lib/layout.jsx";
+import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
 // Local per-file copy, same convention as every other section (Post.jsx,
@@ -68,7 +71,7 @@ const font = "'DM Sans', sans-serif";
 // tools render dimmed and inert — no portal, no click handler — exactly the
 // "mock" placeholders requested for everything besides Risk Calculator.
 const TOOLS = [
-  { id: "risk-calculator", name: "Risk Calculator",      icon: Calculator, available: true  },
+  { id: "risk-calculator", name: "Risk Calculator",      icon: Calculator, available: true,  component: RiskCalculatorPage },
   { id: "position-sizer",  name: "Position Sizer",       icon: Calculator, available: false },
   { id: "r-converter",     name: "R Multiple Converter", icon: Calculator, available: false },
 ];
@@ -181,20 +184,25 @@ function ToolPortal({ tool, onClose, onPortalChange }) {
             </span>
           </div>
 
-          {/* Capped + centered workspace column — narrower than the feed
-              container on purpose (see file header). Empty placeholder for
-              now; the real Risk Calculator interface goes inside this div
-              in a later pass. */}
+          {/* Body — delegates its own width/centering to whatever renders
+              inside (each tool component owns its own PageContainer, same
+              as RiskCalculatorPage does with variant="workspace"), so this
+              stays a plain scroll area, not a second width decision. Tools
+              without a real interface yet (available:false ones can never
+              reach here; a future available:true tool with no component
+              wired up yet would) fall back to the placeholder. */}
           <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
-            <PageContainer isDesktop={isDesktop} variant="workspace">
-              <div style={{ padding: "24px 18px" }}>
-                {/* TODO: Risk Calculator fields/logic go here. Intentionally
-                    empty for this pass — infrastructure only. */}
-                <div style={{ minHeight: 240, borderRadius: 16, border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Próximamente</span>
+            {tool?.component ? (
+              <tool.component />
+            ) : (
+              <PageContainer isDesktop={isDesktop} variant="workspace">
+                <div style={{ padding: "24px 18px" }}>
+                  <div style={{ minHeight: 240, borderRadius: 16, border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Próximamente</span>
+                  </div>
                 </div>
-              </div>
-            </PageContainer>
+              </PageContainer>
+            )}
           </div>
         </motion.div>
       )}
