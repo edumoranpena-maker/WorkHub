@@ -35,16 +35,17 @@ export default function InstrumentSettingsCard({ instruments }) {
         </button>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-        {instruments.map(instrument => (
-          <div key={instrument.id} style={{ flex: "1 1 140px", display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `${instrument.color}22`, border: `1px solid ${instrument.color}45`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontFamily: font, fontSize: 10, fontWeight: 800, color: instrument.color }}>{instrument.badge}</span>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ margin: 0, fontFamily: font, fontSize: 12.5, fontWeight: 700, color: C.text }}>{instrument.name}</p>
-              <p style={{ margin: "1px 0 0", fontFamily: font, fontSize: 10, color: C.textMuted }}>Valor por punto</p>
-              <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: instrument.color }}>${instrument.pointValue.toFixed(2)}</p>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {instruments.map((instrument, i) => (
+          <div key={instrument.id}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "10px 0", borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+            }}>
+            <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{instrument.name}</span>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ margin: "0 0 1px", fontFamily: font, fontSize: 10, color: C.textMuted }}>Valor por punto</p>
+              <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>${instrument.pointValue.toFixed(2)}</p>
             </div>
           </div>
         ))}

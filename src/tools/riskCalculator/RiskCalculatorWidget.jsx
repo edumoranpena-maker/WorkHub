@@ -65,7 +65,9 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
           <InstrumentBadge instrument={instrument} />
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>{instrument.name}</p>
-            <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>{instrument.subtitle}</p>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>
+              {instrument.subtitle} <span style={{ opacity: 0.7 }}>· ${instrument.pointValue.toFixed(2)}/pt</span>
+            </p>
           </div>
           <ChevronDown size={16} color={C.textMuted} strokeWidth={2.2} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }} />
         </button>
@@ -89,7 +91,7 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
         <RiskCalculatorInput
           value={state.sl}
           onChange={(sl) => onChange({ ...state, sl })}
-          step={1}
+          step={0.01}
           decimals={2}
         />
       </div>

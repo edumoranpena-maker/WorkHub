@@ -29,7 +29,7 @@ export const INSTRUMENTS = {
     color: "#4fa3ff",
     pointValue: 1,
     defaultSL: 61.24,
-    slChips: [40, 50, 60, 70, 80, 100, 120],
+    slChips: [40, 50.5, 60, 70.5, 80, 100.5, 120],
   },
   SP500: {
     id: "SP500",
@@ -39,7 +39,7 @@ export const INSTRUMENTS = {
     color: "#ef4444",
     pointValue: 1,
     defaultSL: 7.61,
-    slChips: [5, 7, 10, 12, 15, 20],
+    slChips: [5, 7.5, 10, 12.5, 15, 17.5, 20],
   },
   US30: {
     id: "US30",
@@ -49,7 +49,7 @@ export const INSTRUMENTS = {
     color: "#8b5cf6",
     pointValue: 1,
     defaultSL: 102.35,
-    slChips: [60, 80, 100, 120, 150, 180],
+    slChips: [60, 80, 100.5, 120, 140.5, 160, 180],
   },
 };
 
