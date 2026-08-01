@@ -15,14 +15,15 @@
  *      by placing the cursor where the tap landed; `justFocusedRef` blocks
  *      that one follow-up event, then gets out of the way.
  *
- *   2. Hold-to-repeat +/- buttons — a single press steps once; holding
- *      keeps stepping, easing from precise (1x) to fast (up to 20x) the
- *      longer it's held, so both a one-cent nudge and a long traversal are
- *      one gesture. A touch that drifts past a small slop threshold is
- *      reclassified as a scroll mid-gesture — the repeat stops immediately
- *      and the touch is released back to the browser's native scrolling,
- *      so a finger passing over a button while scrolling never gets stuck
- *      incrementing.
+ *   2. Single-tap +/- buttons, no hold-to-repeat — each tap fires exactly
+ *      once, no acceleration, no auto-repeat while held. What a tap does
+ *      is the caller's choice: pass `onStep(direction)` for custom jump
+ *      logic (e.g. the SL field's lot-state navigation), or fall back to a
+ *      fixed `step` added/subtracted from `value`. Either way, the step is
+ *      only committed on release (touchend/click) and only if the touch
+ *      never drifted past a small slop threshold — a vertical drag that
+ *      starts on the button is a scroll, not a tap, and is let through to
+ *      the browser untouched (no preventDefault on touchstart/touchmove).
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Minus, Plus } from "lucide-react";
@@ -33,15 +34,9 @@ const C = {
   text: "#fafafa", textMuted: "#8e8e8e",
 };
 
-const HOLD_INITIAL_DELAY = 400;  // ms before repeat kicks in after the first step
-const HOLD_TICK = 50;            // ms between repeated steps once held
-const HOLD_PRECISION_WINDOW = 550; // ms of repeating at 1x before acceleration begins at all
-const HOLD_ACCEL_RAMP = 2200;    // ms it takes to smoothly ramp from 1x up to max once accelerating
-const HOLD_ACCEL_MAX = 20;       // cap so it never becomes an uncontrollable jump
-const TOUCH_MOVE_SLOP = 10;      // px of finger movement that reclassifies a touch as a scroll, not a press
-const GHOST_CLICK_GUARD = 500;   // ms after a touch event to ignore a synthetic mousedown on the same button
+const TOUCH_MOVE_SLOP = 10; // px of finger movement that reclassifies a touch as a scroll, not a tap
 
-export default function RiskCalculatorInput({ value, onChange, step = 1, decimals = 2, prefix, accentColor, showSteps = true }) {
+export default function RiskCalculatorInput({ value, onChange, onStep, step = 1, decimals = 2, prefix, accentColor, showSteps = true }) {
   const [text, setText] = useState(() => Number(value ?? 0).toFixed(decimals));
   const focusedRef = useRef(false);
   const justFocusedRef = useRef(false);
@@ -89,70 +84,32 @@ export default function RiskCalculatorInput({ value, onChange, step = 1, decimal
     }
   };
 
-  // ── Hold-to-repeat ────────────────────────────────────────────────────────
-  // Acceleration is time-based and continuous, not a stepwise multiplier
-  // bump — it stays at 1x for HOLD_PRECISION_WINDOW ms once repeating
-  // starts (a deliberate "slow moment" for fine adjustments), then eases
-  // up smoothly (quadratic, not linear) toward HOLD_ACCEL_MAX over
-  // HOLD_ACCEL_RAMP ms, so long holds still cover distance fast without a
-  // jarring jump past the target.
-  const holdIntervalRef = useRef(null);
-  const holdTimeoutRef = useRef(null);
-  const repeatStartRef = useRef(0);
+  // ── Single-tap step, scroll-safe ────────────────────────────────────────
   const valueRef = useRef(value);
   valueRef.current = value;
 
-  const doStep = useCallback((direction) => {
+  const fireStep = useCallback((direction) => {
+    if (onStep) { onStep(direction); return; }
     const factor = 10 ** decimals;
     const next = (Number(valueRef.current) || 0) + direction * step;
-    // Round to the field's own decimal precision so repeated 0.01 steps
-    // never drift into floating-point noise (0.1 + 0.2 territory).
+    // Round to the field's own decimal precision so repeated steps never
+    // drift into floating-point noise (0.1 + 0.2 territory).
     const rounded = Math.round(next * factor) / factor;
     onChange(Math.max(0, rounded));
-  }, [onChange, step, decimals]);
+  }, [onChange, onStep, step, decimals]);
 
-  const stopHold = useCallback(() => {
-    if (holdTimeoutRef.current) { clearTimeout(holdTimeoutRef.current); holdTimeoutRef.current = null; }
-    if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
-  }, []);
-
-  const startHold = useCallback((direction) => {
-    doStep(direction); // immediate single step on press — taps stay instant
-    stopHold();
-    // Wait HOLD_INITIAL_DELAY before repeating, so a quick tap never
-    // double-steps. Once repeating begins, the clock for acceleration
-    // starts fresh from here (not from the original press).
-    holdTimeoutRef.current = setTimeout(() => {
-      repeatStartRef.current = Date.now();
-      holdIntervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - repeatStartRef.current;
-        let multiplier = 1;
-        if (elapsed > HOLD_PRECISION_WINDOW) {
-          const t = Math.min(1, (elapsed - HOLD_PRECISION_WINDOW) / HOLD_ACCEL_RAMP);
-          multiplier = 1 + (HOLD_ACCEL_MAX - 1) * t * t; // ease-in, not a jump
-        }
-        doStep(direction * multiplier);
-      }, HOLD_TICK);
-    }, HOLD_INITIAL_DELAY);
-  }, [doStep, stopHold]);
-
-  useEffect(() => stopHold, [stopHold]); // clear any pending timer on unmount
-
-  // Distinguishing an intentional hold from a scroll gesture that happens
-  // to start on the button: track the touch's start position, and the
-  // moment it drifts past TOUCH_MOVE_SLOP, treat it as a scroll — stop any
-  // repeat in progress and let the browser's native scroll take over
-  // uninterrupted (touchstart is deliberately NOT preventDefault'd, so
-  // scrolling that begins on this button is never blocked).
+  // Touch: commit only on release, and only if the finger never moved past
+  // the slop threshold — that's what makes a vertical scroll starting on
+  // the button do nothing here instead of firing a step.
   const touchStartPosRef = useRef(null);
+  const touchScrollingRef = useRef(false);
   const lastTouchTimeRef = useRef(0);
 
-  const handleTouchStart = useCallback((direction) => (e) => {
+  const handleTouchStart = useCallback((e) => {
     const t = e.touches[0];
     touchStartPosRef.current = { x: t.clientX, y: t.clientY };
-    lastTouchTimeRef.current = Date.now();
-    startHold(direction);
-  }, [startHold]);
+    touchScrollingRef.current = false;
+  }, []);
 
   const handleTouchMove = useCallback((e) => {
     const start = touchStartPosRef.current;
@@ -160,33 +117,42 @@ export default function RiskCalculatorInput({ value, onChange, step = 1, decimal
     const t = e.touches[0];
     const dx = Math.abs(t.clientX - start.x);
     const dy = Math.abs(t.clientY - start.y);
-    if (dx > TOUCH_MOVE_SLOP || dy > TOUCH_MOVE_SLOP) {
-      stopHold();
-      touchStartPosRef.current = null; // this touch is a scroll now, ignore its rest
-    }
-  }, [stopHold]);
+    if (dx > TOUCH_MOVE_SLOP || dy > TOUCH_MOVE_SLOP) touchScrollingRef.current = true;
+  }, []);
 
-  const handleTouchEnd = useCallback(() => {
+  const handleTouchEnd = useCallback((direction) => (e) => {
+    lastTouchTimeRef.current = Date.now();
+    const wasTap = touchStartPosRef.current && !touchScrollingRef.current;
     touchStartPosRef.current = null;
-    stopHold();
-  }, [stopHold]);
+    if (wasTap) {
+      // Stop the browser's synthetic click that would otherwise follow this
+      // touch — without it, a tap here would fire the step twice (once from
+      // this handler, once from the onClick below).
+      e.preventDefault();
+      fireStep(direction);
+    }
+  }, [fireStep]);
 
-  const handleMouseDown = useCallback((direction) => () => {
-    // A touch that ends near a mouse-compat "ghost click" would otherwise
-    // double-step this same press on some browsers/webviews.
-    if (Date.now() - lastTouchTimeRef.current < GHOST_CLICK_GUARD) return;
-    startHold(direction);
-  }, [startHold]);
+  const handleTouchCancel = useCallback(() => {
+    touchStartPosRef.current = null;
+    touchScrollingRef.current = false;
+  }, []);
+
+  const handleClick = useCallback((direction) => () => {
+    // Only reachable from a real mouse/trackpad click — touch taps are
+    // already handled (and preventDefault'd) in handleTouchEnd above, so
+    // this never double-fires on touch devices.
+    if (Date.now() - lastTouchTimeRef.current < 500) return;
+    fireStep(direction);
+  }, [fireStep]);
 
   const StepButton = ({ direction, Icon }) => (
     <button
-      onMouseDown={handleMouseDown(direction)}
-      onMouseUp={stopHold}
-      onMouseLeave={stopHold}
-      onTouchStart={handleTouchStart(direction)}
+      onClick={handleClick(direction)}
+      onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchEnd}
+      onTouchEnd={handleTouchEnd(direction)}
+      onTouchCancel={handleTouchCancel}
       style={{
         width: 44, height: 44, flexShrink: 0, borderRadius: 12,
         background: C.cardHover, border: `1px solid ${C.border}`,

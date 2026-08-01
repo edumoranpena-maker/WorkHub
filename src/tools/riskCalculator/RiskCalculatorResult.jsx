@@ -46,7 +46,7 @@ export default function RiskCalculatorResult({ lot, riskDollar, accentColor }) {
         </div>
       </div>
       <div style={{ textAlign: "right" }}>
-        <p style={{ margin: "0 0 2px", fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>TARGET RISK</p>
+        <p style={{ margin: "0 0 2px", fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>RISK</p>
         <span style={{ fontFamily: font, fontSize: 15, fontWeight: 700, color: C.green }}>{fmtMoney(riskDollar)}</span>
       </div>
     </div>

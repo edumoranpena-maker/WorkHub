@@ -12,7 +12,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { INSTRUMENTS, INSTRUMENT_LIST } from "./instrumentConfig.js";
-import { calculateLot, getSlChips } from "./riskCalculatorService.js";
+import { roundedLot, findNextLotState, realRiskFromLot, getSlChips } from "./riskCalculatorService.js";
 import RiskCalculatorInput from "./RiskCalculatorInput.jsx";
 import RiskCalculatorChipRow from "./RiskCalculatorChipRow.jsx";
 import RiskCalculatorResult from "./RiskCalculatorResult.jsx";
@@ -43,7 +43,14 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
 
-  const lot = calculateLot(riskDollar, state.sl, instrument.pointValue);
+  // `state.sl` is the value actually displayed and used everywhere below —
+  // typing or tapping a chip sets it directly (an exact, deliberate value).
+  // `state.slExact` mirrors the last value the user typed/selected by hand,
+  // kept separately so the +/- navigation below (which moves `sl` to a lot
+  // *state*, not necessarily the exact number the user last entered) never
+  // overwrites what the user actually asked for.
+  const currentLot = roundedLot(riskDollar, state.sl, instrument.pointValue);
+  const realRisk = realRiskFromLot(currentLot, state.sl, instrument.pointValue);
   const chips = getSlChips(instrument);
 
   const selectInstrument = (id) => {
@@ -51,8 +58,20 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
     // Switching instrument resets SL to that instrument's own sensible
     // default rather than keeping a stale number from a totally different
     // market — a NAS100 stop of 61 means nothing on SP500.
-    onChange({ instrumentId: id, sl: next.defaultSL });
+    onChange({ instrumentId: id, sl: next.defaultSL, slExact: next.defaultSL });
     setMenuOpen(false);
+  };
+
+  // Manual entry (typing or a chip tap) — respected exactly as given, and
+  // it's what "exact SL" means going forward until the user types again.
+  const handleTypedSl = (sl) => onChange({ ...state, sl, slExact: sl });
+
+  // +/- buttons — jump to the next SL where the rounded lot actually
+  // changes, skipping every value in between since they're the same
+  // execution state. `slExact` is deliberately left untouched here.
+  const handleStepSl = (direction) => {
+    const nextSl = findNextLotState(state.sl, direction, riskDollar, instrument.pointValue);
+    onChange({ ...state, sl: nextSl });
   };
 
   return (
@@ -90,7 +109,8 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
         <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>SL (pts)</p>
         <RiskCalculatorInput
           value={state.sl}
-          onChange={(sl) => onChange({ ...state, sl })}
+          onChange={handleTypedSl}
+          onStep={handleStepSl}
           step={0.01}
           decimals={2}
         />
@@ -100,10 +120,10 @@ export default function RiskCalculatorWidget({ state, onChange, riskDollar }) {
         values={chips}
         activeValue={state.sl}
         accentColor={instrument.color}
-        onSelect={(sl) => onChange({ ...state, sl })}
+        onSelect={handleTypedSl}
       />
 
-      <RiskCalculatorResult lot={lot} riskDollar={riskDollar} accentColor={instrument.color} />
+      <RiskCalculatorResult lot={currentLot} riskDollar={realRisk} accentColor={instrument.color} />
     </div>
   );
 }
