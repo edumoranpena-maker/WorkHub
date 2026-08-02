@@ -1454,49 +1454,49 @@ function App({ onGoHome, onOpenSettings }) {
       >
         {/* ── ProfileRegion — the one persistent identity region ──────────────
             Avatar, name, bio, stats, action buttons and the tab strip, all
-            mounted here once. Rendered directly inside unifiedScrollRef (not
-            wrapped in any extra container of its own beyond the visibility
-            toggle below) so it introduces zero new scroll — there is still
-            exactly one scroll container in the whole app. isOwner is
-            hardcoded false for now: there's no auth yet, so every visitor
-            sees the same "viewer" actions (Follow/Subscribe/Message) — see
-            ProfileRegion.jsx's file header for how this becomes real once
-            auth exists.
+            mounted here once. Rendered directly inside unifiedScrollRef with
+            no wrapper of its own — see ProfileRegion.jsx's own file header
+            for why: it renders its header and its sticky tab strip as two
+            direct siblings of this scroll container on purpose, and wrapping
+            them together (even just for a visibility toggle) breaks the tab
+            strip's position:sticky by giving it a short shared parent to
+            stick within instead of this tall one. `hidden` is passed straight
+            through instead; ProfileRegion applies visibility:hidden to each
+            of its two pieces individually. isOwner is hardcoded false for
+            now: there's no auth yet, so every visitor sees the same "viewer"
+            actions (Follow/Subscribe/Message) — see ProfileRegion.jsx's file
+            header for how this becomes real once auth exists.
 
-            Hidden via `visibility:hidden` while a fullscreen portal overlay
-            is open, NOT conditionally unmounted — it used to be `{!inside...
-            && <ProfileRegion/>}`, which removed it from the document
-            entirely and shrank unifiedScrollRef's scrollHeight by its full
-            height every time a portal opened or closed. On a short section
-            (Tools/Stats, whose own content alone often doesn't fill the
-            viewport) that shrink forces the browser to clamp scrollTop down
-            to fit — usually to 0 — and that clamp doesn't reverse itself
-            when ProfileRegion remounts and the content grows back, since
-            nothing asks scrollTop to go back to where it was. Keeping it in
-            the layout at a constant height (just invisible) means
-            scrollHeight never moves, so there's never a clamp to lose scroll
-            position to. Post's feed never showed this because it's long
+            `hidden` (not a conditional unmount) is what keeps
+            unifiedScrollRef's scrollHeight constant while a fullscreen
+            portal overlay is open — a conditional `{!x && <ProfileRegion/>}`
+            here shrinks scrollHeight by ProfileRegion's full height on open
+            and grows it back on close, and on a short section (Tools/Stats,
+            whose own content alone often doesn't fill the viewport) that
+            shrink forces the browser to clamp scrollTop down to fit —
+            usually to 0 — a clamp that doesn't reverse itself when the
+            content grows back, since nothing asks scrollTop to return to
+            where it was. Post's feed never showed this because it's long
             enough that a portal open/close was never actually forcing a
             clamp in the first place — same underlying defect, just not
             triggered there. */}
-        <div style={{ visibility: insideFullscreenOverlay ? "hidden" : "visible" }}>
-          <ProfileRegion
-            profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
-            isOwner={false}
-            onEditAvatar={onOpenSettings}
-            followed={followed}
-            onToggleFollow={() => setFollowed(f => !f)}
-            subscribed={subscribed}
-            onToggleSubscribe={() => setSubscribed(s => !s)}
-            activeSectionId={activeSectionId}
-            onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
-            onHome={() => { setDirection(-1); setActiveSectionId(null); }}
-            onSections={allSections}
-            onAddSection={() => setShowAddSection(true)}
-            isDesktop={isDesktop}
-            onVisibilityChange={setProfileVisible}
-          />
-        </div>
+        <ProfileRegion
+          hidden={insideFullscreenOverlay}
+          profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+          isOwner={false}
+          onEditAvatar={onOpenSettings}
+          followed={followed}
+          onToggleFollow={() => setFollowed(f => !f)}
+          subscribed={subscribed}
+          onToggleSubscribe={() => setSubscribed(s => !s)}
+          activeSectionId={activeSectionId}
+          onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
+          onHome={() => { setDirection(-1); setActiveSectionId(null); }}
+          onSections={allSections}
+          onAddSection={() => setShowAddSection(true)}
+          isDesktop={isDesktop}
+          onVisibilityChange={setProfileVisible}
+        />
 
         {/* Section content — all sections stay permanently mounted (visibility
             toggled via CSS in renderMobileSections), so this div's own size
