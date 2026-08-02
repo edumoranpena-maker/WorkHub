@@ -46,6 +46,16 @@
  * "header visible" describe the same physical moment, they just don't need
  * the same mechanism to work (one is native CSS, the other crosses a
  * component boundary and genuinely needs JS).
+ *
+ * ── `hidden` — visually off while a fullscreen portal covers everything ────
+ * App.jsx passes `hidden={true}` while a Thread/Dashboard/Tool portal is
+ * open on top of this region, instead of conditionally unmounting
+ * <ProfileRegion> the way it used to. Each of this component's two pieces
+ * (header, sticky tab strip) gets `visibility:hidden` individually, applied
+ * directly on the div that piece already renders — never on a wrapper
+ * around them. That distinction matters: see the comment right above the
+ * return statement for why wrapping the header and the sticky strip
+ * together, even just for a visibility toggle, breaks position:sticky.
  */
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { motion } from "framer-motion";
@@ -318,16 +328,20 @@ function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection 
 // bounded by its own parent's box, so if the header and the sticky wrapper
 // shared one (short) parent, sticky would have nothing left to stick within
 // once you scrolled past it — this is literally the bug a previous pass
-// found and fixed. Keeping them as siblings inside the tall, single, already-
-// existing page scroll is what makes sticky work AND keeps scrolling itself
-// completely untouched — there is still exactly one scroll container in the
-// whole app, this component doesn't add another.
+// found and fixed (and a later pass re-broke by wrapping both in a div just
+// to toggle visibility — don't do that; that's exactly why `hidden` below
+// is a prop applied inside, per-piece, instead). Keeping them as siblings
+// inside the tall, single, already-existing page scroll is what makes
+// sticky work AND keeps scrolling itself completely untouched — there is
+// still exactly one scroll container in the whole app, this component
+// doesn't add another.
 export default function ProfileRegion({
   profile, isOwner = false, onEditAvatar,
   followed, onToggleFollow, subscribed, onToggleSubscribe,
   activeSectionId, onNavigate, onHome, onSections, onAddSection,
   isDesktop,
   onVisibilityChange,
+  hidden = false,
 }) {
   // The one piece of state this region produces: whether the header is
   // currently visible. Detected here (the component that owns the DOM node
@@ -355,7 +369,7 @@ export default function ProfileRegion({
 
   return (
     <>
-      <div ref={headerAnchorRef}>
+      <div ref={headerAnchorRef} style={{ visibility: hidden ? "hidden" : "visible" }}>
         <PageContainer isDesktop={isDesktop} variant="feed">
           <ProfileHeader
             onNavigate={onNavigate}
@@ -380,6 +394,7 @@ export default function ProfileRegion({
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         borderBottom: `1px solid ${C.border}`,
+        visibility: hidden ? "hidden" : "visible",
       }}>
         <PageContainer isDesktop={isDesktop} variant="feed">
           <div style={{ padding: "6px 14px 8px" }}>
