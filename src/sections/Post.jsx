@@ -56,7 +56,7 @@ import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, LinkifiedText, merge
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory } from "../lib/workContext.jsx";
-import { PageContainer } from "../lib/layout.jsx";
+import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -1533,20 +1533,10 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 // ─── ThreadView — Post thread with updates + subtemas + FAB ───────────────────
 
 // ─── Overlay gesture isolation ──────────────────────────────────────────────
-// Thread/Subtema overlays are portaled to document.body (see createPortal
-// below), but a React portal's events still bubble through the REACT tree,
-// not the DOM tree — so a touch gesture starting inside the overlay would
-// otherwise keep bubbling up through <Post>'s real React ancestor (App.jsx's
-// unifiedScrollRef), reaching its horizontal-swipe-to-change-section handler
-// even though the overlay visually covers it. Stopping propagation right at
-// the overlay's own boundary is what actually makes it "the only interactive
-// element" while it's open — nothing below can react to what happens on top
-// of it, regardless of what handlers exist (or get added later) upstream.
-const isolateOverlayGestures = {
-  onTouchStart: (e) => e.stopPropagation(),
-  onTouchMove: (e) => e.stopPropagation(),
-  onTouchEnd: (e) => e.stopPropagation(),
-};
+// isolateOverlayGestures now lives in lib/layout.jsx (unchanged, moved as-is)
+// so Stats.jsx and Tools.jsx's portals can spread the same object instead of
+// each keeping their own copy — see that file for the full explanation of
+// why this exists.
 
 // Set by ThreadView right before it hands off to the adjacent post at the end
 // of a committed drag. The freshly-mounted ThreadView for that post reads it

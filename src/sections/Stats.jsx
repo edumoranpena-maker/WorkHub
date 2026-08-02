@@ -46,7 +46,7 @@ import {
   postToDoersJournal, readBridgeMessage, parseAllTimeStatsPayload,
 } from "../lib/doersJournalBridge.js";
 import { fetchAllTimeStats } from "../lib/statsApi.js";
-import { PageContainer } from "../lib/layout.jsx";
+import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
 // Local per-file copy, same convention as every other section (Post.jsx,
@@ -246,7 +246,7 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate 
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div key="stats-dashboard-overlay"
+        <motion.div key="stats-dashboard-overlay" {...isolateOverlayGestures}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
           style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
 

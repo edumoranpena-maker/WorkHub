@@ -38,7 +38,7 @@ import { useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Calculator } from "lucide-react";
-import { PageContainer } from "../lib/layout.jsx";
+import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ function ToolPortal({ tool, onClose, onPortalChange }) {
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div key="tool-portal-overlay"
+        <motion.div key="tool-portal-overlay" {...isolateOverlayGestures}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
           style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
 
