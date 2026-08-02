@@ -63,7 +63,7 @@ import {
   Pencil, Plus, Globe, Instagram, Youtube, Twitter, Linkedin, Github,
   Link as LinkIcon,
 } from "lucide-react";
-import { PageContainer } from "../lib/layout.jsx";
+import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -280,7 +280,15 @@ function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection 
   }, [measure]);
 
   return (
-    <div ref={containerRef} style={{ position: "relative", display: "flex", overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+    // isolateOverlayGestures stops these touch events from bubbling up to
+    // App.jsx's horizontal-swipe-to-change-section handler on unifiedScrollRef
+    // — without it, swiping through this strip to browse tabs also reads as a
+    // section-change swipe once it crosses App's own drag threshold, changing
+    // section out from under you mid-search. Native horizontal scrolling of
+    // the strip itself is untouched (no preventDefault involved, same as
+    // every other use of this object) — only the bubbling to the ancestor is
+    // cut. Swiping anywhere else in the app still changes sections normally.
+    <div ref={containerRef} {...isolateOverlayGestures} style={{ position: "relative", display: "flex", overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
       {tabs.map(t => {
         const key = t.id ?? "__perfil__";
         const active = key === activeKey;
