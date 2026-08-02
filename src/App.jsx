@@ -1455,13 +1455,31 @@ function App({ onGoHome, onOpenSettings }) {
         {/* ── ProfileRegion — the one persistent identity region ──────────────
             Avatar, name, bio, stats, action buttons and the tab strip, all
             mounted here once. Rendered directly inside unifiedScrollRef (not
-            wrapped in any extra container of its own) so it introduces zero
-            new scroll — there is still exactly one scroll container in the
-            whole app. isOwner is hardcoded false for now: there's no auth
-            yet, so every visitor sees the same "viewer" actions (Follow/
-            Subscribe/Message) — see ProfileRegion.jsx's file header for how
-            this becomes real once auth exists. */}
-        {!insideFullscreenOverlay && (
+            wrapped in any extra container of its own beyond the visibility
+            toggle below) so it introduces zero new scroll — there is still
+            exactly one scroll container in the whole app. isOwner is
+            hardcoded false for now: there's no auth yet, so every visitor
+            sees the same "viewer" actions (Follow/Subscribe/Message) — see
+            ProfileRegion.jsx's file header for how this becomes real once
+            auth exists.
+
+            Hidden via `visibility:hidden` while a fullscreen portal overlay
+            is open, NOT conditionally unmounted — it used to be `{!inside...
+            && <ProfileRegion/>}`, which removed it from the document
+            entirely and shrank unifiedScrollRef's scrollHeight by its full
+            height every time a portal opened or closed. On a short section
+            (Tools/Stats, whose own content alone often doesn't fill the
+            viewport) that shrink forces the browser to clamp scrollTop down
+            to fit — usually to 0 — and that clamp doesn't reverse itself
+            when ProfileRegion remounts and the content grows back, since
+            nothing asks scrollTop to go back to where it was. Keeping it in
+            the layout at a constant height (just invisible) means
+            scrollHeight never moves, so there's never a clamp to lose scroll
+            position to. Post's feed never showed this because it's long
+            enough that a portal open/close was never actually forcing a
+            clamp in the first place — same underlying defect, just not
+            triggered there. */}
+        <div style={{ visibility: insideFullscreenOverlay ? "hidden" : "visible" }}>
           <ProfileRegion
             profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
             isOwner={false}
@@ -1478,7 +1496,7 @@ function App({ onGoHome, onOpenSettings }) {
             isDesktop={isDesktop}
             onVisibilityChange={setProfileVisible}
           />
-        )}
+        </div>
 
         {/* Section content — all sections stay permanently mounted (visibility
             toggled via CSS in renderMobileSections), so this div's own size
