@@ -27,8 +27,22 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { X, File as FileIcon, ExternalLink, Download } from "lucide-react";
+import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { getVisibilityOption } from "../lib/visibility.jsx";
+
+// Same tiny local hook every other file in this codebase already keeps its
+// own copy of (Post.jsx, Tools.jsx, Announcements.jsx, Stats.jsx, etc.) —
+// matching that existing convention rather than introducing this file's own
+// import path for a one-liner none of the others use either.
+function useIsDesktop() {
+  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setV(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return v;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SWIPE_MIN       = 50;   // px to count as a swipe between items
@@ -38,6 +52,8 @@ const INDICATOR_SHOW  = 5200; // ms the position indicator (and info blocks) sta
 const MAX_ZOOM        = 5;
 const MIN_ZOOM        = 1;
 const DOUBLE_TAP_MS   = 280;  // ms window for double-tap-to-zoom
+const WHEEL_ZOOM_SENSITIVITY  = 0.0035; // exponential curve — smooth across a mouse's chunky wheel notches and a trackpad's fine-grained deltas alike
+const DOUBLE_CLICK_ZOOM_SCALE = 2.5;    // same target scale the existing double-TAP (touch) already zooms to, kept identical for consistency
 const DESCRIPTION_COLLAPSE_LEN = 120; // chars — beyond this, description collapses to 2 lines + "Ver más"
 const DESCRIPTION_MAX_HEIGHT = "38vh"; // cap once expanded — beyond this, internal scroll takes over
 
@@ -207,6 +223,22 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
               // only ever expands here; collapsing is the button's job alone.
               if (!expanded && isLong) onExpandChange(true);
             }}
+            // Mouse-only, always-on stopPropagation (unlike the touch handlers
+            // below, which stay conditional on `expanded` for their own
+            // reason). This is the fix for the desktop bug where clicking
+            // "Ver más" or the text closed the whole viewer: the backdrop's
+            // onPointerDown calls setPointerCapture on itself for every mouse
+            // press so it can track a possible drag-to-swipe, and it does
+            // that check before "click" ever fires — stopping only the click
+            // (via onClick above) is too late by then. Stopping pointerdown
+            // here means that capture (and the backdrop's whole drag/close
+            // tracking) never starts in the first place for a press that
+            // began on the description. Filtered to mouse specifically so
+            // touch — which never had this bug, and drives its own separate
+            // gesture handling below — behaves exactly as it did before.
+            onPointerDown={(e) => { if (e.pointerType === "mouse") e.stopPropagation(); }}
+            onPointerMove={(e) => { if (e.pointerType === "mouse") e.stopPropagation(); }}
+            onPointerUp={(e) => { if (e.pointerType === "mouse") e.stopPropagation(); }}
             // Only intercepts touch (for internal scroll) once expanded —
             // collapsed, a swipe starting over the 2-line preview still
             // reaches the backdrop exactly as it always did.
@@ -301,6 +333,7 @@ function ZoomableImage({ src, onZoomChange }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const gestureRef = useRef(null);  // tracks active gesture state
   const lastTapRef = useRef(0);
+  const mousePanRef = useRef(null); // desktop drag-to-pan, mirrors gestureRef but mouse-only
 
   // Notify parent of zoom level so it can gate swipe navigation
   useEffect(() => { onZoomChange?.(scale); }, [scale]);
@@ -312,6 +345,23 @@ function ZoomableImage({ src, onZoomChange }) {
   };
 
   const reset = () => { setScale(1); setOffset({ x: 0, y: 0 }); };
+
+  // Shared by wheel-zoom and double-click-zoom: change scale while keeping
+  // whatever content point sits under (cx, cy) — coordinates relative to
+  // the container's own center — visually fixed on screen, then clamp so
+  // the image can never drift off-screen at the new scale. offset.x/y are
+  // already plain screen-space pixels regardless of scale (the translate()
+  // in the transform below divides by scale specifically so that cancels
+  // out), which is what keeps this math simple.
+  const zoomToward = (cx, cy, newScaleRaw, el) => {
+    const newScale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newScaleRaw));
+    const contentX = (cx - offset.x) / scale;
+    const contentY = (cy - offset.y) / scale;
+    const rawX = newScale <= 1.001 ? 0 : cx - contentX * newScale;
+    const rawY = newScale <= 1.001 ? 0 : cy - contentY * newScale;
+    setScale(newScale);
+    setOffset(clampOffset(rawX, rawY, newScale, el.offsetWidth, el.offsetHeight));
+  };
 
   const handleTouchStart = (e) => {
     if (e.touches.length === 1) {
@@ -377,12 +427,80 @@ function ZoomableImage({ src, onZoomChange }) {
     gestureRef.current = null;
   };
 
+  // ── Desktop: wheel/trackpad zoom ─────────────────────────────────────────
+  // A plain mouse wheel and a trackpad's pinch/two-finger-scroll gesture
+  // both arrive here as native "wheel" events (browsers report trackpad
+  // pinch as wheel with ctrlKey set) — one handler covers "Zoom mediante
+  // rueda del mouse" and "Zoom mediante los controles habituales del
+  // trackpad" identically, no separate gesture detection needed. Always
+  // zooms (never scrolls anything) since the backdrop itself has no scroll
+  // of its own to preserve.
+  const handleWheel = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    const zoomFactor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY);
+    zoomToward(cx, cy, scale * zoomFactor, el);
+  };
+
+  // ── Desktop: double-click to zoom, double-click again to reset ──────────
+  const handleDoubleClick = (e) => {
+    e.stopPropagation();
+    if (scale > 1.05) { reset(); return; }
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    zoomToward(cx, cy, DOUBLE_CLICK_ZOOM_SCALE, el);
+  };
+
+  // ── Desktop: drag-to-pan once zoomed ─────────────────────────────────────
+  // Pointer events (not legacy mouse events) on purpose, and filtered to
+  // pointerType==="mouse" specifically — the backdrop's own swipe-to-
+  // navigate is also Pointer-based, so using the same event type is what
+  // lets stopPropagation here reliably reach it before it starts tracking
+  // a drag of its own (mixing event types, e.g. mousedown here vs
+  // pointerdown there, wouldn't reliably stop the other — that's the exact
+  // class of bug the description-block fix above deals with). Untouched by
+  // touch input either way: pointerType would be "touch" there, so every
+  // one of these bails immediately and the handlers above keep handling it
+  // exactly as they always have.
+  const handlePointerDown = (e) => {
+    if (e.pointerType !== "mouse" || scale <= 1.05) return;
+    e.stopPropagation();
+    mousePanRef.current = { startX: e.clientX - offset.x, startY: e.clientY - offset.y };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const handlePointerMove = (e) => {
+    if (e.pointerType !== "mouse") return;
+    const g = mousePanRef.current;
+    if (!g) return;
+    e.stopPropagation();
+    const el = e.currentTarget;
+    setOffset(clampOffset(e.clientX - g.startX, e.clientY - g.startY, scale, el.offsetWidth, el.offsetHeight));
+  };
+  const handlePointerUp = (e) => {
+    if (e.pointerType !== "mouse") return;
+    if (mousePanRef.current) e.stopPropagation();
+    mousePanRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+
   return (
     <div
       style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onWheel={handleWheel}
+      onDoubleClick={handleDoubleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
       <img
         src={src}
@@ -397,6 +515,7 @@ function ZoomableImage({ src, onZoomChange }) {
           transformOrigin: "center center",
           transition: scale === 1 ? "transform 0.22s ease" : "none",
           userSelect: "none", touchAction: "none",
+          cursor: scale > 1.05 ? "grab" : "auto",
         }}
       />
     </div>
@@ -498,6 +617,28 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
     setIdx(next);
     setZoomScale(1);
   }, [count]);
+
+  // ── Desktop: arrow-key navigation ──────────────────────────────────────────
+  // Scoped to exactly the viewer's own lifetime — this effect only exists
+  // while GlobalImageViewer is mounted (which is exactly while the gallery
+  // is open, per useImageViewer below), so the listener is added on open and
+  // removed on close automatically; nothing else needs to know it existed.
+  // Skips while zoomed in (arrow keys aren't a zoomed-pan control here) and
+  // while focus is in a real text field (copying/selecting the description
+  // shouldn't have arrow keys hijacked into changing the photo underneath).
+  const isDesktop = useIsDesktop();
+  useEffect(() => {
+    if (!isDesktop) return;
+    const onKeyDown = (e) => {
+      if (zoomScale > 1.05) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); goTo(idx + 1, 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(idx - 1, -1); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isDesktop, zoomScale, idx, goTo]);
 
   // Swipe between items — only when image is at scale 1
   const onTouchStart = (e) => {
@@ -690,6 +831,42 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
           />
         )}
 
+
+        {/* Side arrows — desktop only, and only pointing where there's
+            actually something to go to (no prev arrow on the first item,
+            no next arrow on the last). Same close-button visual language
+            (dark translucent circle, white icon) so it reads as part of
+            the same chrome instead of a foreign control. */}
+        {isDesktop && idx > 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); goTo(idx - 1, -1); }}
+            aria-label="Previous"
+            style={{
+              position: "fixed", top: "50%", left: 20, transform: "translateY(-50%)",
+              width: 44, height: 44, borderRadius: "50%", zIndex: 3001,
+              background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "#fff",
+            }}
+          >
+            <ChevronLeft size={22} strokeWidth={2.2} />
+          </button>
+        )}
+        {isDesktop && idx < count - 1 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); goTo(idx + 1, 1); }}
+            aria-label="Next"
+            style={{
+              position: "fixed", top: "50%", right: 20, transform: "translateY(-50%)",
+              width: 44, height: 44, borderRadius: "50%", zIndex: 3001,
+              background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "#fff",
+            }}
+          >
+            <ChevronRight size={22} strokeWidth={2.2} />
+          </button>
+        )}
 
         {/* Close button */}
         <button
