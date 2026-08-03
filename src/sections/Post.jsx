@@ -55,7 +55,7 @@ import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, LinkifiedText, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
-import { useSectionMemory } from "../lib/workContext.jsx";
+import { useSectionMemory, useWorkContextStore } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
@@ -2230,7 +2230,7 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, onThreadChange, onRegisterPostCallback }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openUpdateId, onUpdateResolved, onThreadChange, onOpenThreadIdChange, onRegisterPostCallback }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
   // hidden via CSS, never torn down) — so this plain useState already
@@ -2300,6 +2300,53 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       : threads.find(th => th.id === openThreadId);
     if (t) { setOpenThread(t); }
   }, [openThreadId]); // eslint-disable-line
+
+  // ── Deep-link: Update ──────────────────────────────────────────────────────
+  // An update has no view of its own — it's always rendered inside the
+  // Thread (or Subtema-within-a-Thread) that owns it. Resolving /update/:id
+  // means finding that owner in data Post.jsx already has loaded (no second
+  // fetch, no parallel lookup structure) and opening it the same way a tap
+  // would. If the update lives inside a Subtema, the target subtema id is
+  // written into that thread's OWN existing section-memory slot — the exact
+  // key/shape ThreadView already reads on mount (see its useSectionMemory
+  // call below) to restore "which subtema was open" — so ThreadView opens
+  // it itself, unchanged, with no new prop threaded through it.
+  //
+  // Once resolved, onUpdateResolved reports the thread id upward so App.jsx
+  // can fold this into the exact same openThreadId/currentThreadId state
+  // already used for thread/post links — /update/:id is an entry point, not
+  // a URL that needs to keep existing once it's done its job; the URL
+  // canonicalizes to /thread/:id once the content is actually open.
+  const resolvedUpdateIdRef = useRef(null);
+  const workStore = useWorkContextStore();
+  useEffect(() => {
+    if (!openUpdateId || openUpdateId === resolvedUpdateIdRef.current) return;
+    let ownerThread = null, ownerSubtemaId = null;
+    for (const t of threads) {
+      if ((t.updates || []).some(u => u.id === openUpdateId)) { ownerThread = t; break; }
+      const sub = (t.subtemas || []).find(s => (s.updates || []).some(u => u.id === openUpdateId));
+      if (sub) { ownerThread = t; ownerSubtemaId = sub.id; break; }
+    }
+    if (!ownerThread) return; // not loaded yet, or genuinely doesn't exist — nothing to do
+    resolvedUpdateIdRef.current = openUpdateId;
+    if (ownerSubtemaId) {
+      workStore.set(`recaps:thread:${ownerThread.id}`, { scrollTop: 0, openSubtemaId: ownerSubtemaId });
+    }
+    setOpenThread(ownerThread);
+    onUpdateResolved?.(ownerThread.id);
+  }, [openUpdateId, threads]); // eslint-disable-line
+
+  // ── Deep-link: report which thread is actually open ────────────────────────
+  // openThreadId (above) is a one-shot "please open this" request — it does
+  // NOT reflect what's currently open once the user starts tapping around
+  // normally inside the feed (setOpenThread is called directly in plenty of
+  // places below, deliberately bypassing that prop). This is the other
+  // direction: App.jsx needs to know what's ACTUALLY open, regardless of
+  // how it got that way, purely to keep the URL correct — it never feeds
+  // back into anything here.
+  useEffect(() => {
+    onOpenThreadIdChange?.(openThread?.id ?? null);
+  }, [openThread, onOpenThreadIdChange]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleStatusChange = useCallback(async (threadId, newStatus) => {

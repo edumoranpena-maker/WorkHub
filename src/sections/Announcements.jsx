@@ -897,7 +897,7 @@ function PostComposer({ onPublish, onClose }) {
 }
 
 // ─── Announcement Post Card ────────────────────────────────────────────────────
-function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
+function AnnouncementCard({ post, index, isHost, onVote, onDelete, forceOpenId, onForceOpenHandled }) {
   const [liked, setLiked] = useState(post.liked);
   const [likeCount, setLikeCount] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
@@ -905,6 +905,20 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isExpired = post.status === "caducado";
   const { openGallery, ViewerPortal } = useImageViewer();
+  const cardRef = useRef(null);
+
+  // Deep-link support: App.jsx resolves an announcement URL to a post id and
+  // hands it down as `forceOpenId` — this is the one place that actually
+  // knows how to "open" a regular announcement post (scroll to it, pop its
+  // comments sheet), the same way a tap on the card already does. Once
+  // handled, `onForceOpenHandled` clears the pending id upstream so this
+  // doesn't re-fire on every re-render.
+  useEffect(() => {
+    if (forceOpenId !== post.id) return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setShowComments(true);
+    onForceOpenHandled?.();
+  }, [forceOpenId, post.id, onForceOpenHandled]);
 
   const toggleLike = () => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); };
 
@@ -936,7 +950,7 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
         )}
       </AnimatePresence>
 
-      <motion.article initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+      <motion.article ref={cardRef} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.04 + index * 0.06, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         style={{ background: C.card, border: `1px solid ${post.pinned ? A + "40" : isExpired ? C.border : C.border}`, borderRadius: 20, overflow: "hidden", opacity: isExpired ? 0.7 : 1, transition: "opacity 0.2s" }}>
 
@@ -1034,11 +1048,31 @@ function AnnouncementCard({ post, index, isHost, onVote, onDelete }) {
 }
 
 // ─── Main Announcements Screen ─────────────────────────────────────────────────
-export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish, onShowStory, onRegisterAnnStory, onShowStoryViewer, onRegisterAnnStories }) {
+export default function Announcements({ section, onBack, isHost, onNavigate, mobileTab, onOpenComposer, onOpenStoryUploader, openComposerSignal, openStorySignal, onShowComposer, onRegisterAnnPublish, onShowStory, onRegisterAnnStory, onShowStoryViewer, onRegisterAnnStories, openAnnouncementId, onOpenAnnouncementHandled }) {
   const isDesktop = useIsDesktop();
   const [posts, setPosts] = useState(MOCK_POSTS);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [stories, setStories] = useState(MOCK_STORIES);
+
+  // Deep-link support: App.jsx hands down whatever announcement id the URL
+  // resolved to (story or regular post — this section owns both kinds of
+  // content, unlike Post.jsx where everything is a Thread). Stories already
+  // have an external open path (onShowStoryViewer, index-based — the exact
+  // same one the story bar's own onClick uses); regular posts don't, so
+  // that half is handled inside AnnouncementCard itself via forceOpenId,
+  // right next to the tap handler it already has for the same thing.
+  useEffect(() => {
+    if (!openAnnouncementId) return;
+    const storyIdx = stories.findIndex(s => s.id === openAnnouncementId);
+    if (storyIdx !== -1) {
+      onShowStoryViewer?.(storyIdx);
+      onOpenAnnouncementHandled?.();
+    }
+    // If it's a regular post instead, AnnouncementCard's own effect (below,
+    // per-card) handles it and calls onOpenAnnouncementHandled itself once
+    // it actually finds a matching post — no need to duplicate that lookup
+    // here against `posts`.
+  }, [openAnnouncementId, stories, onShowStoryViewer, onOpenAnnouncementHandled]);
   const [viewingStory, setViewingStory] = useState(null); // index
   const [showUploader, setShowUploader] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
@@ -1140,7 +1174,8 @@ export default function Announcements({ section, onBack, isHost, onNavigate, mob
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "16px 14px" }}>
         {/* Pinned first */}
         {[...posts].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((post, i) => (
-          <AnnouncementCard key={post.id} post={post} index={i} isHost={isHost} onVote={handleVote} onDelete={handleDeletePost} />
+          <AnnouncementCard key={post.id} post={post} index={i} isHost={isHost} onVote={handleVote} onDelete={handleDeletePost}
+            forceOpenId={openAnnouncementId} onForceOpenHandled={onOpenAnnouncementHandled} />
         ))}
       </div>
     </div>

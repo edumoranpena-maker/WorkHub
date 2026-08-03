@@ -104,10 +104,24 @@ function ToolCard({ tool, onClick }) {
 // opens/closes — same contract as Stats' onDashboardChange / Post's
 // onThreadChange, so the section underneath (unified scroll + profile
 // header) freezes the same way it already does for those.
-export default function Tools({ onToolsPortalChange }) {
+//
+// openToolId (prop) / onOpenToolIdChange: the deep-linking pair, separate
+// from onToolsPortalChange above on purpose — that one only ever needed a
+// boolean for the freeze mechanism, this needs the actual id so App.jsx can
+// both open a specific tool from a URL (same controlled-handoff pattern as
+// Post's openThreadId prop) and reflect which one is open back into the URL.
+export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp, onOpenToolIdChange }) {
   const isDesktop = useIsDesktop();
   const [openToolId, setOpenToolId] = useState(null);
   const openTool = TOOLS.find(t => t.id === openToolId) ?? null;
+
+  useEffect(() => {
+    if (openToolIdProp) setOpenToolId(openToolIdProp);
+  }, [openToolIdProp]);
+
+  useEffect(() => {
+    onOpenToolIdChange?.(openToolId);
+  }, [openToolId, onOpenToolIdChange]);
 
   return (
     <PageContainer isDesktop={isDesktop} variant="feed">
