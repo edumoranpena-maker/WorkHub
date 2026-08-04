@@ -1589,7 +1589,7 @@ function buildThreadMediaSequence(thread) {
   return { items, groups };
 }
 
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, requestedSubtemaId, onOpenSubtemaIdChange, onCloseRequest }) {
   const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
   const [thread, setThread] = useState(() => {
@@ -1836,6 +1836,33 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   const openSubtemaView = (sub) => { setOpenSubtema(sub); setTmem(m => ({ ...m, openSubtemaId: sub.id })); onSubtemaChange?.(true); };
   const closeSubtema = () => { setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); };
 
+  // ── Deep-link reconciliation: which subtema SHOULD be open ────────────────
+  // requestedSubtemaId is App's authoritative answer, from routeIntent —
+  // reacts live (not just on mount, unlike tmem's own lazy initializer
+  // above, which only helps for a fresh mount/reload) so that opening or
+  // closing a Subtema via popstate works correctly even while this exact
+  // ThreadView instance was already sitting open the whole time — e.g.
+  // pressing the device's Forward button to step back into a Subtema
+  // without the Thread itself remounting.
+  useEffect(() => {
+    if (requestedSubtemaId === undefined) return; // prop not wired by this caller — opt out entirely
+    if (requestedSubtemaId === null) {
+      if (openSubtema) closeSubtema();
+      return;
+    }
+    if (requestedSubtemaId === openSubtema?.id) return; // already correct
+    const found = (thread.subtemas || []).find(s => s.id === requestedSubtemaId);
+    if (found) openSubtemaView(found);
+  }, [requestedSubtemaId]); // eslint-disable-line
+
+  // ── Deep-link: report which subtema is actually open ──────────────────────
+  // Same "report, don't ask" shape as Post.jsx's own onOpenThreadIdChange —
+  // covers a normal SubtemaCard tap exactly the same as the reconciliation
+  // effect above, since both just end up calling openSubtemaView/closeSubtema.
+  useEffect(() => {
+    onOpenSubtemaIdChange?.(openSubtema?.id ?? null);
+  }, [openSubtema, onOpenSubtemaIdChange]);
+
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
   // Which composer to show inside this view
@@ -2075,7 +2102,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             <motion.div key="subtema-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
-              <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
+              <SubtemaView subtema={openSubtema} onBack={onCloseRequest} isHost={isHost}
                 parentVisibility={thread.visibility}
                 onSubtemaEdited={(subId, patch) => { setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) })); patchCachedSubtema(thread.id, subId, patch); }}
                 onSubtemaDeleted={(subId) => { setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) })); removeCachedSubtema(thread.id, subId); }}
@@ -2230,7 +2257,7 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openUpdateId, onUpdateResolved, onThreadChange, onOpenThreadIdChange, onRegisterPostCallback }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openUpdateId, onUpdateResolved, openSubtemaId, onOpenSubtemaIdChange, onCloseRequest, onThreadChange, onOpenThreadIdChange, onRegisterPostCallback }) {
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
   // hidden via CSS, never torn down) — so this plain useState already
@@ -2294,7 +2321,14 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (!openThreadId) return;
+    if (!openThreadId) {
+      // Explicit null (a real transition, not "was never set") means App
+      // itself just navigated away from Recaps or closed this thread via
+      // closePortal/history.back() — mirror that locally instead of only
+      // ever reacting to a real id, which is all this effect used to do.
+      if (openThread) closeThread();
+      return;
+    }
     const t = openThreadId.startsWith("p")
       ? threads.find(th => th.planningPostId === openThreadId)
       : threads.find(th => th.id === openThreadId);
@@ -2524,7 +2558,8 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             <motion.div key="thread-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
-              <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+              <ThreadView key={openThread.id} thread={openThread} onBack={onCloseRequest} isHost={isHost}
+                requestedSubtemaId={openSubtemaId} onOpenSubtemaIdChange={onOpenSubtemaIdChange} onCloseRequest={onCloseRequest}
                 onNavigateAdjacent={navigateAdjacentThread}
                 adjacentThreads={adjacentThreads}
                 onStatusChange={handleStatusChange}
