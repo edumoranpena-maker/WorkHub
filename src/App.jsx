@@ -18,7 +18,7 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import Stats          from "./sections/Stats";
 import Tools          from "./sections/Tools";
 import { PageContainer } from "./lib/layout.jsx";
-import { parseRoute, buildPath, pushRoute, replaceRoute, closeToParent, tagInitialEntry } from "./lib/router.js";
+import { parseRoute, buildPath } from "./lib/router.js";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
@@ -1116,34 +1116,21 @@ export default function RootShell() {
   // just ask for" — showHome below is *derived* from it rather than being
   // its own independent boolean, so there's only ever one thing that can
   // disagree with the URL instead of two that could drift apart. Lazily
-  // initialized from the URL PlanSpace was actually loaded with (and, for
-  // the one case a bare URL can't fully express — a Subtema open inside a
-  // Thread — from that entry's own history.state too, which survives a
-  // reload exactly like the URL does), so a deep link opens directly into
-  // the right screen on first paint instead of flashing HomeFeed first.
-  const [routeIntent, setRouteIntent] = useState(() => parseRoute(window.location.pathname, window.history.state));
+  // initialized from the URL PlanSpace was actually loaded with, so a
+  // deep link opens directly into the right screen on first paint instead
+  // of flashing HomeFeed first.
+  const [routeIntent, setRouteIntent] = useState(() => parseRoute(window.location.pathname));
   const [showSettings, setShowSettings] = useState(false);
   const showHome = routeIntent.type === "home";
-
-  // Tags whatever entry the browser actually loaded with depth 0, once,
-  // without creating a new entry or touching the URL — see router.js's
-  // file header. Everything downstream that decides "is there real history
-  // behind this, or was it the entry point of the session" depends on this
-  // having run first.
-  useEffect(() => {
-    tagInitialEntry(window.location.pathname + window.location.search);
-  }, []);
 
   // The only popstate listener in the app — RootShell is the only thing
   // that's always mounted regardless of which screen is showing (App itself
   // unmounts entirely while showHome is true), so it's the only safe place
   // for this. Every other piece of navigation state, in App and below,
   // reacts to routeIntent changing rather than listening for popstate
-  // itself. e.state (not just the URL) is threaded through parseRoute —
-  // it's what disambiguates a Subtema-in-Thread entry from its own Thread's
-  // bare entry when both share the same URL.
+  // itself.
   useEffect(() => {
-    const onPopState = (e) => setRouteIntent(parseRoute(window.location.pathname, e.state));
+    const onPopState = () => setRouteIntent(parseRoute(window.location.pathname));
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -1151,12 +1138,9 @@ export default function RootShell() {
   // For the two transitions that live entirely outside App's own state
   // (HomeFeed ↔ Perfil) — everything else App can reach is handled by its
   // own state→URL effect instead, since App is the one that actually knows
-  // when those change. Uses pushRoute (not a raw history.pushState) so this
-  // transition gets a proper depth tag too — entering Perfil from HomeFeed
-  // is exactly the kind of forward step the device Back button should be
-  // able to undo.
+  // when those change.
   const navigateApp = useCallback((intent, path) => {
-    pushRoute(path, {});
+    window.history.pushState(null, "", path);
     setRouteIntent(intent);
   }, []);
 
@@ -1213,10 +1197,8 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
   const [openUpdateId,       setOpenUpdateId]       = useState(null); // request → Post
   const [openToolId,         setOpenToolId]         = useState(null); // request → Tools
   const [openAnnouncementId, setOpenAnnouncementId] = useState(null); // request → Announcements
-  const [openSubtemaId,      setOpenSubtemaId]      = useState(null); // request → Post (which subtema, within whatever thread is open)
   const [currentThreadId,    setCurrentThreadId]    = useState(null); // report ← Post
   const [currentToolId,      setCurrentToolId]      = useState(null); // report ← Tools
-  const [currentSubtemaId,   setCurrentSubtemaId]   = useState(null); // report ← Post (via ThreadView)
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [checklists,      setChecklists]      = useState([]); // master checklist store
   const [fabOpen,           setFabOpen]           = useState(false);
@@ -1301,16 +1283,6 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
     if (navLocked) return;
     if (sectionId === activeSectionId) return;
     setOpenThreadId(null);
-    // Same treatment as openThreadId above, generalized: navigating to a
-    // new section via navigate() (as opposed to navigateTo(), which sets
-    // openThreadId itself right after) always means no sub-item request
-    // should linger — each section starts clean. This is what lets
-    // Tools.jsx's own openToolId-watching effect know to actually close a
-    // tool when routeIntent moves away from it, the same way Post.jsx's
-    // already does for threads.
-    setOpenToolId(null);
-    setOpenAnnouncementId(null);
-    setOpenUpdateId(null);
     setDirection(activeSectionId === null ? 1 : 1);
     setActiveSectionId(sectionId);
   }, [activeSectionId, navLocked]);
@@ -1326,9 +1298,6 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
     // If we're in a section, first go to Perfil tab
     if (activeSectionId) {
       setOpenThreadId(null);
-      setOpenToolId(null);
-      setOpenAnnouncementId(null);
-      setOpenUpdateId(null);
       setDirection(-1);
       setActiveSectionId(null);
       return;
@@ -1347,132 +1316,55 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
   // first mount (an initial deep link) and every time routeIntent changes
   // again (the browser's back/forward buttons — see RootShell's popstate
   // listener), covering both with one code path.
-  // ── Deep-linking: URL → state ────────────────────────────────────────────
-  // `routeIntent` comes from RootShell (see there for why it — not a plain
-  // "showHome" boolean — is the one piece of state that owns "what did the
-  // browser just ask for"). This effect is the single place that turns an
-  // intent into actual navigation, reusing the exact same navigate/
-  // navigateTo functions a tap would call — a deep link and a tap end up
-  // indistinguishable to every section below this point. It re-runs both on
-  // first mount (an initial deep link) and every time routeIntent changes
-  // again (the browser's back/forward buttons — see RootShell's popstate
-  // listener), covering both with one code path.
-  //
-  // openSubtemaId is reset on *every* run, before the switch, rather than
-  // only inside the "subtema-in-thread" case — every other intent means "no
-  // subtema should be open", and Post.jsx's own reconciliation effect (see
-  // there) needs that transition-to-null exactly as much as it needs the
-  // transition-to-a-real-id, so it can close one on the way back out.
   useEffect(() => {
-    setOpenSubtemaId(routeIntent?.type === "subtema-in-thread" ? routeIntent.subtemaId : null);
-    // Same reasoning as openSubtemaId above: every intent that isn't
-    // "announcement" means no story should be showing, and even within
-    // "announcement" it's Announcements.jsx's own effect (reacting to
-    // openAnnouncementId below) that decides whether the id resolves to a
-    // story (re-opening this) or a regular post — never assumed here.
-    setViewingAnnStory(null);
     switch (routeIntent?.type) {
-      case "profile":           navigate(null); break;
-      case "thread":            navigateTo("recaps", routeIntent.threadId); break;
-      case "post":              navigateTo("recaps", "p" + routeIntent.postId); break;
-      case "subtema-in-thread": navigateTo("recaps", routeIntent.threadId); break;
-      case "update":            navigate("recaps"); setOpenUpdateId(routeIntent.updateId); break;
-      case "announcement":      navigate("announcements"); setOpenAnnouncementId(routeIntent.announcementId); break;
-      case "stats":             navigate("stats"); break;
-      case "rooms":             navigate("rooms"); break;
-      case "tools":             navigate("tools"); break;
-      case "tool":              navigate("tools"); setOpenToolId(routeIntent.toolId); break;
+      case "profile":      navigate(null); break;
+      case "thread":       navigateTo("recaps", routeIntent.threadId); break;
+      case "post":         navigateTo("recaps", "p" + routeIntent.postId); break;
+      case "update":       navigate("recaps"); setOpenUpdateId(routeIntent.updateId); break;
+      case "announcement": navigate("announcements"); setOpenAnnouncementId(routeIntent.announcementId); break;
+      case "stats":        navigate("stats"); break;
+      case "rooms":        navigate("rooms"); break;
+      case "tools":        navigate("tools"); break;
+      case "tool":         navigate("tools"); setOpenToolId(routeIntent.toolId); break;
       default: break; // "home" never reaches here — RootShell doesn't mount App for it
     }
   }, [routeIntent]); // eslint-disable-line
 
   // ── Deep-linking: state → URL ────────────────────────────────────────────
   // The inverse direction. Reads only "report" state (currentThreadId/
-  // currentToolId/currentSubtemaId — what's actually open, per Post.jsx/
-  // Tools.jsx's own onOpen*IdChange callbacks below — plus the story/
-  // announcement index, which already flowed through App's existing
-  // viewingAnnStory/annStories state for both taps and deep links alike)
-  // and computes the one canonical URL for that snapshot via buildPath().
-  // Never touches routeIntent — pushState/replaceState don't fire popstate,
-  // so this can never loop back into the effect above.
+  // currentToolId — what's actually open, per Post.jsx/Tools.jsx's own
+  // onOpen*IdChange callbacks below — plus the story/announcement index,
+  // which already flowed through App's existing viewingAnnStory/annStories
+  // state for both taps and deep links alike) and computes the one
+  // canonical URL for that snapshot via buildPath(). Never touches
+  // routeIntent — pushState/replaceState don't fire popstate, so this can
+  // never loop back into the effect above.
   //
-  // pushRoute (a genuinely new, depth-tagged history entry) only when
-  // something NEW just opened; replaceRoute (same entry, corrected in
-  // place) for tab switches and other lateral moves that were never meant
-  // to be a back-button stop. Closing is handled entirely by closePortal
-  // below, never by this effect — this effect only pushes forward.
+  // pushState only when something genuinely NEW just opened (a thread, a
+  // tool, an announcement) — tab switches and closing something both use
+  // replaceState, so casually browsing tabs doesn't pile up back-button
+  // stops, and closing a portal via its own X button (not the browser's
+  // back button) doesn't leave a dangling history entry pointing at a now-
+  // closed portal. The trade-off: closing via that X button doesn't let the
+  // forward button reopen it afterward — reaching for that would mean
+  // driving every close through history.back() instead, which is more
+  // fragile to get right without a real browser to test against; this is
+  // the simpler, more robust half of that trade to make.
   const profileUsername = (profileConfig.identity?.handle || "").replace(/^@/, "") || "me";
   const currentAnnouncementId = viewingAnnStory !== null ? (annStories[viewingAnnStory]?.id ?? null) : null;
   const prevOpenIdRef = useRef(undefined); // undefined = "not yet run" (first effect run, on mount)
   useEffect(() => {
     const path = buildPath({ activeSectionId, username: profileUsername, currentThreadId, currentToolId, currentAnnouncementId });
-    const openId = currentSubtemaId || currentThreadId || currentToolId || currentAnnouncementId || null;
-    if (path === null) { prevOpenIdRef.current = openId; return; }
-    if (path !== window.location.pathname || (currentSubtemaId && prevOpenIdRef.current !== currentSubtemaId)) {
+    if (path === null) { prevOpenIdRef.current = currentThreadId || currentToolId || currentAnnouncementId || null; return; }
+    if (path !== window.location.pathname) {
+      const openId = currentThreadId || currentToolId || currentAnnouncementId || null;
       const isOpeningSomethingNew = openId !== null && openId !== prevOpenIdRef.current && prevOpenIdRef.current !== undefined;
-      if (isOpeningSomethingNew) {
-        // A Subtema opening is the one case with no URL change to detect
-        // above (see router.js) — it still needs its own pushRoute call,
-        // with the subtemaId riding in the entry's state instead of the path.
-        pushRoute(path, currentSubtemaId ? { subtemaId: currentSubtemaId, threadId: currentThreadId } : {});
-      } else if (path !== window.location.pathname) {
-        replaceRoute(path, {});
-      }
+      if (isOpeningSomethingNew) window.history.pushState(null, "", path);
+      else window.history.replaceState(null, "", path);
     }
-    prevOpenIdRef.current = openId;
-  }, [activeSectionId, currentThreadId, currentToolId, currentAnnouncementId, currentSubtemaId, profileUsername]);
-
-  // ── Deep-linking: closing ────────────────────────────────────────────────
-  // The one function every "X"/back-chevron in the app calls to close
-  // whatever portal it belongs to — Thread, Subtema, Tool, or Announcement
-  // story. Never calls a section's own local close setter directly; always
-  // goes through closeToParent (router.js), which prefers a real
-  // history.back() — making the UI's own back control and the device's
-  // physical Back button produce the exact same popstate, indistinguishable
-  // to everything downstream — and only falls back to an in-place
-  // replaceRoute correction when there's genuinely nothing of ours left
-  // behind (a shared deep link with no history, or a hard reload).
-  //
-  // Recaps/Announcements have no bare-tab URL (see router.js) — if the
-  // natural parent of what's closing would land there, Perfil is the
-  // fallback-of-last-resort instead, since it's the one state that always
-  // has a defined URL to correct to.
-  const closePortal = useCallback(() => {
-    let fallbackPath;
-    if (currentSubtemaId) {
-      fallbackPath = buildPath({ activeSectionId: "recaps", username: profileUsername, currentThreadId });
-    } else if (currentThreadId) {
-      fallbackPath = buildPath({ activeSectionId: "recaps", username: profileUsername, currentThreadId: null });
-    } else if (currentToolId) {
-      fallbackPath = buildPath({ activeSectionId: "tools", username: profileUsername, currentToolId: null });
-    } else if (currentAnnouncementId) {
-      fallbackPath = buildPath({ activeSectionId: "announcements", username: profileUsername, currentAnnouncementId: null });
-    } else {
-      fallbackPath = buildPath({ activeSectionId, username: profileUsername });
-    }
-    if (fallbackPath === null) fallbackPath = buildPath({ activeSectionId: null, username: profileUsername });
-    const mode = closeToParent(fallbackPath, {});
-    if (mode === "replace") {
-      // No history behind this portal — history.back() would leave the app
-      // or do nothing, so closeToParent already corrected the URL in place.
-      // That correction doesn't fire popstate on its own, so the resulting
-      // local-state transition is applied directly here instead, via the
-      // exact same intent-application path routeIntent changes would use.
-      const intent = parseRoute(window.location.pathname, window.history.state);
-      setOpenSubtemaId(intent.type === "subtema-in-thread" ? intent.subtemaId : null);
-      setViewingAnnStory(null);
-      switch (intent.type) {
-        case "profile":           navigate(null); break;
-        case "thread":            navigateTo("recaps", intent.threadId); break;
-        case "subtema-in-thread": navigateTo("recaps", intent.threadId); break;
-        case "tools":             navigate("tools"); setOpenToolId(null); break;
-        case "announcements":     navigate("announcements"); setOpenAnnouncementId(null); break;
-        default: break;
-      }
-    }
-    // mode === "back" -> RootShell's popstate listener + the effect above
-    // do the rest, exactly as if the device Back button had been pressed.
-  }, [currentSubtemaId, currentThreadId, currentToolId, currentAnnouncementId, activeSectionId, profileUsername, navigate, navigateTo]);
+    prevOpenIdRef.current = currentThreadId || currentToolId || currentAnnouncementId || null;
+  }, [activeSectionId, currentThreadId, currentToolId, currentAnnouncementId, profileUsername]);
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
@@ -1604,7 +1496,7 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} openSubtemaId={openSubtemaId} onOpenSubtemaIdChange={setCurrentSubtemaId} onCloseRequest={closePortal} onThreadChange={setInsideFullscreenOverlay} onOpenThreadIdChange={setCurrentThreadId} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onOpenThreadIdChange={setCurrentThreadId} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
@@ -1616,7 +1508,7 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
           <RoomsContent />
         </div>
         <div style={visible("tools")}>
-          <Tools onToolsPortalChange={setInsideFullscreenOverlay} openToolId={openToolId} onOpenToolIdChange={setCurrentToolId} onCloseRequest={closePortal} />
+          <Tools onToolsPortalChange={setInsideFullscreenOverlay} openToolId={openToolId} onOpenToolIdChange={setCurrentToolId} />
         </div>
         {customSections.map(cs => (
           <div key={cs.id} style={visible(cs.id)}>
@@ -1883,7 +1775,7 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
           <StoryViewer
             stories={annStories}
             startIndex={viewingAnnStory}
-            onClose={closePortal}
+            onClose={() => setViewingAnnStory(null)}
             isHost={isHost}
           />
         )}
