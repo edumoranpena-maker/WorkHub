@@ -110,23 +110,18 @@ function ToolCard({ tool, onClick }) {
 // boolean for the freeze mechanism, this needs the actual id so App.jsx can
 // both open a specific tool from a URL (same controlled-handoff pattern as
 // Post's openThreadId prop) and reflect which one is open back into the URL.
-export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp, onOpenToolIdChange, onCloseRequest }) {
+export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp, onOpenToolIdChange }) {
   const isDesktop = useIsDesktop();
   const [openToolId, setOpenToolId] = useState(null);
   const openTool = TOOLS.find(t => t.id === openToolId) ?? null;
 
   useEffect(() => {
-    // Explicit null is as meaningful as a real id here — App's navigate()
-    // resets this request state to null on every section change, same
-    // treatment Post.jsx's openThreadId already got, so a tool left open
-    // when the user navigates away (or presses Back) actually closes.
-    setOpenToolId(openToolIdProp ?? null);
+    if (openToolIdProp) setOpenToolId(openToolIdProp);
   }, [openToolIdProp]);
 
   useEffect(() => {
     onOpenToolIdChange?.(openToolId);
   }, [openToolId, onOpenToolIdChange]);
-
 
   return (
     <PageContainer isDesktop={isDesktop} variant="feed">
@@ -156,7 +151,7 @@ export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp,
 
       <ToolPortal
         tool={openTool}
-        onClose={() => onCloseRequest ? onCloseRequest() : setOpenToolId(null)}
+        onClose={() => setOpenToolId(null)}
         onPortalChange={onToolsPortalChange}
       />
     </PageContainer>
