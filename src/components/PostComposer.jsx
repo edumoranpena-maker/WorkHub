@@ -42,6 +42,7 @@ import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 import { useComposerNavLock } from "../lib/composerLock.jsx";
 import { useImageViewer } from "./GlobalImageViewer.jsx";
 import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
+import { useAudioRecorder } from "../lib/audioRecorder.js";
 import AttachmentGallery from "./AttachmentZone.jsx";
 import { PageContainer, CONTAINER_WIDTHS } from "../lib/layout.jsx";
 
@@ -77,16 +78,16 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const [visibility, setVisibility] = useState(initial?.visibility || DEFAULT_VISIBILITY);
   const [attachedChecklist, setAttachedChecklist] = useState(initial?.checklist || null);
 
-  const [recording, setRecording]   = useState(false);
   const [audioBlob, setAudioBlob]   = useState(null);
   const [audioURL, setAudioURL]     = useState(initial?.audio?.url || null);
+  const [audioDuration, setAudioDuration] = useState(initial?.audio?.duration || 0);
+  const [audioWaveform, setAudioWaveform] = useState(initial?.audio?.waveform || []);
   const [audioRemoved, setAudioRemoved] = useState(false);
 
   const [showCancel, setShowCancel] = useState(false);
   const [expandedLink, setExpandedLink] = useState(null);
 
   const thumbRef = useRef(null);
-  const mediaRecRef = useRef(null);
 
   const previews = useLinkPreviews(`${title}\n${content}`);
 
@@ -94,6 +95,35 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   // composer is open — create or edit. Post composer is a fullscreen overlay
   // and isn't part of this lock (per product decision).
   useComposerNavLock(!isPost);
+
+  // ── Audio ────────────────────────────────────────────────────────────────────
+  // Recording mechanics (MediaRecorder, duration, waveform) live in the shared
+  // audioRecorder.js — this composer only keeps the result as local state and
+  // uploads the blob on Publish, same "nothing touches Supabase until submit"
+  // contract as every other attachment here. A cancelled composer never
+  // leaves an orphaned file in Storage. Declared before isDirty below since
+  // it references `recording`.
+  const { start: startRecording, stop: stopRecording, isRecording: recording, error: recordingError } = useAudioRecorder({
+    onDone: ({ blob, duration, waveform, url }) => {
+      setAudioBlob(blob);
+      setAudioURL(url);
+      setAudioDuration(duration);
+      setAudioWaveform(waveform);
+      setAudioRemoved(false);
+    },
+  });
+
+  useEffect(() => { if (recordingError) alert(recordingError); }, [recordingError]);
+
+  const toggleRecord = () => { recording ? stopRecording() : startRecording(); };
+
+  const removeAudio = () => {
+    setAudioBlob(null);
+    setAudioURL(null);
+    setAudioDuration(0);
+    setAudioWaveform([]);
+    setAudioRemoved(true);
+  };
 
   // ── Dirty-check → only ask for discard confirmation if there's something to lose ──
   const isDirty = isEditing
@@ -138,29 +168,6 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
 
   const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
 
-  // ── Audio ────────────────────────────────────────────────────────────────────
-  const toggleRecord = async () => {
-    if (recording) { mediaRecRef.current?.stop(); setRecording(false); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      const chunks = [];
-      rec.ondataavailable = e => chunks.push(e.data);
-      rec.onstop = () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        setAudioBlob(blob);
-        setAudioURL(URL.createObjectURL(blob));
-        setAudioRemoved(false);
-        stream.getTracks().forEach(t => t.stop());
-      };
-      mediaRecRef.current = rec;
-      rec.start();
-      setRecording(true);
-    } catch { alert("Microphone access denied"); }
-  };
-
-  const removeAudio = () => { setAudioBlob(null); setAudioURL(null); setAudioRemoved(true); };
-
   // ── Submit ───────────────────────────────────────────────────────────────────
   const canSubmit = isSubtema
     ? title.trim().length > 0
@@ -169,7 +176,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
   const submit = () => {
     if (!canSubmit) return;
     const audio = audioBlob
-      ? { blob: audioBlob }
+      ? { blob: audioBlob, duration: audioDuration, waveform: audioWaveform }
       : audioRemoved
         ? null
         : (initial?.audio || null);
