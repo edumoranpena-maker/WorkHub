@@ -48,6 +48,7 @@ import {
 } from "../lib/recapsApi.js";
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
+import AudioNotePlayer from "../components/AudioNotePlayer.jsx";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
@@ -177,11 +178,6 @@ function fmtDate(d) {
 function fmtTime(d) {
   if (!d) return "";
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
-function fmtAudio(s) {
-  const m = Math.floor(s / 60);
-  return `${m}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 function monthLabel(d) {
@@ -1039,62 +1035,6 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
   );
 });
 
-// ─── AudioPlayer ───────────────────────────────────────────────────────────────
-function AudioPlayer({ audio, accentColor }) {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0); // 0–100, driven by real <audio> playback
-  const [duration, setDuration] = useState(audio.duration || 0);
-  const audioRef = useRef(null);
-  const acc = accentColor || C.teal;
-  const wf = audio.waveform?.length ? audio.waveform : Array.from({ length: 20 }, () => 0.5);
-
-  const toggle = () => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (playing) el.pause();
-    else el.play().catch(() => {}); // autoplay-policy edge case — button stays usable, just no-ops
-  };
-
-  const elapsed = Math.floor((progress / 100) * duration);
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${acc}10`, border: `1px solid ${acc}25`, borderRadius: 12, padding: "10px 14px" }}>
-      <audio
-        ref={audioRef}
-        src={audio.url}
-        preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setProgress(0); }}
-        onLoadedMetadata={e => { if (isFinite(e.target.duration)) setDuration(e.target.duration); }}
-        onTimeUpdate={e => {
-          const d = e.target.duration;
-          if (isFinite(d) && d > 0) setProgress((e.target.currentTime / d) * 100);
-        }}
-        style={{ display: "none" }}
-      />
-      <motion.button whileTap={{ scale: 0.88 }} onClick={toggle}
-        style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: acc, color: "#000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: `0 0 12px ${acc}60` }}>
-        {playing ? <Square size={12} fill="#000" /> : <svg width="10" height="13" viewBox="0 0 10 13" fill="#000"><path d="M0 0L10 6.5L0 13V0Z"/></svg>}
-      </motion.button>
-      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 1.5, height: 28, overflow: "hidden", cursor: "pointer" }}
-        onClick={e => {
-          const el = audioRef.current;
-          if (!el || !isFinite(el.duration) || el.duration <= 0) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-          el.currentTime = ratio * el.duration;
-        }}>
-        {wf.map((h, i) => {
-          const filled = (i / wf.length) * 100 <= progress;
-          return <div key={i} style={{ flex: 1, height: `${Math.round(h * 100)}%`, borderRadius: 2, background: filled ? acc : `${acc}30`, transition: "background 0.1s" }} />;
-        })}
-      </div>
-      <span style={{ fontFamily: font, fontSize: 11, fontWeight: 600, color: acc, minWidth: 30, textAlign: "right" }}>{fmtAudio(elapsed)}</span>
-    </div>
-  );
-}
-
 // ─── VoiceAndMedia ───────────────────────────────────────────────────────────
 // The voice note and the media carousel are two independent content levels
 // (see file-level architecture note: description → voice note → media).
@@ -1110,7 +1050,7 @@ function VoiceAndMedia({ audio, media = [], accentColor = C.teal, marginSide = "
     <>
       {audio && (
         <div style={{ [marginSide]: spacing }}>
-          <AudioPlayer audio={audio} accentColor={accentColor} />
+          <AudioNotePlayer audio={audio} accentColor={accentColor} />
         </div>
       )}
       {media.length > 0 && (
@@ -1133,7 +1073,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
   // Updates have no author of their own — they always belong to whichever
   // Post or Subtema they were added to, so the viewer's info panel uses that
   // parent's author, passed down from ThreadView/SubtemaView.
-  const galleryContext = { author, contentType: "Update", timestamp: update.timestamp, visibility, edited: update.edited, description: update.content };
+  const galleryContext = { author, contentType: "Update", timestamp: update.timestamp, visibility, edited: update.edited, description: update.content, audio: update.audio };
 
   const toggleLike = async () => {
     const next = !liked;
@@ -1469,7 +1409,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 
           <VoiceAndMedia audio={subtema.audio} media={subtemaMedia} marginSide="marginBottom" spacing={12}
             onOpenGallery={openGalleryFor(subtema.id)}
-            galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content }} />
+            galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content, audio: subtema.audio }} />
 
           {/* Same design language as the root Post's row — heart, comments,
               TTS controls. No save/share/Ask AI here: those are exclusive to
@@ -1596,7 +1536,7 @@ function buildThreadMediaSequence(thread) {
     items.push(...media);
     groups.push({
       contentId, startIdx, count: media.length,
-      context: { author: authorOverride ?? data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content },
+      context: { author: authorOverride ?? data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content, audio: data.audio },
     });
   };
 
@@ -1949,7 +1889,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
 
           <VoiceAndMedia audio={data.audio} media={media} spacing={12}
             onOpenGallery={interactive ? openGalleryFor(data.id) : (() => {})}
-            galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content }} />
+            galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content, audio: data.audio }} />
 
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
             <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? toggleLike : undefined}
