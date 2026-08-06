@@ -18,10 +18,26 @@
  * Paste is intentionally NOT handled in here — see usePasteAttachments in
  * lib/attachments.js, which each composer calls directly at its own root so
  * paste works regardless of which field currently has focus.
+ *
+ * Click-to-pick on touch devices: the OS/browser's file-picker UI is decided
+ * entirely by the input's `accept` attribute, not by which API we call (this
+ * project has never used showOpenFilePicker / File System Access API — it's
+ * always been a plain <input type="file">). Android Chrome only shows its
+ * fast native Photo Picker (the "Photos"/"Collections" bottom sheet) when
+ * `accept` is scoped to image/*, video/*, or a combination of the two; any
+ * broader `accept` (like this component's own default of "any file", needed
+ * so a post can carry generic files too) makes it fall back to the full-screen
+ * document browser instead, which is what caused the flakiness. So on touch
+ * devices we split click-to-pick into two explicit entry points: the primary
+ * one always requests image/*,video/* (native picker), and a secondary
+ * "archivo" entry point (shown only when the caller's `accept` allows more
+ * than media) still opens the full browser for non-media files. Desktop is
+ * untouched: a single input using exactly the `accept` the caller passed in,
+ * same as before.
  */
 import { useRef, useCallback } from "react";
 import { UploadCloud, Plus, X, File as FileIcon } from "lucide-react";
-import { mapFilesToMedia, useDragAndDrop } from "../lib/attachments.js";
+import { mapFilesToMedia, useDragAndDrop, isTouchDevice } from "../lib/attachments.js";
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -36,7 +52,22 @@ const C = {
 const DEFAULT_ACCENT = "#2DD4BF";
 
 export default function AttachmentGallery({ mediaFiles, onAdd, onRemove, onOpenViewer, accent = DEFAULT_ACCENT, accept = "*/*" }) {
-  const inputRef = useRef(null);
+  const mediaInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const isTouch = isTouchDevice();
+
+  // Primary click-to-pick target. On touch devices this is always scoped to
+  // image/*,video/* regardless of the caller's `accept`, so the OS shows its
+  // fast native picker. On desktop it's exactly the caller's `accept`,
+  // unchanged from before.
+  const mediaAccept = isTouch ? "image/*,video/*" : accept;
+
+  // A second, explicit entry point for non-media files — only needed on
+  // touch devices, and only for composers whose `accept` actually allows
+  // more than media (the default "*/*"; composers that already scope
+  // themselves to image/*,video/*, like Announcements/Stories, have nothing
+  // extra to offer here and keep their original single-button experience).
+  const showFilePicker = isTouch && accept === "*/*";
 
   const handleFiles = useCallback((files) => {
     if (files && files.length > 0) onAdd(mapFilesToMedia(files));
@@ -44,30 +75,45 @@ export default function AttachmentGallery({ mediaFiles, onAdd, onRemove, onOpenV
 
   const { dragActive, dropHandlers } = useDragAndDrop(handleFiles);
 
-  const openPicker = () => inputRef.current?.click();
+  const openMediaPicker = () => mediaInputRef.current?.click();
+  const openFilePicker = () => fileInputRef.current?.click();
   const onInputChange = (e) => { handleFiles(e.target.files); e.target.value = ""; };
 
   const hasFiles = mediaFiles.length > 0;
 
   return (
     <div style={{ position: "relative" }} {...dropHandlers}>
-      <input ref={inputRef} type="file" multiple accept={accept} style={{ display: "none" }} onChange={onInputChange} />
+      <input ref={mediaInputRef} type="file" multiple accept={mediaAccept} style={{ display: "none" }} onChange={onInputChange} />
+      {showFilePicker && (
+        <input ref={fileInputRef} type="file" multiple accept="*/*" style={{ display: "none" }} onChange={onInputChange} />
+      )}
 
       {!hasFiles ? (
         // ── Empty state — the whole zone is the drop target ──────────────
-        <div onClick={openPicker}
-          style={{
-            cursor: "pointer", borderRadius: 16, padding: "26px 16px",
-            display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-            border: `1.5px dashed ${dragActive ? accent : C.border}`,
-            background: dragActive ? `${accent}0f` : "transparent",
-            transition: "border-color 0.15s, background 0.15s",
-          }}>
-          <UploadCloud size={22} color={dragActive ? accent : C.textMuted} strokeWidth={1.8} />
-          <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 600, color: dragActive ? accent : C.text, textAlign: "center" }}>
-            Arrastra imágenes, videos o archivos aquí
-          </p>
-          <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>o haz clic para seleccionar</p>
+        <div>
+          <div onClick={openMediaPicker}
+            style={{
+              cursor: "pointer", borderRadius: 16, padding: "26px 16px",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+              border: `1.5px dashed ${dragActive ? accent : C.border}`,
+              background: dragActive ? `${accent}0f` : "transparent",
+              transition: "border-color 0.15s, background 0.15s",
+            }}>
+            <UploadCloud size={22} color={dragActive ? accent : C.textMuted} strokeWidth={1.8} />
+            <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 600, color: dragActive ? accent : C.text, textAlign: "center" }}>
+              {isTouch ? "Toca para elegir fotos o videos" : "Arrastra imágenes, videos o archivos aquí"}
+            </p>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted }}>
+              {isTouch ? "" : "o haz clic para seleccionar"}
+            </p>
+          </div>
+          {showFilePicker && (
+            <button onClick={openFilePicker}
+              style={{ marginTop: 8, width: "100%", padding: "10px 12px", borderRadius: 12, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 600 }}>
+              <FileIcon size={14} />
+              Adjuntar archivo
+            </button>
+          )}
         </div>
       ) : (
         // ── Gallery state — grid of thumbnails + trailing "+" tile ───────
@@ -96,10 +142,21 @@ export default function AttachmentGallery({ mediaFiles, onAdd, onRemove, onOpenV
           ))}
 
           {/* Always-present "+" tile — the gallery never stops accepting more */}
-          <button onClick={openPicker}
+          <button onClick={openMediaPicker} title={isTouch ? "Fotos o videos" : undefined}
             style={{ width: 84, height: 84, borderRadius: 12, border: `1.5px dashed ${C.border}`, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.textMuted }}>
             <Plus size={20} strokeWidth={2.2} />
           </button>
+
+          {/* Secondary tile — generic files, only on touch devices where the
+              primary tile above is scoped to image/*,video/* for the native
+              picker (see file header comment). */}
+          {showFilePicker && (
+            <button onClick={openFilePicker} title="Adjuntar archivo"
+              style={{ width: 84, height: 84, borderRadius: 12, border: `1.5px dashed ${C.border}`, background: "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, color: C.textMuted }}>
+              <FileIcon size={18} strokeWidth={2} />
+              <span style={{ fontFamily: font, fontSize: 9, fontWeight: 600 }}>Archivo</span>
+            </button>
+          )}
 
           {/* Drop overlay — covers the whole gallery (not just the "+" tile),
               so dropping anywhere on top of existing attachments still reads
