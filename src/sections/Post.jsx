@@ -1095,6 +1095,33 @@ function AudioPlayer({ audio, accentColor }) {
   );
 }
 
+// ─── VoiceAndMedia ───────────────────────────────────────────────────────────
+// The voice note and the media carousel are two independent content levels
+// (see file-level architecture note: description → voice note → media).
+// This is the ONLY place either is rendered — UpdateBubble, SubtemaView and
+// ThreadView all call this instead of inlining their own two blocks, so
+// there's a single spot to audit and no way for a future edit to turn this
+// into an if/else, an early return, or any other construct where one hides
+// the other. Both conditions below are independent `&&` checks — audio can
+// render with no media, media can render with no audio, and both render
+// together when both exist.
+function VoiceAndMedia({ audio, media = [], accentColor = C.teal, marginSide = "marginTop", spacing = 12, ...carouselProps }) {
+  return (
+    <>
+      {audio && (
+        <div style={{ [marginSide]: spacing }}>
+          <AudioPlayer audio={audio} accentColor={accentColor} />
+        </div>
+      )}
+      {media.length > 0 && (
+        <div style={{ [marginSide]: spacing }}>
+          <MediaCarousel items={media} accentColor={accentColor} {...carouselProps} />
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── UpdateBubble ──────────────────────────────────────────────────────────────
 function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit, onDelete, onShare, onReport }) {
   const [liked, setLiked] = useState(update.liked);
@@ -1134,18 +1161,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} />
-        {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
-        {mediaWithLinks.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <MediaCarousel
-              items={mediaWithLinks}
-              onOpenGallery={onOpenGallery}
-              accentColor={C.teal}
-              square={false}
-              galleryContext={galleryContext}
-            />
-          </div>
-        )}
+        <VoiceAndMedia audio={update.audio} media={mediaWithLinks} spacing={10} onOpenGallery={onOpenGallery} square={false} galleryContext={galleryContext} />
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
           <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
           <PrivacyIcon visibility={visibility} size={10} color={C.textMuted} />
@@ -1451,18 +1467,9 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <ExpandableText text={subtema.content} maxLines={5.5} style={{ marginBottom: 12 }} />
           )}
 
-          {subtema.audio && <div style={{ marginBottom: 12 }}><AudioPlayer audio={subtema.audio} accentColor={C.teal} /></div>}
-
-          {subtemaMedia.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <MediaCarousel
-                items={subtemaMedia}
-                onOpenGallery={openGalleryFor(subtema.id)}
-                accentColor={C.teal}
-                galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content }}
-              />
-            </div>
-          )}
+          <VoiceAndMedia audio={subtema.audio} media={subtemaMedia} marginSide="marginBottom" spacing={12}
+            onOpenGallery={openGalleryFor(subtema.id)}
+            galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content }} />
 
           {/* Same design language as the root Post's row — heart, comments,
               TTS controls. No save/share/Ask AI here: those are exclusive to
@@ -1940,18 +1947,9 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{data.hashtags.join(" ")}</p>
           )}
 
-          {data.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={data.audio} accentColor={C.teal} /></div>}
-
-          {media.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <MediaCarousel
-                items={media}
-                onOpenGallery={interactive ? openGalleryFor(data.id) : (() => {})}
-                accentColor={C.teal}
-                galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content }}
-              />
-            </div>
-          )}
+          <VoiceAndMedia audio={data.audio} media={media} spacing={12}
+            onOpenGallery={interactive ? openGalleryFor(data.id) : (() => {})}
+            galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content }} />
 
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
             <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? toggleLike : undefined}
