@@ -27,6 +27,19 @@ export function mapFilesToMedia(files) {
   }));
 }
 
+// Is this a touch/mobile device? Deliberately NOT the `window.innerWidth >=
+// 768` check every section/layout component already keeps locally — that one
+// answers "is the viewport wide enough for the desktop layout" and is meant
+// to react to resizes. This answers a different, one-shot question: "does
+// this device have a coarse (touch) primary pointer", which is what actually
+// determines which file-picker UI the OS/browser shows and has nothing to do
+// with window width (a resized desktop window is still a desktop). Kept here
+// because AttachmentZone.jsx is the only current consumer of this decision.
+export function isTouchDevice() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
 // Drag & drop bindings for a single drop zone. In practice this only ever
 // fires from real OS drag events (a mouse dragging files from Finder/
 // Explorer/the browser), which is why "Solo Web" in the product ask doesn't
