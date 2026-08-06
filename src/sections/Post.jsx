@@ -1042,35 +1042,49 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
 // ─── AudioPlayer ───────────────────────────────────────────────────────────────
 function AudioPlayer({ audio, accentColor }) {
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const timerRef = useRef(null);
+  const [progress, setProgress] = useState(0); // 0–100, driven by real <audio> playback
+  const [duration, setDuration] = useState(audio.duration || 0);
+  const audioRef = useRef(null);
   const acc = accentColor || C.teal;
-  const wf = audio.waveform || Array.from({ length: 20 }, () => 0.5);
+  const wf = audio.waveform?.length ? audio.waveform : Array.from({ length: 20 }, () => 0.5);
 
   const toggle = () => {
-    if (playing) {
-      clearInterval(timerRef.current);
-      setPlaying(false);
-    } else {
-      setPlaying(true);
-      timerRef.current = setInterval(() => {
-        setProgress(p => {
-          if (p >= 100) { clearInterval(timerRef.current); setPlaying(false); return 0; }
-          return p + (100 / (audio.duration * 10));
-        });
-      }, 100);
-    }
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) el.pause();
+    else el.play().catch(() => {}); // autoplay-policy edge case — button stays usable, just no-ops
   };
-  useEffect(() => () => clearInterval(timerRef.current), []);
-  const elapsed = Math.floor((progress / 100) * audio.duration);
+
+  const elapsed = Math.floor((progress / 100) * duration);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${acc}10`, border: `1px solid ${acc}25`, borderRadius: 12, padding: "10px 14px" }}>
+      <audio
+        ref={audioRef}
+        src={audio.url}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onLoadedMetadata={e => { if (isFinite(e.target.duration)) setDuration(e.target.duration); }}
+        onTimeUpdate={e => {
+          const d = e.target.duration;
+          if (isFinite(d) && d > 0) setProgress((e.target.currentTime / d) * 100);
+        }}
+        style={{ display: "none" }}
+      />
       <motion.button whileTap={{ scale: 0.88 }} onClick={toggle}
         style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: acc, color: "#000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: `0 0 12px ${acc}60` }}>
         {playing ? <Square size={12} fill="#000" /> : <svg width="10" height="13" viewBox="0 0 10 13" fill="#000"><path d="M0 0L10 6.5L0 13V0Z"/></svg>}
       </motion.button>
-      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 1.5, height: 28, overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 1.5, height: 28, overflow: "hidden", cursor: "pointer" }}
+        onClick={e => {
+          const el = audioRef.current;
+          if (!el || !isFinite(el.duration) || el.duration <= 0) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+          el.currentTime = ratio * el.duration;
+        }}>
         {wf.map((h, i) => {
           const filled = (i / wf.length) * 100 <= progress;
           return <div key={i} style={{ flex: 1, height: `${Math.round(h * 100)}%`, borderRadius: 2, background: filled ? acc : `${acc}30`, transition: "background 0.1s" }} />;
@@ -1120,6 +1134,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
         <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} />
+        {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
         {mediaWithLinks.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <MediaCarousel
@@ -1131,7 +1146,6 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
             />
           </div>
         )}
-        {update.audio && <div style={{ marginTop: 10 }}><AudioPlayer audio={update.audio} accentColor={C.teal} /></div>}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
           <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted }}>{fmtDate(update.timestamp)} · {fmtTime(update.timestamp)}</span>
           <PrivacyIcon visibility={visibility} size={10} color={C.textMuted} />
@@ -1437,6 +1451,8 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <ExpandableText text={subtema.content} maxLines={5.5} style={{ marginBottom: 12 }} />
           )}
 
+          {subtema.audio && <div style={{ marginBottom: 12 }}><AudioPlayer audio={subtema.audio} accentColor={C.teal} /></div>}
+
           {subtemaMedia.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <MediaCarousel
@@ -1447,8 +1463,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
               />
             </div>
           )}
-
-          {subtema.audio && <div style={{ marginBottom: 12 }}><AudioPlayer audio={subtema.audio} accentColor={C.teal} /></div>}
 
           {/* Same design language as the root Post's row — heart, comments,
               TTS controls. No save/share/Ask AI here: those are exclusive to
@@ -1926,6 +1940,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             <p style={{ margin: "8px 0 0", fontFamily: font, fontSize: 12, color: C.accent }}>{data.hashtags.join(" ")}</p>
           )}
 
+          {data.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={data.audio} accentColor={C.teal} /></div>}
+
           {media.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <MediaCarousel
@@ -1936,8 +1952,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
               />
             </div>
           )}
-
-          {data.audio && <div style={{ marginTop: 12 }}><AudioPlayer audio={data.audio} accentColor={C.teal} /></div>}
 
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
             <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? toggleLike : undefined}
