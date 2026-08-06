@@ -29,6 +29,8 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { getVisibilityOption } from "../lib/visibility.jsx";
+import AudioNotePlayer from "./AudioNotePlayer.jsx";
+import { resetAudioSession } from "../lib/audioPlayback.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
 // own copy of (Post.jsx, Tools.jsx, Announcements.jsx, Stats.jsx, etc.) —
@@ -117,7 +119,7 @@ function PositionIndicator({ current, total, visible }) {
 // Top block: now sits above the position indicator (swapped — banner on top,
 // counter below it), still left-aligned. Reusable across Post/Update/Subtema
 // via the same `context` shape ({ author, contentType, timestamp, visibility,
-// edited, description }) — description itself lives in MediaDescriptionBlock
+// edited, description }) — description itself lives in MediaBottomPanel
 // below, not here. Purely presentational: no local state, so nothing to
 // reset between items.
 function MediaInfoHeader({ context, visible }) {
@@ -180,19 +182,19 @@ function MediaInfoHeader({ context, visible }) {
   );
 }
 
-// ── Media description block — bottom-anchored, Telegram-style ───────────────
-// Independent from the header above: its own gradient backdrop (grows with
-// the text, capped at DESCRIPTION_MAX_HEIGHT with internal scroll beyond
-// that). The whole zone is tappable: a tap anywhere in it expands (same as
-// "Ver más"); once expanded, a tap inside does nothing — only "Ver menos"
-// collapses it. Every tap here (collapsed or expanded) stops propagation, so
-// it never reaches the backdrop's tap-to-toggle-chrome handler — that's what
-// keeps a tap on the text from accidentally hiding the whole viewer instead
-// of expanding it. Internal scroll (once expanded, past the max height) is
-// the only other gesture this component intercepts.
-function MediaDescriptionBlock({ description, visible, expanded, onExpandChange }) {
+// ── Media bottom panel — Audio then Description, Telegram-style ─────────────
+// Same bottom-anchored gradient backdrop as before, now stacked as two
+// independent, optional pieces in normal document flow (audio above
+// description — no separate absolutely-positioned blocks to keep in sync):
+//   - AudioNotePlayer, when this content has a voice note (images only —
+//     videos/files never show it, gated by the caller below).
+//   - The description text, exactly as before (collapse/expand, its own
+//     tap-to-expand + internal-scroll-when-expanded behavior).
+// Returns null only when there's truly nothing to show — audio-only and
+// description-only contents both still render (just the one piece).
+function MediaBottomPanel({ audio, description, visible, expanded, onExpandChange }) {
   const desc = (description || "").trim();
-  if (!desc) return null;
+  if (!audio?.url && !desc) return null;
   const isLong = desc.length > DESCRIPTION_COLLAPSE_LEN;
 
   return (
@@ -203,7 +205,7 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
           transition={{ duration: 0.22 }}
           style={{
             position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10,
-            paddingTop: 44, // gradient fade-in room above the text
+            paddingTop: 44, // gradient fade-in room above the content
             background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.5) 55%, transparent 100%)",
             pointerEvents: "none", // decorative wrapper — never intercepts anything itself
           }}
@@ -221,7 +223,7 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
               e.stopPropagation();
               // Any tap in the zone expands it, exactly like "Ver más" — but
               // only ever expands here; collapsing is the button's job alone.
-              if (!expanded && isLong) onExpandChange(true);
+              if (desc && !expanded && isLong) onExpandChange(true);
             }}
             // Mouse-only, always-on stopPropagation (unlike the touch handlers
             // below, which stay conditional on `expanded` for their own
@@ -246,27 +248,36 @@ function MediaDescriptionBlock({ description, visible, expanded, onExpandChange 
             onTouchMove={expanded ? (e) => e.stopPropagation() : undefined}
             onTouchEnd={expanded ? (e) => e.stopPropagation() : undefined}
           >
-            <p style={{
-              margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
-              color: "rgba(255,255,255,0.94)", whiteSpace: "pre-wrap",
-              display: (!expanded && isLong) ? "-webkit-box" : "block",
-              WebkitLineClamp: (!expanded && isLong) ? 2 : undefined,
-              WebkitBoxOrient: (!expanded && isLong) ? "vertical" : undefined,
-              overflow: (!expanded && isLong) ? "hidden" : "visible",
-            }}>
-              {desc}
-            </p>
-            {isLong && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onExpandChange(!expanded); }}
-                style={{
-                  marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
-                  fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
-                  pointerEvents: "auto",
-                }}
-              >
-                {expanded ? "Ver menos" : "Ver más"}
-              </button>
+            {audio?.url && (
+              <div style={{ marginBottom: desc ? 8 : 0 }} onClick={e => e.stopPropagation()}>
+                <AudioNotePlayer audio={audio} accentColor="#22d3a0" />
+              </div>
+            )}
+            {desc && (
+              <>
+                <p style={{
+                  margin: 0, fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
+                  color: "rgba(255,255,255,0.94)", whiteSpace: "pre-wrap",
+                  display: (!expanded && isLong) ? "-webkit-box" : "block",
+                  WebkitLineClamp: (!expanded && isLong) ? 2 : undefined,
+                  WebkitBoxOrient: (!expanded && isLong) ? "vertical" : undefined,
+                  overflow: (!expanded && isLong) ? "hidden" : "visible",
+                }}>
+                  {desc}
+                </p>
+                {isLong && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onExpandChange(!expanded); }}
+                    style={{
+                      marginTop: 4, background: "none", border: "none", padding: 0, cursor: "pointer",
+                      fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 700, color: "#fff",
+                      pointerEvents: "auto",
+                    }}
+                  >
+                    {expanded ? "Ver menos" : "Ver más"}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </motion.div>
@@ -773,7 +784,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
               e.stopPropagation();
               // Tap on image toggles indicator visibility (only for images).
               // Taps landing here never originate from inside the description
-              // zone — MediaDescriptionBlock stops propagation on every tap
+              // zone — MediaBottomPanel stops propagation on every tap
               // of its own area — so reaching this handler always means
               // "outside the description". Hiding the chrome this way is a
               // temporary "clean mode": an expanded description stays
@@ -817,13 +828,16 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
           </motion.div>
         </AnimatePresence>
 
-        {/* Info description — bottom-anchored, own gradient/scroll. Rendered
-            after the item frame so it paints above it; its own pointer-events
-            scoping (see component) keeps it from stealing gestures it doesn't
-            need. Persists expansion across media of the SAME content — see
-            expandedContentId above — and resets when the content changes. */}
+        {/* Bottom panel — Audio then Description, bottom-anchored, own
+            gradient/scroll. Rendered after the item frame so it paints above
+            it; its own pointer-events scoping (see component) keeps it from
+            stealing gestures it doesn't need. Description persists expansion
+            across media of the SAME content — see expandedContentId above —
+            and resets when the content changes. Audio only ever shows for
+            images (never video/file), per product spec. */}
         {(current.type === "image" || current.type === "file") && (
-          <MediaDescriptionBlock
+          <MediaBottomPanel
+            audio={current.type === "image" ? currentGroup.context?.audio : null}
             description={currentGroup.context?.description}
             visible={indicatorVisible}
             expanded={expanded}
@@ -916,7 +930,17 @@ export function useImageViewer() {
     if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0, context: null, groups: null });
   }, []);
 
-  const closeImage = useCallback(() => setGallery(null), []);
+  const closeImage = useCallback(() => {
+    // Closing the viewer restarts playback (per spec) — every other way of
+    // navigating away from this content (switching to a different Post/
+    // Update/Subtema, or just backgrounding the viewer) only pauses and
+    // keeps position, handled entirely inside audioPlayback.js. Reset every
+    // voice-note URL this gallery session could have touched: the single
+    // `context` case, and every group's context for a cross-content journey.
+    if (gallery?.context?.audio?.url) resetAudioSession(gallery.context.audio.url);
+    (gallery?.groups || []).forEach(g => { if (g.context?.audio?.url) resetAudioSession(g.context.audio.url); });
+    setGallery(null);
+  }, [gallery]);
 
   const ViewerPortal = useCallback(
     () => gallery
