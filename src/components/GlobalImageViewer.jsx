@@ -30,7 +30,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-mo
 import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { getVisibilityOption } from "../lib/visibility.jsx";
 import AudioNotePlayer from "./AudioNotePlayer.jsx";
-import { resetAudioSession } from "../lib/audioPlayback.js";
+import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
 // own copy of (Post.jsx, Tools.jsx, Announcements.jsx, Stats.jsx, etc.) —
@@ -601,6 +601,20 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
   // own photos must not collapse it.
   useEffect(() => {
     setExpandedContentId(null);
+  }, [currentGroupIdx]);
+
+  // Pause (not reset) whichever voice note was playing the moment the swipe
+  // crosses into a DIFFERENT content's group — currentGroupIdx changing is
+  // exactly that event. Position and speed are preserved (pauseActiveAudio
+  // only pauses); a full reset only ever happens when the viewer itself
+  // closes (see closeImage below). Skipped on mount — opening the viewer
+  // on some content must not pause that content's own just-started note —
+  // and never fires from browsing images within the SAME group, since
+  // currentGroupIdx only changes when the content itself changes.
+  const isFirstGroupRender = useRef(true);
+  useEffect(() => {
+    if (isFirstGroupRender.current) { isFirstGroupRender.current = false; return; }
+    pauseActiveAudio();
   }, [currentGroupIdx]);
 
   // Expanding holds the chrome (header + description) open indefinitely for
