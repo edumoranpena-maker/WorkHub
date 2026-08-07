@@ -150,6 +150,24 @@ function pause(url) {
   if (activeUrl === url && audioEl) audioEl.pause();
 }
 
+/** Pause whatever is currently active, if anything — position is preserved
+ *  (same pause path as pause(url) above), nothing is reset. Used for
+ *  navigation-driven pauses (leaving a Thread/Subtema, the Android back
+ *  button, opening an overlay that backgrounds the current content) where
+ *  the caller doesn't necessarily know — or care — which URL was playing. */
+export function pauseActiveAudio() {
+  if (activeUrl && audioEl && !audioEl.paused) audioEl.pause();
+}
+
+// The Android/browser back button fires a native `popstate` event — this is
+// the ONE place in the whole app that reacts to it for audio purposes,
+// rather than every screen that can be reached via back needing its own
+// listener. Registered once at module load (this module is a singleton, same
+// as audioEl itself), so it covers every current and future screen for free.
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", pauseActiveAudio);
+}
+
 function toggle(url, knownDuration = 0) {
   if (activeUrl === url && audioEl && !audioEl.paused) pause(url);
   else play(url, knownDuration);
