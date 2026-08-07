@@ -27,8 +27,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
-import { getVisibilityOption } from "../lib/visibility.jsx";
+import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight, ZoomIn } from "lucide-react";
+import { PrivacyIcon } from "../lib/visibility.jsx";
 import AudioNotePlayer from "./AudioNotePlayer.jsx";
 import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
 
@@ -115,18 +115,27 @@ function PositionIndicator({ current, total, visible }) {
   );
 }
 
-// ── Media info header — author, content type, metadata ──────────────────────
-// Top block: now sits above the position indicator (swapped — banner on top,
-// counter below it), still left-aligned. Reusable across Post/Update/Subtema
-// via the same `context` shape ({ author, contentType, timestamp, visibility,
-// edited, description }) — description itself lives in MediaBottomPanel
-// below, not here. Purely presentational: no local state, so nothing to
-// reset between items.
-function MediaInfoHeader({ context, visible }) {
+// ── Viewer top bar — one continuous bar, mobile and desktop share it ────────
+// Replaces what used to be three separate floating pieces (the info card,
+// the position-indicator pill, the close button) with a single full-width
+// bar — same information, reflowed per breakpoint instead of duplicated:
+//   Mobile:   line 1 = author • type: title…              X
+//             line 2 = date • privacy icon
+//             (position counter stays exactly where it was — its own
+//             floating pill below this bar, rendered by the caller)
+//   Desktop:  line 1 = author • type: title…            🔍  X
+//             line 2 = date • privacy icon         counter (n / total)
+// `title` (Post/Subtema only — Updates have none) is truncated with CSS
+// ellipsis rather than JS slicing, so it adapts to any width/font-size
+// without a magic character count. Reusable across Post/Update/Subtema via
+// the same `context` shape as before; description itself still lives in
+// MediaBottomPanel, not here.
+function ViewerTopBar({ context, visible, isDesktop, current, total, zoomToolActive, onToggleZoomTool, onClose }) {
   if (!context) return null;
-  const { author, contentType, timestamp, visibility, edited } = context;
-  const metaParts = [fmtRelativeEs(timestamp), visibility ? getVisibilityOption(visibility).label : null, edited ? "Editado" : null].filter(Boolean);
-  if (!author && metaParts.length === 0) return null;
+  const { author, contentType, title, timestamp, visibility, edited } = context;
+  const typeLabel = contentType ? (title ? `${contentType}: ${title}` : contentType) : null;
+  const dateParts = [fmtRelativeEs(timestamp), edited ? "Editado" : null].filter(Boolean);
+  const showCounter = isDesktop && total > 1;
 
   return (
     <AnimatePresence>
@@ -135,47 +144,85 @@ function MediaInfoHeader({ context, visible }) {
           initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.22 }}
           style={{
-            position: "absolute", top: 16, left: 18, right: 18, zIndex: 10,
-            display: "flex", flexDirection: "column", gap: 4,
-            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
-            borderRadius: 14, padding: "8px 12px",
-            width: "fit-content", maxWidth: "calc(100% - 36px)",
-            pointerEvents: "none", // purely informational — never intercepts taps
+            position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
+            // Dark, semi-transparent, DELIBERATELY light blur — Telegram-style
+            // chrome, not a heavy frosted-glass panel.
+            background: "rgba(10,10,12,0.52)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+            paddingTop: "env(safe-area-inset-top)",
           }}
         >
-          {/* Author row — avatar, name, content type (lesser hierarchy) inline */}
-          {author && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
-                background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, color: "#fff" }}>
-                  {author[0]?.toUpperCase() || "?"}
-                </span>
-              </div>
-              <span style={{
-                fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, color: "#fff",
-                textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
-                {author}
-                {contentType && <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.7)" }}> · {contentType}</span>}
-              </span>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 10px 10px 16px", minHeight: 40 }}>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, paddingTop: 2 }}>
+              {/* Line 1 — author • type: title, truncated */}
+              {(author || typeLabel) && (
+                <div style={{
+                  fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, color: "#fff",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {author}
+                  {author && typeLabel && <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.7)" }}> • </span>}
+                  {typeLabel && <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>{typeLabel}</span>}
+                </div>
+              )}
+              {/* Line 2 — date • privacy icon  ·····  counter (desktop only) */}
+              {(dateParts.length > 0 || showCounter) && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    {dateParts.length > 0 && (
+                      <span style={{
+                        fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 500,
+                        color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.7)",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {dateParts.join(" • ")}
+                      </span>
+                    )}
+                    {visibility && <PrivacyIcon visibility={visibility} size={11} color="rgba(255,255,255,0.7)" />}
+                  </div>
+                  {showCounter && (
+                    <span style={{
+                      flexShrink: 0, fontFamily: "sans-serif", fontSize: 12, fontWeight: 600,
+                      color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em",
+                    }}>
+                      {current + 1} / {total}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Metadata line */}
-          {metaParts.length > 0 && (
-            <div style={{
-              paddingLeft: author ? 30 : 0,
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 500,
-              color: "rgba(255,255,255,0.7)", textShadow: "0 1px 4px rgba(0,0,0,0.7)",
-            }}>
-              {metaParts.join(" • ")}
+            {/* Actions — zoom tool (desktop only) then close, both part of
+                the same bar now instead of a separate floating circle. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {isDesktop && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleZoomTool(); }}
+                  aria-label="Zoom"
+                  aria-pressed={zoomToolActive}
+                  style={{
+                    width: 32, height: 32, borderRadius: "50%", border: "none",
+                    background: zoomToolActive ? "rgba(255,255,255,0.22)" : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", color: "#fff",
+                  }}
+                >
+                  <ZoomIn size={17} strokeWidth={2.2} />
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                aria-label="Close"
+                style={{
+                  width: 32, height: 32, borderRadius: "50%", border: "none", background: "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", color: "#fff",
+                }}
+              >
+                <X size={19} strokeWidth={2.2} />
+              </button>
             </div>
-          )}
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -339,7 +386,7 @@ function FilePane({ item }) {
 }
 
 // ── Single image pane with zoom+pan ──────────────────────────────────────────
-function ZoomableImage({ src, onZoomChange }) {
+function ZoomableImage({ src, onZoomChange, zoomToolActive = false }) {
   const [scale, setScale]   = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const gestureRef = useRef(null);  // tracks active gesture state
@@ -468,6 +515,26 @@ function ZoomableImage({ src, onZoomChange }) {
     zoomToward(cx, cy, DOUBLE_CLICK_ZOOM_SCALE, el);
   };
 
+  // ── Desktop: explicit "zoom tool" (the magnifier toggle in the top bar) —
+  // Notion-style click-to-zoom ──────────────────────────────────────────────
+  // Entirely additive and gated behind zoomToolActive: when the tool isn't
+  // toggled on, this is a no-op and every gesture above (wheel, double-
+  // click, pinch, drag-to-pan) behaves exactly as it always has — nothing
+  // here changes that path. Reuses the exact same zoomToward() as wheel/
+  // double-click rather than reimplementing the math a third time. A single
+  // click zooms in centered on the click point; clicking again (already
+  // zoomed) zooms back out — same toggle feel as the existing double-click.
+  const handleZoomToolClick = (e) => {
+    if (!zoomToolActive) return;
+    e.stopPropagation();
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    if (scale > 1.05) reset();
+    else zoomToward(cx, cy, DOUBLE_CLICK_ZOOM_SCALE, el);
+  };
+
   // ── Desktop: drag-to-pan once zoomed ─────────────────────────────────────
   // Pointer events (not legacy mouse events) on purpose, and filtered to
   // pointerType==="mouse" specifically — the backdrop's own swipe-to-
@@ -502,12 +569,16 @@ function ZoomableImage({ src, onZoomChange }) {
 
   return (
     <div
-      style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}
+      style={{
+        width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+        cursor: zoomToolActive ? (scale > 1.05 ? "zoom-out" : "zoom-in") : undefined,
+      }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
+      onClick={handleZoomToolClick}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -526,7 +597,7 @@ function ZoomableImage({ src, onZoomChange }) {
           transformOrigin: "center center",
           transition: scale === 1 ? "transform 0.22s ease" : "none",
           userSelect: "none", touchAction: "none",
-          cursor: scale > 1.05 ? "grab" : "auto",
+          cursor: zoomToolActive ? "inherit" : (scale > 1.05 ? "grab" : "auto"),
         }}
       />
     </div>
@@ -538,6 +609,11 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
   const [idx, setIdx]           = useState(startIndex ?? 0);
   const [dir, setDir]           = useState(0);
   const [zoomScale, setZoomScale] = useState(1);
+  // Desktop-only "magnifier" toggle from the top bar — Notion-style explicit
+  // click-to-zoom, entirely separate from the always-on wheel/double-click/
+  // pinch zoom above. Resets naturally with the rest of this component's
+  // state when the viewer closes (unmounts) — no dedicated reset needed.
+  const [zoomToolActive, setZoomToolActive] = useState(false);
   const [indicatorVisible, setIndicatorVisible] = useState(true);
   // Which content's description is expanded, if any — not a plain boolean.
   // Expansion belongs to a specific Post/Update/Subtema, not to a media
@@ -769,19 +845,50 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
           touchAction: "none",
         }}
       >
-        {/* Position indicator — local to the current content (e.g. "2/3" for
-            the Post's own photos), not a global count across the whole
-            Thread journey. */}
-        <PositionIndicator current={localIdx} total={currentGroup.count} visible={indicatorVisible} />
-
-        {/* Info header — Post/Update/Subtema context. Images and files only
-            (never video or link — video gets its own viewer later, and link
-            items already show their own title/CTA via LinkPane). Same spot
-            it's always been; re-fed with whichever group is current, so it
-            updates automatically as the journey crosses into the next
+        {/* Top bar — author/type/title, date/privacy, close (+ zoom tool on
+            desktop). Images, files and links only (never video — video gets
+            its own native controls). Re-fed with whichever group is current,
+            so it updates automatically as the journey crosses into the next
             content. No local state, nothing to reset per item. */}
-        {(current.type === "image" || current.type === "file") && (
-          <MediaInfoHeader context={currentGroup.context} visible={indicatorVisible} />
+        {(current.type === "image" || current.type === "file" || current.type === "link") && (
+          <ViewerTopBar
+            context={currentGroup.context}
+            visible={indicatorVisible}
+            isDesktop={isDesktop}
+            current={localIdx}
+            total={currentGroup.count}
+            zoomToolActive={zoomToolActive}
+            onToggleZoomTool={() => setZoomToolActive(z => !z)}
+            onClose={onClose}
+          />
+        )}
+
+        {/* Position indicator — mobile only now (unchanged spot/style); on
+            desktop the same count moved into the top bar's second line
+            instead of a separate floating pill. Local to the current
+            content (e.g. "2/3" for the Post's own photos), not a global
+            count across the whole Thread journey. */}
+        {!isDesktop && (
+          <PositionIndicator current={localIdx} total={currentGroup.count} visible={indicatorVisible} />
+        )}
+
+        {/* Close button now lives inside ViewerTopBar above — kept as a
+            fallback here only for item types that don't show the bar
+            (video), so closing is always reachable. */}
+        {current.type === "video" && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            aria-label="Close"
+            style={{
+              position: "fixed", top: "max(16px, env(safe-area-inset-top))", right: 16,
+              width: 40, height: 40, borderRadius: "50%", zIndex: 3001,
+              background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "#fff",
+            }}
+          >
+            <X size={20} strokeWidth={2.2} />
+          </button>
         )}
 
         {/* Sliding item frame */}
@@ -837,6 +944,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
               <ZoomableImage
                 src={current.url}
                 onZoomChange={setZoomScale}
+                zoomToolActive={isDesktop && zoomToolActive}
               />
             )}
           </motion.div>
@@ -897,21 +1005,6 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             <ChevronRight size={22} strokeWidth={2.2} />
           </button>
         )}
-
-        {/* Close button */}
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          aria-label="Close"
-          style={{
-            position: "fixed", top: "max(16px, env(safe-area-inset-top))", right: 16,
-            width: 40, height: 40, borderRadius: "50%", zIndex: 3001,
-            background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", color: "#fff",
-          }}
-        >
-          <X size={20} strokeWidth={2.2} />
-        </button>
       </motion.div>
     </AnimatePresence>,
     document.body
