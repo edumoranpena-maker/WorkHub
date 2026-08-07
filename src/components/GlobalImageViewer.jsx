@@ -942,6 +942,19 @@ export function useImageViewer() {
     setGallery(null);
   }, [gallery]);
 
+  // The Android/browser back button — the viewer itself never pushes its own
+  // history entry, so without this the physical back button would navigate
+  // whatever's underneath while leaving the viewer open on top of it. Only
+  // listens while a gallery is actually open. Goes through the exact same
+  // closeImage() as the X button, so it resets audio identically — not a
+  // second, parallel close path.
+  useEffect(() => {
+    if (!gallery) return;
+    const onPopState = () => closeImage();
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [gallery, closeImage]);
+
   const ViewerPortal = useCallback(
     () => gallery
       ? <GlobalImageViewer items={gallery.items} startIndex={gallery.startIndex} context={gallery.context} groups={gallery.groups} onClose={closeImage} />
