@@ -847,11 +847,13 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             it; its own pointer-events scoping (see component) keeps it from
             stealing gestures it doesn't need. Description persists expansion
             across media of the SAME content — see expandedContentId above —
-            and resets when the content changes. Audio only ever shows for
-            images (never video/file), per product spec. */}
-        {(current.type === "image" || current.type === "file") && (
+            and resets when the content changes. Both belong to the CONTENT
+            (Post/Update/Subtema), not to the item type being viewed, so they
+            show for image, file, and link items alike — only video is
+            excluded (unchanged from before). */}
+        {(current.type === "image" || current.type === "file" || current.type === "link") && (
           <MediaBottomPanel
-            audio={current.type === "image" ? currentGroup.context?.audio : null}
+            audio={currentGroup.context?.audio}
             description={currentGroup.context?.description}
             visible={indicatorVisible}
             expanded={expanded}
