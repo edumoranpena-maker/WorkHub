@@ -54,7 +54,7 @@ import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
-import { useLinkPreviews, LinkPreviewCard, LinkExpandModal, LinkifiedText, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
+import { useLinkPreviews, useLinkPreviewsBatch, LinkPreviewCard, LinkExpandModal, LinkifiedText, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory, useWorkContextStore } from "../lib/workContext.jsx";
@@ -1526,16 +1526,16 @@ let pendingSwipeArrival = false;
 // Flattens a Thread into ONE ordered list of media for GlobalImageViewer to
 // swipe through end-to-end: Post → its Updates (in order) → each Subtema →
 // that Subtema's own Updates (in order) → next Subtema, and so on. Content
-// with zero media is skipped — nothing to show there, nothing to swipe past.
+// with nothing to show (no media, no link) is skipped.
 //
-// Deliberately uses only raw `data.media` (image/video/file) — never the
-// link-preview cards that mergeLinksIntoMedia appends locally in each
-// MediaCarousel. Those come from useLinkPreviews, a per-content async hook;
-// building this sequence in one place (ThreadView) can't call it a variable
-// number of times (once per Update/Subtema) without breaking the rules of
-// hooks. A direct tap on a link-preview card still opens fine — see
-// openGalleryFor below — it just doesn't join the cross-content journey.
-function buildThreadMediaSequence(thread) {
+// linksById: { [contentId]: preview[] } — link previews for every content in
+// this thread, resolved once via useLinkPreviewsBatch in ThreadView (can't
+// call useLinkPreviews here directly, a variable number of times, without
+// breaking the rules of hooks). Merged in with mergeLinksIntoMedia — the
+// EXACT same function and ordering (media, then link slides) that each
+// content's own local MediaCarousel already uses — so a tapped item's local
+// index lines up with its offset in this shared sequence.
+function buildThreadMediaSequence(thread, linksById = {}) {
   const groups = [];
   const items = [];
 
@@ -1544,7 +1544,7 @@ function buildThreadMediaSequence(thread) {
   // pushGroup would read `data.author` off the Update itself (undefined),
   // which is exactly why Update/Subtema headers were showing blank.
   const pushGroup = (contentId, contentType, data, visibility, authorOverride) => {
-    const media = data.media || [];
+    const media = mergeLinksIntoMedia(data.media, linksById[contentId] || []);
     if (media.length === 0) return;
     const startIdx = items.length;
     items.push(...media);
@@ -1603,18 +1603,26 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   // the fullscreen viewer can swipe continuously across all of them instead
   // of each content opening its own isolated gallery. Recomputes whenever
   // `thread` changes reference (new update/subtema, edits, etc.).
-  const threadSequence = useMemo(() => buildThreadMediaSequence(thread), [thread]);
+  const threadLinkEntries = useMemo(() => {
+    const entries = [{ id: thread.id, text: thread.content }];
+    for (const u of thread.updates || []) entries.push({ id: u.id, text: u.content });
+    for (const s of thread.subtemas || []) {
+      entries.push({ id: s.id, text: s.content });
+      for (const u of s.updates || []) entries.push({ id: u.id, text: u.content });
+    }
+    return entries;
+  }, [thread]);
+  const threadLinksById = useLinkPreviewsBatch(threadLinkEntries);
+  const threadSequence = useMemo(() => buildThreadMediaSequence(thread, threadLinksById), [thread, threadLinksById]);
 
   // Returns an onOpenGallery-shaped callback ({items, startIndex, context}) => void
   // for a specific piece of content (contentId = thread.id / update.id / subtema.id),
-  // to be handed to that content's own <MediaCarousel>. A tap on real media
-  // (image/video/file) opens the full cross-content sequence, landing exactly
-  // on the tapped item. A tap on a link-preview card (not part of the
-  // sequence — see buildThreadMediaSequence) falls back to the original
-  // single-content call, unaffected by any of this.
+  // to be handed to that content's own <MediaCarousel>. Every item type —
+  // image, video, file, link — is part of threadSequence now (see
+  // buildThreadMediaSequence), so any tap joins the full cross-content
+  // journey, landing exactly on the tapped item.
   const openGalleryFor = useCallback((contentId) => ({ items: localItems, startIndex: localStart, context: localContext }) => {
-    const tapped = localItems[localStart];
-    const group = tapped?.type !== "link" && threadSequence.groups.find(g => g.contentId === contentId);
+    const group = threadSequence.groups.find(g => g.contentId === contentId);
     if (!group) {
       openGallery({ items: localItems, startIndex: localStart, context: localContext });
       return;
