@@ -1423,7 +1423,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 
           <VoiceAndMedia audio={subtema.audio} media={subtemaMedia} marginSide="marginBottom" spacing={12}
             onOpenGallery={openGalleryFor(subtema.id)}
-            galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content, audio: subtema.audio }} />
+            galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content, audio: subtema.audio, title: subtema.title }} />
 
           {/* Same design language as the root Post's row — heart, comments,
               TTS controls. No save/share/Ask AI here: those are exclusive to
@@ -1550,7 +1550,7 @@ function buildThreadMediaSequence(thread, linksById = {}) {
     items.push(...media);
     groups.push({
       contentId, startIdx, count: media.length,
-      context: { author: authorOverride ?? data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content, audio: data.audio },
+      context: { author: authorOverride ?? data.author, contentType, timestamp: data.timestamp, visibility, edited: data.edited, description: data.content, audio: data.audio, title: data.title },
     });
   };
 
@@ -1921,7 +1921,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
 
           <VoiceAndMedia audio={data.audio} media={media} spacing={12}
             onOpenGallery={interactive ? openGalleryFor(data.id) : (() => {})}
-            galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content, audio: data.audio }} />
+            galleryContext={{ author: data.author, contentType: "Post", timestamp: data.timestamp, visibility: data.visibility, edited: data.edited, description: data.content, audio: data.audio, title: data.title }} />
 
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 14 }}>
             <motion.button whileTap={interactive ? { scale: 0.88 } : undefined} onClick={interactive ? toggleLike : undefined}
