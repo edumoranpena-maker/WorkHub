@@ -49,6 +49,7 @@ import {
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
 import AudioNotePlayer from "../components/AudioNotePlayer.jsx";
+import { pauseActiveAudio } from "../lib/audioPlayback.js";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
@@ -1314,6 +1315,19 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
     const t = setTimeout(() => setJustEntered(false), 1800);
     return () => clearTimeout(t);
   }, []);
+
+  // Opening a Subtema overlays the still-mounted Thread underneath — it does
+  // NOT unmount the Post/Updates whose audio might be playing there, so
+  // switching content this way never goes through attach()'s own
+  // pause-the-previous-one logic (that only fires when something ELSE is
+  // pressed play on). Pause once, on entry, to cover exactly that gap.
+  // Leaving the Subtema (back arrow or Android back) pauses again on
+  // unmount, same reasoning as ThreadView.
+  useEffect(() => {
+    pauseActiveAudio();
+    return () => pauseActiveAudio();
+  }, []);
+
   const { enqueue } = usePublishQueue();
   const subtemaLinks = useLinkPreviews(subtema.content);
   const subtemaMedia = mergeLinksIntoMedia(subtema.media, subtemaLinks);
@@ -1573,6 +1587,16 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     const t = setTimeout(() => setJustEntered(false), 1800);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
+
+  // Leaving this Thread — by the in-app back arrow, the Android/browser back
+  // button (also handled globally in audioPlayback.js, but redundant safety
+  // here costs nothing), or navigating to a different thread entirely (this
+  // component remounts under a new `key` per thread.id, so the old instance
+  // unmounts first) — pauses whatever voice note was playing. Position is
+  // preserved; only closing the fullscreen viewer or 5min of idleness
+  // actually resets a note back to 0:00 (see audioPlayback.js).
+  useEffect(() => () => pauseActiveAudio(), []);
+
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   // Single shared viewer for the whole Thread — root Post, its Updates, every
   // Subtema and their own Updates all funnel through this one instance, so
