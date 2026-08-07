@@ -8,13 +8,14 @@
  *
  * Exports:
  *   useLinkPreviews(text) -> Array<{ url, title, desc, image, site }>
+ *   useLinkPreviewsBatch(entries: [{id,text}]) -> { [id]: preview[] }
  *   LinkifiedText({ text })              -> renders text with clickable <a> links
  *   LinkPreviewCard({ preview, onExpand })
  *   LinkExpandModal({ preview, onClose })
  *   mergeLinksIntoMedia(media, links)
  */
 
-import { useState, useRef, useEffect, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Link, X } from "lucide-react";
 
@@ -25,6 +26,47 @@ const C = {
 };
 
 const URL_RE = /https?:\/\/[^\s"<>]+/g;
+
+function extractUrls(text) {
+  return [...new Set((text || "").match(URL_RE) || [])].slice(0, 5);
+}
+
+// Shared by every useLinkPreviews/useLinkPreviewsBatch instance across the
+// whole app — a single URL is only ever fetched once, no matter how many
+// components (a content's own local hook, plus ThreadView's batch hook for
+// the fullscreen sequence) end up asking for it.
+const globalPreviewCache = {};
+
+// Shared by useLinkPreviews and useLinkPreviewsBatch below — one fetch+cache
+// implementation, not two.
+async function fetchPreviewsForUrls(urls, cache = globalPreviewCache) {
+  return Promise.all(urls.map(async url => {
+    if (cache[url]) return cache[url];
+    try {
+      // Use allorigins to bypass CORS
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(4000) });
+      const { contents } = await res.json();
+      const doc = new DOMParser().parseFromString(contents, "text/html");
+      const m = (prop) =>
+        doc.querySelector(`meta[property="${prop}"]`)?.content ||
+        doc.querySelector(`meta[name="${prop}"]`)?.content || "";
+      const preview = {
+        url,
+        title: m("og:title") || doc.title || url,
+        desc: m("og:description") || m("description") || "",
+        image: m("og:image") || "",
+        site: new URL(url).hostname.replace("www.", ""),
+      };
+      cache[url] = preview;
+      return preview;
+    } catch {
+      const preview = { url, title: url, desc: "", image: "", site: new URL(url).hostname.replace("www.", "") };
+      cache[url] = preview;
+      return preview;
+    }
+  }));
+}
 
 // ─── LinkifiedText — renders plain text with URLs turned into clickable links ─
 // This is the piece that was missing: useLinkPreviews/mergeLinksIntoMedia only
@@ -59,45 +101,52 @@ export function LinkifiedText({ text, linkColor = C.teal }) {
 // ─── useLinkPreviews — detects URLs in text, fetches OG meta via allorigins ───
 export function useLinkPreviews(text) {
   const [previews, setPreviews] = useState([]);
-  const cache = useRef({});
 
   useEffect(() => {
-    const urls = [...new Set((text || "").match(URL_RE) || [])].slice(0, 5);
+    const urls = extractUrls(text);
     if (!urls.length) { setPreviews([]); return; }
 
     let cancelled = false;
-    Promise.all(urls.map(async url => {
-      if (cache.current[url]) return cache.current[url];
-      try {
-        // Use allorigins to bypass CORS
-        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const res = await fetch(proxy, { signal: AbortSignal.timeout(4000) });
-        const { contents } = await res.json();
-        const doc = new DOMParser().parseFromString(contents, "text/html");
-        const m = (prop) =>
-          doc.querySelector(`meta[property="${prop}"]`)?.content ||
-          doc.querySelector(`meta[name="${prop}"]`)?.content || "";
-        const preview = {
-          url,
-          title: m("og:title") || doc.title || url,
-          desc: m("og:description") || m("description") || "",
-          image: m("og:image") || "",
-          site: new URL(url).hostname.replace("www.", ""),
-        };
-        cache.current[url] = preview;
-        return preview;
-      } catch {
-        const preview = { url, title: url, desc: "", image: "", site: new URL(url).hostname.replace("www.", "") };
-        cache.current[url] = preview;
-        return preview;
-      }
-    })).then(results => {
+    fetchPreviewsForUrls(urls).then(results => {
       if (!cancelled) setPreviews(results.filter(Boolean));
     });
     return () => { cancelled = true; };
   }, [text]);
 
   return previews;
+}
+
+// ─── useLinkPreviewsBatch — same detection/fetch/cache, for MANY contents ───
+// useLinkPreviews takes one text and is meant to be called once per
+// component. Some callers (ThreadView, building the fullscreen viewer's
+// cross-content sequence) need previews for a dynamic number of content
+// pieces — the root Post, every Update, every Subtema, every Subtema's own
+// Updates — and can't call useLinkPreviews in a loop without breaking the
+// rules of hooks (a variable number of hook calls per render). This is that:
+// ONE hook call, any number of contents.
+//
+// entries: Array<{ id, text }>  →  returns { [id]: preview[] }
+export function useLinkPreviewsBatch(entries) {
+  const [byId, setById] = useState({});
+  // Entries is a fresh array every render — key off the actual ids+texts so
+  // the effect only re-runs when content genuinely changed.
+  const key = entries.map(e => `${e.id}:${e.text || ""}`).join("\u241F");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(entries.map(async ({ id, text }) => {
+      const urls = extractUrls(text);
+      if (!urls.length) return [id, []];
+      const results = await fetchPreviewsForUrls(urls);
+      return [id, results.filter(Boolean)];
+    })).then(pairs => {
+      if (!cancelled) setById(Object.fromEntries(pairs));
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return byId;
 }
 
 // ─── LinkPreviewCard ──────────────────────────────────────────────────────────
