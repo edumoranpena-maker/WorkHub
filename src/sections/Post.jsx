@@ -19,10 +19,10 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   ChevronLeft, Search, X, Heart, MessageCircle, Plus,
-  Send, Mic, Square, Image, Video,
+  Send, Mic, Image, Video,
   Loader, FileText, Check, ChevronRight, ChevronDown,
   Bookmark, Share2, Layers, FolderPlus, ExternalLink, Link,
-  Play, Pause, Sparkles, Pin, PinOff,
+  Sparkles, Pin, PinOff,
 } from "lucide-react";
 import {
   fetchRecapThreads,
@@ -49,6 +49,7 @@ import {
 import { useImageViewer, ExpandImageButton } from "../components/GlobalImageViewer.jsx";
 import MediaCarousel from "../components/MediaCarousel.jsx";
 import AudioNotePlayer from "../components/AudioNotePlayer.jsx";
+import ReadAloudButton from "../components/ReadAloudButton.jsx";
 import { pauseActiveAudio } from "../lib/audioPlayback.js";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
@@ -286,33 +287,6 @@ function ExpandableText({ text, maxLines, fontSize = 14, lineHeight = 1.65, colo
         </button>
       )}
     </div>
-  );
-}
-
-// ─── TtsControls — visual-only playback controls, ready for a future TTS engine ──
-// Pure UI placeholder, per request: no audio, no Web Speech API. Clicking ▶
-// flips to showing ⏸ + ⏹ and back — just enough interface/space reserved so
-// the real synthesizer can be wired in later without touching layout again.
-// One shared component so Post/Update/Subtema all get the identical control.
-function TtsControls({ interactive = true }) {
-  const [playing, setPlaying] = useState(false);
-  const btnStyle = (active) => ({
-    background: "none", border: "none", padding: 6, cursor: interactive ? "pointer" : "default",
-    color: active ? C.teal : C.textMuted, display: "flex", alignItems: "center",
-  });
-  return playing ? (
-    <>
-      <button onClick={interactive ? () => setPlaying(false) : undefined} style={btnStyle(true)} title="Pausar lectura">
-        <Pause size={14} fill={C.teal} />
-      </button>
-      <button onClick={interactive ? () => setPlaying(false) : undefined} style={btnStyle(false)} title="Detener lectura">
-        <Square size={13} />
-      </button>
-    </>
-  ) : (
-    <button onClick={interactive ? () => setPlaying(true) : undefined} style={btnStyle(false)} title="Escuchar">
-      <Play size={14} />
-    </button>
   );
 }
 
@@ -1101,6 +1075,7 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.teal, boxShadow: `0 0 8px ${C.teal}60`, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, background: C.card, border: `1px solid ${C.teal}22`, borderRadius: "4px 16px 16px 16px", padding: "12px 14px", marginBottom: 8 }}>
+        <ReadAloudButton id={update.id} text={update.content} accentColor={C.teal} />
         <ExpandableText text={update.content} maxLines={4.5} fontSize={13} lineHeight={1.6} />
         <VoiceAndMedia audio={update.audio} media={mediaWithLinks} spacing={10} onOpenGallery={onOpenGallery} square={false} galleryContext={galleryContext} />
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
@@ -1112,7 +1087,6 @@ function UpdateBubble({ update, index, visibility, author, onOpenGallery, onEdit
             style={{ display: "flex", alignItems: "center", gap: 4, background: liked ? `${C.red}14` : "transparent", border: `1px solid ${liked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: liked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.15s" }}>
             <Heart size={12} fill={liked ? C.red : "none"} /> {likeCount}
           </motion.button>
-          <TtsControls />
           <PostOptionsMenu actions={menuActions} size={26} />
         </div>
       </div>
@@ -1417,6 +1391,8 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             {isHost && <PostOptionsMenu actions={menuActions} />}
           </div>
 
+          <ReadAloudButton id={subtema.id} text={subtema.content} accentColor={C.teal} />
+
           {subtema.content && (
             <ExpandableText text={subtema.content} maxLines={5.5} style={{ marginBottom: 12 }} />
           )}
@@ -1425,9 +1401,8 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             onOpenGallery={openGalleryFor(subtema.id)}
             galleryContext={{ author: subtema.author, contentType: "Subtema", timestamp: subtema.timestamp, visibility: parentVisibility, edited: subtema.edited, description: subtema.content, audio: subtema.audio, title: subtema.title }} />
 
-          {/* Same design language as the root Post's row — heart, comments,
-              TTS controls. No save/share/Ask AI here: those are exclusive to
-              the root Post. */}
+          {/* Same design language as the root Post's row — heart, comments.
+              No save/share/Ask AI here: those are exclusive to the root Post. */}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <motion.button whileTap={{ scale: 0.88 }} onClick={toggleSubLike}
               style={{ display: "flex", alignItems: "center", gap: 5, background: subLiked ? `${C.red}14` : "transparent", border: `1px solid ${subLiked ? C.red + "40" : C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: subLiked ? C.red : C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500, transition: "all 0.18s" }}>
@@ -1436,7 +1411,6 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
             <button style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "default", color: C.textMuted, fontFamily: font, fontSize: 12, fontWeight: 500 }}>
               <MessageCircle size={13} /> {subtema.commentCount || 0}
             </button>
-            <TtsControls />
           </div>
         </div>
 
@@ -1903,6 +1877,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             </div>
           )}
 
+          <ReadAloudButton id={data.id} text={data.content} accentColor={C.teal} interactive={interactive} />
+
           <ExpandableText text={data.content} maxLines={5.5} />
 
           {data.checklist && (
@@ -1934,7 +1910,6 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
             </motion.button>
             <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Bookmark size={14} /></button>
             <button style={{ background: "none", border: "none", color: C.textMuted, cursor: interactive ? "pointer" : "default", padding: 6 }}><Share2 size={14} /></button>
-            <TtsControls interactive={interactive} />
             <div style={{ flex: 1 }} />
             <button
               onClick={interactive ? () => {} : undefined}
