@@ -2,29 +2,66 @@
  * textToSpeech.js
  *
  * Reads a content's plain-text description aloud via the browser's built-in
- * SpeechSynthesis API — no external services, nothing new to build for
- * recording/upload. This is the "lector de texto" that was previously only
- * a visual placeholder (TtsControls in Post.jsx, next to ❤️/comments) with
- * no real engine wired in. That placeholder button is being removed —
- * everything here is the real implementation, in a new spot (see
- * ReadAloudButton.jsx).
+ * SpeechSynthesis API — no external services. This is the TTS counterpart
+ * to audioPlayback.js (recorded voice notes), rewritten around a single
+ * explicit source of truth per the product spec:
  *
- * This is the TTS counterpart to audioPlayback.js (recorded voice notes),
- * but deliberately simpler, with one important behavioral difference: a
- * recorded voice note PAUSES and keeps its position when the user leaves the
- * content; text-to-speech always fully STOPS instead — per spec, it should
- * never keep reading something the user already navigated away from. There
- * is only ever one active session (SpeechSynthesis itself only ever speaks
- * one utterance at a time — no per-content sessions to juggle here, unlike
- * the recorded-audio store).
+ *   activeContentId — which content (post/update/subtema id) is currently
+ *                      loaded into the synthesizer, or null.
+ *   speechState      — "idle" | "playing" | "paused"
+ *
+ * Every UI instance (Post/Update/Subtema inline, fullscreen viewer) reads
+ * BOTH of these from the same store and compares its own contentId against
+ * activeContentId — there is no per-instance "am I playing" flag anywhere,
+ * which is what the previous version got wrong (see history below).
+ *
+ * ── Why the previous version broke ──────────────────────────────────────
+ * Two separate bugs, now fixed by this rewrite:
+ *
+ * 1. Race condition on content switch. Starting a new utterance called
+ *    speechSynthesis.cancel() on the OLD one, but the old utterance's
+ *    onend/onerror fires asynchronously — sometimes AFTER the new session's
+ *    state had already been written. Because those callbacks mutated a
+ *    shared mutable object by reference (not a value captured per-utterance),
+ *    the stale callback from utterance A could stomp on utterance B's just-
+ *    started state, making the UI think nothing was playing even though
+ *    SpeechSynthesis was actually mid-utterance. Fixed here with a
+ *    `generation` counter: every speak()/stop() bumps it, and every
+ *    utterance's callbacks capture the generation they belong to and bail
+ *    out if a newer one has since started — a stale utterance can never
+ *    touch current state.
+ * 2. Stopping was tied to component UNMOUNT, which is a proxy for "the user
+ *    left this content" that breaks the moment that assumption isn't true —
+ *    exactly what happens in the fullscreen viewer, where the description
+ *    (and the button inside it) unmounts/remounts purely because the chrome
+ *    auto-hides, with no actual content change. Fixed here by removing all
+ *    unmount-based stopping from the hook: stopSpeech() is now called ONLY
+ *    from real navigation/content-change events (ThreadView/SubtemaView
+ *    enter/leave, the fullscreen viewer's content-change effect, the
+ *    Android back button) — the same explicit, event-driven pattern already
+ *    used for pausing recorded audio, not an incidental side effect of
+ *    React's render tree shape.
+ *
+ * Deliberately simpler than audioPlayback.js in one respect: there is only ever
+ * ONE session (SpeechSynthesis only ever speaks one utterance at a time —
+ * no per-content sessions to juggle), and it fully STOPS (never pauses-and-
+ * resumes-later) when the user leaves the content — unlike a recorded voice
+ * note, which preserves position across content switches.
+ *
+ * Exclusivity with recorded audio (see audioPlayback.js): starting speech
+ * pauses (never resets) any playing recorded voice note, and starting a
+ * recorded voice note pauses (never resets) speech — see pauseActiveAudio()
+ * below and the matching pauseSpeech() call inside audioPlayback.js's
+ * play(). This is a deliberate two-way import between these two modules;
+ * both references are only used inside function bodies (never evaluated at
+ * module-load time), which is the standard, safe way to structure a mutual
+ * dependency between two ES modules.
  *
  * React components consume this via useTextToSpeech(id, text) below
  * (useSyncExternalStore) — never window.speechSynthesis directly.
  */
-import { useEffect } from "react";
 import { useSyncExternalStore } from "react";
-
-export const SPEECH_RATES = [0.5, 1, 1.25, 1.5, 2];
+import { pauseActiveAudio } from "./audioPlayback.js";
 
 // Strip URLs and collapse whitespace before handing text to the synthesizer
 // — reading a raw URL aloud is bad UX, and SpeechSynthesis has no concept of
@@ -38,135 +75,121 @@ export function toSpeechText(text) {
 }
 
 // Rough estimate only — SpeechSynthesis exposes no reliable duration API.
-// ~155 words/minute at rate=1 is a reasonable average speaking pace; scales
-// linearly with rate. Good enough for the compact "0:18 / 0:42" readout;
-// corrected live as onboundary events come in wouldn't meaningfully improve
-// accuracy given how coarse those boundaries are across browsers.
-function estimateTotalSeconds(text, rate) {
+// ~155 words/minute is a reasonable average speaking pace. Good enough for
+// the compact "0:18 / 0:42" readout.
+function estimateTotalSeconds(text) {
   const words = (text.trim().match(/\S+/g) || []).length;
-  const wpm = 155 * (rate || 1);
-  return wpm > 0 ? Math.max(1, Math.round((words / wpm) * 60)) : 0;
+  return Math.max(1, Math.round((words / 155) * 60));
 }
 
-let session = null; // { id, text, rate, speaking, paused, elapsed, total, spokenChars, timer, utterance }
+// ── The single shared source of truth ───────────────────────────────────
+let activeContentId = null;
+let speechState = "idle"; // "idle" | "playing" | "paused"
+let elapsed = 0;
+let total = 0;
+let timer = null;
+let generation = 0; // bumped on every speak()/stop() — see file header
+
 const listeners = new Set();
-const EMPTY = { id: null, speaking: false, paused: false, elapsed: 0, total: 0, rate: 1 };
+const EMPTY = { activeContentId: null, speechState: "idle", elapsed: 0, total: 0 };
 let snapshot = EMPTY;
 
 function notify() { listeners.forEach(fn => fn()); }
 function subscribe(cb) { listeners.add(cb); return () => listeners.delete(cb); }
-
 function refresh() {
-  snapshot = session
-    ? { id: session.id, speaking: session.speaking, paused: session.paused, elapsed: session.elapsed, total: session.total, rate: session.rate }
-    : EMPTY;
+  snapshot = { activeContentId, speechState, elapsed, total };
   notify();
 }
 
-function clearTimer() {
-  if (session?.timer) { clearInterval(session.timer); session.timer = null; }
-}
+function clearTimer() { if (timer) { clearInterval(timer); timer = null; } }
 function startTimer() {
   clearTimer();
-  session.timer = setInterval(() => {
-    if (!session || session.paused) return;
-    session.elapsed = Math.min(session.total, session.elapsed + 1);
+  timer = setInterval(() => {
+    if (speechState !== "playing") return;
+    elapsed = Math.min(total, elapsed + 1);
     refresh();
   }, 1000);
 }
 
-function endSession() {
+function resetState() {
   clearTimer();
-  session = null;
+  activeContentId = null;
+  speechState = "idle";
+  elapsed = 0;
+  total = 0;
   refresh();
 }
 
-/** Stop reading entirely — the user's own "Detener" AND every navigation-
- *  driven lifecycle rule (leaving content, closing the viewer, the Android
- *  back button, switching to different content) route through this. Always
- *  safe to call even if nothing is speaking. */
+/** Stop reading entirely — the user's own "Detener" AND every real
+ *  navigation/content-change event (leaving a Thread/Subtema, entering a
+ *  Subtema, the fullscreen viewer's content actually changing, closing the
+ *  viewer, the Android back button) route through this. Deliberately NOT
+ *  called just because a component showing the button happens to unmount
+ *  (see file header — that was the fullscreen-hide bug). Always safe to
+ *  call even if nothing is speaking. */
 export function stopSpeech() {
+  generation++; // invalidate any in-flight utterance callbacks first
   if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
-  endSession();
-}
-
-function makeUtterance(text, rate, fromCharIndex) {
-  const utter = new SpeechSynthesisUtterance(text.slice(fromCharIndex));
-  utter.rate = rate;
-  utter.lang = "es-ES";
-  utter.onboundary = (e) => { if (session) session.spokenChars = fromCharIndex + (e.charIndex || 0); };
-  utter.onend = () => {
-    if (!session) return;
-    session.speaking = false;
-    session.paused = false;
-    session.elapsed = session.total;
-    clearTimer();
-    refresh();
-    // Brief delay so "finished" is visible for a moment instead of the
-    // control instantly reverting to the plain button mid-frame.
-    setTimeout(() => { if (session && !session.speaking) endSession(); }, 600);
-  };
-  utter.onerror = () => endSession();
-  return utter;
-}
-
-function speakFrom(fromCharIndex) {
-  const synth = window.speechSynthesis;
-  synth.cancel(); // only one utterance system-wide — always start clean
-  const utter = makeUtterance(session.text, session.rate, fromCharIndex);
-  session.utterance = utter;
-  session.speaking = true;
-  session.paused = false;
-  synth.speak(utter);
-  startTimer();
-  refresh();
-}
-
-/** Start reading `text` aloud for content `id` — replaces whatever was
- *  being read before (for any id); SpeechSynthesis only ever speaks one
- *  thing at a time. Keeps the previous rate if resuming the SAME id. */
-export function speak(id, text) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-  const clean = toSpeechText(text);
-  if (!clean) return;
-  const rate = session?.id === id ? session.rate : 1;
-  session = { id, text: clean, rate, speaking: false, paused: false, elapsed: 0, total: estimateTotalSeconds(clean, rate), spokenChars: 0, timer: null, utterance: null };
-  speakFrom(0);
+  resetState();
 }
 
 export function pauseSpeech() {
-  if (!session?.speaking || session.paused) return;
+  if (speechState !== "playing") return;
   window.speechSynthesis.pause();
-  session.paused = true;
+  speechState = "paused";
   clearTimer();
   refresh();
 }
 
 export function resumeSpeech() {
-  if (!session || !session.paused) return;
+  if (speechState !== "paused") return;
   window.speechSynthesis.resume();
-  session.paused = false;
+  speechState = "playing";
+  startTimer();
+  refresh();
+}
+
+/** Start reading `text` aloud for content `id` — replaces whatever was
+ *  being read before, for any id (SpeechSynthesis only ever speaks one
+ *  thing). Also pauses (never resets) a playing recorded voice note — see
+ *  file header on exclusivity. */
+export function speak(id, text) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const clean = toSpeechText(text);
+  if (!clean) return;
+
+  pauseActiveAudio(); // exclusivity rule — recorded audio only pauses
+
+  generation++;
+  const myGen = generation;
+  window.speechSynthesis.cancel();
+
+  activeContentId = id;
+  elapsed = 0;
+  total = estimateTotalSeconds(clean);
+  speechState = "playing";
+
+  const utter = new SpeechSynthesisUtterance(clean);
+  utter.lang = "es-ES";
+  utter.onend = () => {
+    if (myGen !== generation) return; // stale — a newer speak()/stop() already happened
+    resetState();
+  };
+  utter.onerror = () => {
+    if (myGen !== generation) return;
+    resetState();
+  };
+  window.speechSynthesis.speak(utter);
   startTimer();
   refresh();
 }
 
 export function toggleSpeech(id, text) {
-  if (session?.id === id && session.speaking) {
-    session.paused ? resumeSpeech() : pauseSpeech();
+  if (activeContentId === id) {
+    speechState === "paused" ? resumeSpeech() : pauseSpeech();
   } else {
     speak(id, text);
   }
-}
-
-// SpeechSynthesisUtterance.rate can't change mid-utterance in any browser —
-// changing speed restarts from wherever onboundary last reported, at the
-// new rate, so it feels like a live speed change rather than starting over.
-export function setSpeechRate(rate) {
-  if (!session) return;
-  session.rate = rate;
-  session.total = estimateTotalSeconds(session.text, rate);
-  if (session.speaking && !session.paused) speakFrom(session.spokenChars);
-  else refresh();
 }
 
 // The Android/browser back button — same class of fix already applied to
@@ -181,34 +204,21 @@ if (typeof window !== "undefined") {
  *
  * `id` should be the content's own id (post/update/subtema id) — the same
  * value used elsewhere in the app to key a specific piece of content.
+ * Every instance compares its own `id` against the single shared
+ * activeContentId — that comparison, not any local state, is what the UI
+ * reflects.
  */
 export function useTextToSpeech(id, text) {
   const snap = useSyncExternalStore(subscribe, () => snapshot, () => EMPTY);
-  const isThis = snap.id === id;
-
-  // Base lifecycle rule: stop when the component whose text this is
-  // unmounts (closing a Thread/Subtema, navigating away, the fullscreen
-  // viewer closing). Screens that need to also stop WITHOUT unmounting
-  // (e.g. the fullscreen viewer swiping to different content while staying
-  // mounted) call stopSpeech() directly themselves — same pattern already
-  // established for recorded audio.
-  useEffect(() => {
-    return () => { if (session?.id === id) stopSpeech(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  const stop = () => { if (isThis) stopSpeech(); };
-  const setRate = (r) => { if (isThis) setSpeechRate(r); };
+  const isThis = snap.activeContentId === id;
 
   return {
-    speaking: isThis && snap.speaking,
-    paused: isThis && snap.paused,
-    active: isThis, // a session exists for this id, speaking or paused
+    speaking: isThis && snap.speechState === "playing",
+    paused: isThis && snap.speechState === "paused",
+    active: isThis, // this content is the one currently loaded (playing or paused)
     elapsed: isThis ? snap.elapsed : 0,
     total: isThis ? snap.total : 0,
-    rate: isThis ? snap.rate : 1,
     toggle: () => toggleSpeech(id, text),
-    stop,
-    setRate,
+    stop: () => { if (isThis) stopSpeech(); },
   };
 }

@@ -27,6 +27,7 @@
  */
 import { useEffect } from "react";
 import { useSyncExternalStore } from "react";
+import { pauseSpeech } from "./textToSpeech.js";
 
 const IDLE_RESET_MS = 5 * 60 * 1000; // 5 minutes — matches the product spec
 
@@ -142,6 +143,7 @@ function attach(url, knownDuration = 0) {
 }
 
 function play(url, knownDuration = 0) {
+  pauseSpeech(); // exclusivity rule — text-to-speech only pauses, never resets
   attach(url, knownDuration);
   ensureAudioEl().play().catch(() => {}); // autoplay-policy edge case — button stays usable
 }
