@@ -30,6 +30,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-mo
 import { X, File as FileIcon, ExternalLink, Download, ChevronLeft, ChevronRight, ZoomIn } from "lucide-react";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import AudioNotePlayer from "./AudioNotePlayer.jsx";
+import ReadAloudButton from "./ReadAloudButton.jsx";
 import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
@@ -234,17 +235,20 @@ function ViewerTopBar({ context, visible, isDesktop, current, total, zoomToolAct
   );
 }
 
-// ── Media bottom panel — Audio then Description, Telegram-style ─────────────
-// Same bottom-anchored gradient backdrop as before, now stacked as two
-// independent, optional pieces in normal document flow (audio above
-// description — no separate absolutely-positioned blocks to keep in sync):
-//   - AudioNotePlayer, when this content has a voice note (images only —
-//     videos/files never show it, gated by the caller below).
+// ── Media bottom panel — Audio, then Read-aloud, then Description ───────────
+// Same bottom-anchored gradient backdrop as before, now stacked as THREE
+// independent, optional pieces in normal document flow (no separate
+// absolutely-positioned blocks to keep in sync):
+//   - AudioNotePlayer, when this content has a recorded voice note (images,
+//     files and links — never video, gated by the caller below).
+//   - ReadAloudButton, when the description has actual text to read — a
+//     completely separate system (browser SpeechSynthesis, not a recorded
+//     file) that never interferes with the voice note above it.
 //   - The description text, exactly as before (collapse/expand, its own
 //     tap-to-expand + internal-scroll-when-expanded behavior).
-// Returns null only when there's truly nothing to show — audio-only and
-// description-only contents both still render (just the one piece).
-function MediaBottomPanel({ audio, description, visible, expanded, onExpandChange }) {
+// Returns null only when there's truly nothing to show — any subset of the
+// three (audio-only, description-only, etc.) still renders correctly.
+function MediaBottomPanel({ contentId, audio, description, visible, expanded, onExpandChange }) {
   const desc = (description || "").trim();
   if (!audio?.url && !desc) return null;
   const isLong = desc.length > DESCRIPTION_COLLAPSE_LEN;
@@ -303,6 +307,11 @@ function MediaBottomPanel({ audio, description, visible, expanded, onExpandChang
             {audio?.url && (
               <div style={{ marginBottom: desc ? 8 : 0 }} onClick={e => e.stopPropagation()}>
                 <AudioNotePlayer audio={audio} accentColor="#22d3a0" />
+              </div>
+            )}
+            {desc && (
+              <div style={{ marginBottom: 6 }} onClick={e => e.stopPropagation()}>
+                <ReadAloudButton id={contentId} text={desc} accentColor="#22d3a0" />
               </div>
             )}
             {desc && (
@@ -970,6 +979,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             excluded (unchanged from before). */}
         {(current.type === "image" || current.type === "file" || current.type === "link") && (
           <MediaBottomPanel
+            contentId={currentGroup.contentId}
             audio={currentGroup.context?.audio}
             description={currentGroup.context?.description}
             visible={indicatorVisible}
