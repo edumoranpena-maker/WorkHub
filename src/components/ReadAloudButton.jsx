@@ -7,19 +7,25 @@
  * (inline, between the metadata line and the description) and the
  * fullscreen viewer (between the recorded voice note and the description).
  *
+ * Purely a reflection of the shared activeContentId/speechState store in
+ * textToSpeech.js — this component holds no playback state of its own. Every
+ * instance compares its own `id` prop against the single active id, so
+ * starting playback in one instance automatically flips every other
+ * instance (for different content) back to the plain button — see
+ * textToSpeech.js for why that comparison, rather than local state, is what
+ * keeps every instance in sync.
+ *
  * Independent from AudioNotePlayer/audioPlayback.js on purpose — a recorded
  * voice note and this text-to-speech reader are two separate systems that
- * never interfere with each other (different underlying engines, different
- * lifecycle rules: a voice note pauses-and-resumes across content switches,
- * this always fully stops). Visually mirrors AudioNotePlayer's compact
- * control once active, for a consistent feel — not a shared component,
- * since the interactions differ (no seek bar here; SpeechSynthesis has no
- * reliable seek target).
+ * only ever pause each other (never reset), never both speak at once.
+ *
+ * No speed control in this version (deliberately removed — see
+ * textToSpeech.js history notes). Just Play / Pause / Resume / Stop.
  *
  * Renders nothing if there's no actual text to read.
  */
 import { Volume2, Pause, Play, Square } from "lucide-react";
-import { useTextToSpeech, toSpeechText, SPEECH_RATES } from "../lib/textToSpeech.js";
+import { useTextToSpeech, toSpeechText } from "../lib/textToSpeech.js";
 
 function fmtTime(s) {
   const total = Math.max(0, Math.floor(s || 0));
@@ -35,7 +41,7 @@ function fmtTime(s) {
  *   automatically before being spoken — see toSpeechText).
  */
 export default function ReadAloudButton({ id, text, accentColor = "#22d3a0", interactive = true }) {
-  const { speaking, paused, active, elapsed, total, rate, toggle, stop, setRate } = useTextToSpeech(id, text);
+  const { speaking, paused, active, elapsed, total, toggle, stop } = useTextToSpeech(id, text);
 
   if (!toSpeechText(text)) return null;
 
@@ -52,11 +58,6 @@ export default function ReadAloudButton({ id, text, accentColor = "#22d3a0", int
     );
   }
 
-  const cycleRate = () => {
-    const idx = SPEECH_RATES.indexOf(rate);
-    setRate(SPEECH_RATES[(idx + 1) % SPEECH_RATES.length] ?? SPEECH_RATES[0]);
-  };
-
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
       <button onClick={interactive ? (e => { e.stopPropagation(); toggle(); }) : undefined} aria-label={paused ? "Reanudar lectura" : "Pausar lectura"}
@@ -66,10 +67,6 @@ export default function ReadAloudButton({ id, text, accentColor = "#22d3a0", int
       <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 600, color: accentColor }}>
         {fmtTime(elapsed)} / {fmtTime(total)}
       </span>
-      <button onClick={interactive ? (e => { e.stopPropagation(); cycleRate(); }) : undefined}
-        style={{ background: `${accentColor}18`, border: `1px solid ${accentColor}30`, borderRadius: 8, padding: "2px 7px", cursor: interactive ? "pointer" : "default", fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, color: accentColor }}>
-        {rate}×
-      </button>
       <button onClick={interactive ? (e => { e.stopPropagation(); stop(); }) : undefined} aria-label="Detener lectura"
         style={{ background: "none", border: "none", padding: 2, cursor: interactive ? "pointer" : "default", color: `${accentColor}99`, display: "flex" }}>
         <Square size={11} />

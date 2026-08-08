@@ -32,6 +32,7 @@ import { PrivacyIcon } from "../lib/visibility.jsx";
 import AudioNotePlayer from "./AudioNotePlayer.jsx";
 import ReadAloudButton from "./ReadAloudButton.jsx";
 import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
+import { stopSpeech } from "../lib/textToSpeech.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
 // own copy of (Post.jsx, Tools.jsx, Announcements.jsx, Stats.jsx, etc.) —
@@ -696,18 +697,23 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
     setExpandedContentId(null);
   }, [currentGroupIdx]);
 
-  // Pause (not reset) whichever voice note was playing the moment the swipe
-  // crosses into a DIFFERENT content's group — currentGroupIdx changing is
-  // exactly that event. Position and speed are preserved (pauseActiveAudio
-  // only pauses); a full reset only ever happens when the viewer itself
-  // closes (see closeImage below). Skipped on mount — opening the viewer
-  // on some content must not pause that content's own just-started note —
-  // and never fires from browsing images within the SAME group, since
-  // currentGroupIdx only changes when the content itself changes.
+  // Pause (not reset) whichever voice note was playing, and STOP (fully —
+  // never resumes) any text-to-speech reading, the moment the swipe crosses
+  // into a DIFFERENT content's group — currentGroupIdx changing is exactly
+  // that event, and only that event: hiding/showing the description via the
+  // chrome auto-hide does NOT touch currentGroupIdx, so it does not trigger
+  // this (that was the previous bug — the reader used to stop just because
+  // the button housing it unmounted when the chrome hid it, with no actual
+  // content change; see textToSpeech.js's file header for the fix). Skipped
+  // on mount — opening the viewer on some content must not pause/stop that
+  // same content's own just-started audio/reading — and never fires from
+  // browsing images within the SAME group, since currentGroupIdx only
+  // changes when the content itself changes.
   const isFirstGroupRender = useRef(true);
   useEffect(() => {
     if (isFirstGroupRender.current) { isFirstGroupRender.current = false; return; }
     pauseActiveAudio();
+    stopSpeech();
   }, [currentGroupIdx]);
 
   // Expanding holds the chrome (header + description) open indefinitely for
@@ -1065,8 +1071,11 @@ export function useImageViewer() {
     // keeps position, handled entirely inside audioPlayback.js. Reset every
     // voice-note URL this gallery session could have touched: the single
     // `context` case, and every group's context for a cross-content journey.
+    // Text-to-speech has no position to preserve across a close — always
+    // stops outright.
     if (gallery?.context?.audio?.url) resetAudioSession(gallery.context.audio.url);
     (gallery?.groups || []).forEach(g => { if (g.context?.audio?.url) resetAudioSession(g.context.audio.url); });
+    stopSpeech();
     setGallery(null);
   }, [gallery]);
 
