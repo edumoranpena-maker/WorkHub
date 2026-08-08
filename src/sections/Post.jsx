@@ -51,7 +51,7 @@ import MediaCarousel from "../components/MediaCarousel.jsx";
 import AudioNotePlayer from "../components/AudioNotePlayer.jsx";
 import ReadAloudButton from "../components/ReadAloudButton.jsx";
 import { pauseActiveAudio } from "../lib/audioPlayback.js";
-import { stopSpeech } from "../lib/textToSpeech.js";
+import { pauseSpeechForNavigation } from "../lib/textToSpeech.js";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
@@ -1298,12 +1298,13 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   // pressed play on). Pause once, on entry, to cover exactly that gap.
   // Leaving the Subtema (back arrow or Android back) pauses again on
   // unmount, same reasoning as ThreadView. Text-to-speech uses the same two
-  // entry/exit points but STOPS rather than pauses — a reading never
-  // resumes across a content change, per spec (recorded audio does).
+  // entry/exit points and now mirrors the recorded-audio behavior exactly:
+  // a temporary pause-and-save (position kept for 5min), never a hard stop
+  // — only the fullscreen viewer closing or the user's own Stop discard it.
   useEffect(() => {
     pauseActiveAudio();
-    stopSpeech();
-    return () => { pauseActiveAudio(); stopSpeech(); };
+    pauseSpeechForNavigation();
+    return () => { pauseActiveAudio(); pauseSpeechForNavigation(); };
   }, []);
 
   const { enqueue } = usePublishQueue();
@@ -1573,8 +1574,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   // unmounts first) — pauses whatever voice note was playing. Position is
   // preserved; only closing the fullscreen viewer or 5min of idleness
   // actually resets a note back to 0:00 (see audioPlayback.js). Text-to-
-  // speech uses the same unmount event but stops outright, per spec.
-  useEffect(() => () => { pauseActiveAudio(); stopSpeech(); }, []);
+  // speech now mirrors this exactly too — pause-and-save, not a hard stop.
+  useEffect(() => () => { pauseActiveAudio(); pauseSpeechForNavigation(); }, []);
 
   const { openGallery, openImage, ViewerPortal } = useImageViewer();
   // Single shared viewer for the whole Thread — root Post, its Updates, every
