@@ -165,9 +165,13 @@ function ViewerTopBar({ context, visible, isDesktop, current, total, zoomToolAct
                   {typeLabel && <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>{typeLabel}</span>}
                 </div>
               )}
-              {/* Line 2 — date • privacy icon  ·····  counter (desktop only) */}
+              {/* Line 2 — date • privacy icon, with the counter (desktop
+                  only) centered at the MIDDLE of this line — absolutely
+                  positioned so it sits at the true horizontal center
+                  regardless of how long the date text is, rather than
+                  flush against the right edge. */}
               {(dateParts.length > 0 || showCounter) && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ position: "relative", display: "flex", alignItems: "center", minHeight: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                     {dateParts.length > 0 && (
                       <span style={{
@@ -182,7 +186,8 @@ function ViewerTopBar({ context, visible, isDesktop, current, total, zoomToolAct
                   </div>
                   {showCounter && (
                     <span style={{
-                      flexShrink: 0, fontFamily: "sans-serif", fontSize: 12, fontWeight: 600,
+                      position: "absolute", left: "50%", transform: "translateX(-50%)",
+                      fontFamily: "sans-serif", fontSize: 12, fontWeight: 600,
                       color: "rgba(255,255,255,0.85)", letterSpacing: "0.03em",
                     }}>
                       {current + 1} / {total}
@@ -386,7 +391,7 @@ function FilePane({ item }) {
 }
 
 // ── Single image pane with zoom+pan ──────────────────────────────────────────
-function ZoomableImage({ src, onZoomChange, zoomToolActive = false }) {
+function ZoomableImage({ src, onZoomChange, zoomToolActive = false, onZoomToolUsed }) {
   const [scale, setScale]   = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const gestureRef = useRef(null);  // tracks active gesture state
@@ -516,14 +521,17 @@ function ZoomableImage({ src, onZoomChange, zoomToolActive = false }) {
   };
 
   // ── Desktop: explicit "zoom tool" (the magnifier toggle in the top bar) —
-  // Notion-style click-to-zoom ──────────────────────────────────────────────
+  // Notion-style click-to-zoom, single-use ─────────────────────────────────
   // Entirely additive and gated behind zoomToolActive: when the tool isn't
   // toggled on, this is a no-op and every gesture above (wheel, double-
   // click, pinch, drag-to-pan) behaves exactly as it always has — nothing
   // here changes that path. Reuses the exact same zoomToward() as wheel/
-  // double-click rather than reimplementing the math a third time. A single
-  // click zooms in centered on the click point; clicking again (already
-  // zoomed) zooms back out — same toggle feel as the existing double-click.
+  // double-click rather than reimplementing the math a third time.
+  // One full use = two clicks: first click zooms in (tool stays armed so
+  // the very next click is recognized as the matching zoom-out); second
+  // click zooms back out AND calls onZoomToolUsed() to switch the magnifier
+  // off — the tool never stays active past that pair, so a third click on
+  // the image does nothing until 🔍 is pressed again.
   const handleZoomToolClick = (e) => {
     if (!zoomToolActive) return;
     e.stopPropagation();
@@ -531,7 +539,7 @@ function ZoomableImage({ src, onZoomChange, zoomToolActive = false }) {
     const rect = el.getBoundingClientRect();
     const cx = e.clientX - (rect.left + rect.width / 2);
     const cy = e.clientY - (rect.top + rect.height / 2);
-    if (scale > 1.05) reset();
+    if (scale > 1.05) { reset(); onZoomToolUsed?.(); }
     else zoomToward(cx, cy, DOUBLE_CLICK_ZOOM_SCALE, el);
   };
 
@@ -945,6 +953,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
                 src={current.url}
                 onZoomChange={setZoomScale}
                 zoomToolActive={isDesktop && zoomToolActive}
+                onZoomToolUsed={() => setZoomToolActive(false)}
               />
             )}
           </motion.div>
