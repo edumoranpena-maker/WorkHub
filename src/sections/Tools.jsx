@@ -37,9 +37,10 @@
 import { useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, Calculator } from "lucide-react";
+import { ChevronLeft, Calculator, ListChecks } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
+import ChecklistsPage from "../tools/checklists/ChecklistsPage.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
 // Local per-file copy, same convention as every other section (Post.jsx,
@@ -72,6 +73,7 @@ const font = "'DM Sans', sans-serif";
 // "mock" placeholders requested for everything besides Risk Calculator.
 const TOOLS = [
   { id: "risk-calculator", name: "Risk Calculator",      icon: Calculator, available: true,  component: RiskCalculatorPage },
+  { id: "checklists",      name: "Checklist",            icon: ListChecks, available: true,  component: ChecklistsPage },
   { id: "position-sizer",  name: "Position Sizer",       icon: Calculator, available: false },
   { id: "r-converter",     name: "R Multiple Converter", icon: Calculator, available: false },
 ];
