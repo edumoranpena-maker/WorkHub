@@ -795,7 +795,7 @@ const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFi
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport, onTogglePin, canPin = true }) {
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -822,7 +822,7 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
       onMouseLeave={() => setHov(false)}
       onClick={onClick}
       style={{
-        borderRadius: 18,
+        borderRadius: compact ? 10 : 18,
         overflow: "hidden",
         cursor: "pointer",
         background: C.card,
@@ -847,10 +847,11 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
         </div>
       )}
 
-      {/* Thumbnail area — taller, closer to an IG Reels proportion, and now
-          purely visual: no text/gradient overlay, the title lives in the
-          info zone below instead. */}
-      <div style={{ position: "relative", aspectRatio: "2/3", background: thumb ? "transparent" : `linear-gradient(135deg, ${C.accentDim}44, ${C.tealDim})`, overflow: "hidden" }}>
+      {/* Thumbnail area — square on desktop (matches the Instagram-grid
+          reference: dense, media-first tiles), unchanged 2/3 portrait on
+          mobile. Purely visual either way: no text/gradient overlay, the
+          title lives in the info zone below. */}
+      <div style={{ position: "relative", aspectRatio: compact ? "1/1" : "2/3", background: thumb ? "transparent" : `linear-gradient(135deg, ${C.accentDim}44, ${C.tealDim})`, overflow: "hidden" }}>
         {thumb ? (
           <img
             src={thumb}
@@ -864,28 +865,31 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
         )}
       </div>
 
-      {/* Card body / info zone — title always lives here now, never over the thumbnail */}
-      <div style={{ padding: "10px 12px 12px" }}>
-        <p style={{ margin: "0 0 8px", fontFamily: font, fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+      {/* Card body / info zone — title always lives here now, never over the
+          thumbnail. Sizing scales down with `compact` (desktop grid) since
+          tiles are much smaller there; mobile gets only a light reduction
+          from its previous values, same structure throughout. */}
+      <div style={{ padding: compact ? "8px 9px 8px" : "9px 11px 11px" }}>
+        <p style={{ margin: compact ? "0 0 6px" : "0 0 7px", fontFamily: font, fontSize: compact ? 12 : 12.5, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
           {thread.title || "Untitled"}
         </p>
 
         {/* Status + 3-dot menu, same line, menu pinned to the right margin */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: compact ? 5 : 6 }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
-          <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+          <span style={{ fontFamily: font, fontSize: compact ? 9.5 : 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
           <div style={{ flex: 1 }} />
-          <PostOptionsMenu actions={menuActions} size={24} />
+          <PostOptionsMenu actions={menuActions} size={compact ? 20 : 23} />
         </div>
 
         {/* Footer: date + privacy + edited */}
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <p style={{ margin: 0, fontFamily: font, fontSize: 11, color: C.textMuted, fontWeight: 500 }}>
+          <p style={{ margin: 0, fontFamily: font, fontSize: compact ? 10 : 10.5, color: C.textMuted, fontWeight: 500 }}>
             {fmtDate(thread.timestamp)}
           </p>
-          <PrivacyIcon visibility={thread.visibility} size={10} color={C.textMuted} />
+          <PrivacyIcon visibility={thread.visibility} size={compact ? 9 : 9.5} color={C.textMuted} />
           {thread.edited && (
-            <span style={{ fontFamily: font, fontSize: 11, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>
+            <span style={{ fontFamily: font, fontSize: compact ? 10 : 10.5, color: C.textMuted, fontStyle: "italic" }}>· Editado</span>
           )}
         </div>
       </div>
@@ -947,12 +951,18 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
   const { pinned, rest } = useMemo(() => splitPinned(filtered), [filtered]);
   const grouped = useMemo(() => groupByMonth(rest), [rest]);
 
-  // Cards keep their original mobile size — widening a 2-column grid's
-  // columns to fill a much wider desktop container is exactly the "phone UI
-  // stretched" look this pass fixes. 3 columns on desktop instead keeps each
-  // card close to its original width while using the extra room.
+  // Desktop: responsive auto-fill instead of a fixed column count — a fixed
+  // repeat(3,1fr) stretches each card to fill whatever width is available,
+  // which is exactly the "phone UI stretched" look this fixes. auto-fill
+  // adds MORE columns as the window gets wider instead, keeping each tile
+  // close to a fixed, compact width — the actual Instagram-grid trait this
+  // was modeled on (see PostCard's `compact` prop for the matching square
+  // thumbnail). Mobile keeps its original 2-column layout — only the gap
+  // gets a touch tighter, the "very light" adjustment asked for there.
   const isDesktop = useIsDesktop();
-  const gridStyle = { display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr 1fr", gap: 10, marginBottom: 4 };
+  const gridStyle = isDesktop
+    ? { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 3, marginBottom: 4 }
+    : { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 4 };
 
   // Per-section collapse state, keyed by section id ("pinned" or a month
   // label). Plain component state — same pattern this file already uses for
@@ -985,7 +995,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
               {pinned.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
                   onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
-                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} />
+                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
           </CollapsibleSection>
@@ -1000,7 +1010,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
               {items.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
                   onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
-                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} />
+                  onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
           </CollapsibleSection>
