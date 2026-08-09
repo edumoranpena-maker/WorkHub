@@ -971,7 +971,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
   // tab (mobile: hidden via CSS, not torn down; desktop: only remounts on
   // switching to a different top-level section), so this survives opening a
   // Thread, closing it, scrolling away and back — no persistence layer needed.
-  const [collapsed, setCollapsed] = useState({});
+  const [collapsed, setCollapsed] = useState({ pinned: true });
   const toggleSection = useCallback((key) => {
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
