@@ -189,7 +189,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
                 </div>
                 <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 13, color: C.textMuted, fontWeight: 600 }}>{profile?.handle ?? "@luismorp"}</p>
               </div>
-              <Buttons style={{ flexShrink: 0 }} />
+              <Stats align="left" />
             </div>
 
             {(profile?.showBio !== false) && (
@@ -200,7 +200,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
             )}
 
             <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <Stats align="left" />
+              <Buttons style={{ flexShrink: 0 }} />
               <Socials />
             </div>
           </div>
