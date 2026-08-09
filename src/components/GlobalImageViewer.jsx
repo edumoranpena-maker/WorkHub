@@ -33,6 +33,7 @@ import AudioNotePlayer from "./AudioNotePlayer.jsx";
 import ReadAloudButton from "./ReadAloudButton.jsx";
 import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
 import { stopSpeech, pauseSpeechForNavigation } from "../lib/textToSpeech.js";
+import { PLATFORM_LABELS } from "../lib/linkPlatforms.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
 // own copy of (Post.jsx, Tools.jsx, Announcements.jsx, Stats.jsx, etc.) —
@@ -349,7 +350,41 @@ function MediaBottomPanel({ contentId, audio, description, visible, expanded, on
 }
 
 
+// ── Link pane — shown when the viewer swipes to a link item ─────────────────
+// Embeddable platforms (YouTube/Drive — item.embed present) get the real,
+// official embed player, actual in-app playback rather than a static
+// thumbnail. Everything else (Instagram/TikTok/X/Facebook/generic web)
+// keeps the original thumbnail + title + "Abrir en <platform>" card — those
+// platforms were never asked to play in-app, only to open the original URL.
 function LinkPane({ item }) {
+  if (item.embed) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: "min(92vw, 720px)" }}>
+        <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#000", borderRadius: 12, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.6)" }}>
+          <iframe
+            src={item.embed.embedUrl}
+            title={item.title || "Embedded content"}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
+          />
+        </div>
+        <div style={{ textAlign: "center", padding: "0 16px" }}>
+          <p style={{ margin: "0 0 4px", fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 700, color: "#fff" }}>{item.title || "Enlace"}</p>
+          <a
+            href={item.linkUrl || item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "rgba(255,255,255,0.6)", textDecoration: "underline" }}
+          >
+            Abrir en {PLATFORM_LABELS[item.platform] || "el navegador"}
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, maxWidth: "88vw" }}>
       {(item.thumb || item.url) && (
@@ -361,15 +396,16 @@ function LinkPane({ item }) {
         />
       )}
       <div style={{ textAlign: "center", padding: "0 16px" }}>
-        <p style={{ margin: "0 0 12px", fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>{item.title || "Enlace"}</p>
+        <p style={{ margin: "0 0 4px", fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>{item.title || "Enlace"}</p>
+        {item.author && <p style={{ margin: "0 0 12px", fontFamily: "'DM Sans', sans-serif", fontSize: 12.5, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>{item.author}</p>}
         <a
           href={item.linkUrl || item.url}
           target="_blank"
           rel="noopener noreferrer"
           onClick={e => e.stopPropagation()}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 20px", borderRadius: 99, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, textDecoration: "none" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 20px", borderRadius: 99, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, textDecoration: "none", marginTop: item.author ? 0 : 12 }}
         >
-          <ExternalLink size={14} /> Abrir enlace
+          <ExternalLink size={14} /> Abrir en {PLATFORM_LABELS[item.platform] || "el navegador"}
         </a>
       </div>
     </div>
