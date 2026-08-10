@@ -18,7 +18,6 @@ import Announcements, { StoryViewer } from "./sections/Announcements";
 import Stats          from "./sections/Stats";
 import Tools          from "./sections/Tools";
 import { PageContainer } from "./lib/layout.jsx";
-import { parseRoute, buildPath } from "./lib/router.js";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
@@ -1112,37 +1111,12 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function RootShell() {
-  // routeIntent is the one piece of state that owns "what did the browser
-  // just ask for" — showHome below is *derived* from it rather than being
-  // its own independent boolean, so there's only ever one thing that can
-  // disagree with the URL instead of two that could drift apart. Lazily
-  // initialized from the URL PlanSpace was actually loaded with, so a
-  // deep link opens directly into the right screen on first paint instead
-  // of flashing HomeFeed first.
-  const [routeIntent, setRouteIntent] = useState(() => parseRoute(window.location.pathname));
+  // Deep-linking removed (see the App component's own comment for why) —
+  // this is now a plain in-memory boolean, no URL involvement. The app
+  // always starts on Home; there's no more "opens directly into a
+  // deep-linked screen" behavior since there's no URL being read anymore.
+  const [showHome, setShowHome] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const showHome = routeIntent.type === "home";
-
-  // The only popstate listener in the app — RootShell is the only thing
-  // that's always mounted regardless of which screen is showing (App itself
-  // unmounts entirely while showHome is true), so it's the only safe place
-  // for this. Every other piece of navigation state, in App and below,
-  // reacts to routeIntent changing rather than listening for popstate
-  // itself.
-  useEffect(() => {
-    const onPopState = () => setRouteIntent(parseRoute(window.location.pathname));
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  // For the two transitions that live entirely outside App's own state
-  // (HomeFeed ↔ Perfil) — everything else App can reach is handled by its
-  // own state→URL effect instead, since App is the one that actually knows
-  // when those change.
-  const navigateApp = useCallback((intent, path) => {
-    window.history.pushState(null, "", path);
-    setRouteIntent(intent);
-  }, []);
 
   return (
     <WorkContextProvider>
@@ -1150,12 +1124,11 @@ export default function RootShell() {
     <ComposerLockProvider>
       <div style={{ width: "100vw", height: "100vh", background: "#000000" }}>
         {showHome ? (
-          <HomeFeed onEnterProfile={() => navigateApp({ type: "profile", username: DEFAULT_PROFILE_CONFIG.identity.handle.replace(/^@/, "") }, `/profile/${DEFAULT_PROFILE_CONFIG.identity.handle.replace(/^@/, "")}`)} />
+          <HomeFeed onEnterProfile={() => setShowHome(false)} />
         ) : (
           <ErrorBoundary>
             <App
-              routeIntent={routeIntent}
-              onGoHome={() => navigateApp({ type: "home" }, "/")}
+              onGoHome={() => setShowHome(true)}
               onOpenSettings={() => setShowSettings(true)}
             />
           </ErrorBoundary>
@@ -1172,7 +1145,7 @@ export default function RootShell() {
 }
 
 // ─── Workspace App ────────────────────────────────────────────────────────────
-function App({ onGoHome, onOpenSettings, routeIntent }) {
+function App({ onGoHome, onOpenSettings }) {
   const [activeSectionId, _setActiveSectionId] = useState(null); // null = Perfil
   const { locked: navLocked } = useComposerLock();
   // Guarded setter: while an Update/Subtema composer is open, every navigation
@@ -1184,21 +1157,19 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
   const [direction,       setDirection]       = useState(1);
   const [isHost,          setIsHost]          = useState(true);
   const [openThreadId,    setOpenThreadId]    = useState(null);
-  // ── Deep-linking state ──────────────────────────────────────────────────────
-  // Two kinds, kept deliberately separate (see router.js and Post.jsx's own
-  // comments for the full reasoning): "request" state (App telling a section
-  // "please open this", from a URL) vs "report" state (a section telling App
-  // "this is what I actually have open right now", regardless of how it got
-  // that way — a normal tap counts exactly the same as a deep link). Only
-  // report state feeds the URL; request state is one-shot and consumed by
-  // the section itself. openThreadId above is already exactly the request
-  // half of the Thread/Post pair — untouched, still doing the same job it
-  // always did.
-  const [openUpdateId,       setOpenUpdateId]       = useState(null); // request → Post
-  const [openToolId,         setOpenToolId]         = useState(null); // request → Tools
-  const [openAnnouncementId, setOpenAnnouncementId] = useState(null); // request → Announcements
-  const [currentThreadId,    setCurrentThreadId]    = useState(null); // report ← Post
-  const [currentToolId,      setCurrentToolId]      = useState(null); // report ← Tools
+  // openUpdateId/openToolId/openAnnouncementId used to be set from a parsed
+  // deep-link URL (see the removed router.js) — that whole system is gone,
+  // so these now only ever stay null. Kept as-is (not removed) because
+  // Post.jsx/Tools.jsx/Announcements.jsx still take them as props expecting
+  // "please open this specific thing" or "here's what's currently open";
+  // removing them would mean touching those files too, which is out of
+  // scope for this pass. openThreadId above was never part of the deep-link
+  // system to begin with — plain in-app navigation, untouched.
+  const [openUpdateId,       setOpenUpdateId]       = useState(null); // → Post
+  const [openToolId,         setOpenToolId]         = useState(null); // → Tools
+  const [openAnnouncementId, setOpenAnnouncementId] = useState(null); // → Announcements
+  const [currentThreadId,    setCurrentThreadId]    = useState(null); // ← Post reports what's open
+  const [currentToolId,      setCurrentToolId]      = useState(null); // ← Tools reports what's open
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [checklists,      setChecklists]      = useState([]); // master checklist store
   const [fabOpen,           setFabOpen]           = useState(false);
@@ -1306,65 +1277,15 @@ function App({ onGoHome, onOpenSettings, routeIntent }) {
     if (onGoHome) onGoHome();
   }, [activeSectionId, onGoHome, navLocked]);
 
-  // ── Deep-linking: URL → state ────────────────────────────────────────────
-  // `routeIntent` comes from RootShell (see there for why it — not a plain
-  // "showHome" boolean — is the one piece of state that owns "what did the
-  // browser just ask for"). This effect is the single place that turns an
-  // intent into actual navigation, reusing the exact same navigate/
-  // navigateTo functions a tap would call — a deep link and a tap end up
-  // indistinguishable to every section below this point. It re-runs both on
-  // first mount (an initial deep link) and every time routeIntent changes
-  // again (the browser's back/forward buttons — see RootShell's popstate
-  // listener), covering both with one code path.
-  useEffect(() => {
-    switch (routeIntent?.type) {
-      case "profile":      navigate(null); break;
-      case "thread":       navigateTo("recaps", routeIntent.threadId); break;
-      case "post":         navigateTo("recaps", "p" + routeIntent.postId); break;
-      case "update":       navigate("recaps"); setOpenUpdateId(routeIntent.updateId); break;
-      case "announcement": navigate("announcements"); setOpenAnnouncementId(routeIntent.announcementId); break;
-      case "stats":        navigate("stats"); break;
-      case "rooms":        navigate("rooms"); break;
-      case "tools":        navigate("tools"); break;
-      case "tool":         navigate("tools"); setOpenToolId(routeIntent.toolId); break;
-      default: break; // "home" never reaches here — RootShell doesn't mount App for it
-    }
-  }, [routeIntent]); // eslint-disable-line
-
-  // ── Deep-linking: state → URL ────────────────────────────────────────────
-  // The inverse direction. Reads only "report" state (currentThreadId/
-  // currentToolId — what's actually open, per Post.jsx/Tools.jsx's own
-  // onOpen*IdChange callbacks below — plus the story/announcement index,
-  // which already flowed through App's existing viewingAnnStory/annStories
-  // state for both taps and deep links alike) and computes the one
-  // canonical URL for that snapshot via buildPath(). Never touches
-  // routeIntent — pushState/replaceState don't fire popstate, so this can
-  // never loop back into the effect above.
-  //
-  // pushState only when something genuinely NEW just opened (a thread, a
-  // tool, an announcement) — tab switches and closing something both use
-  // replaceState, so casually browsing tabs doesn't pile up back-button
-  // stops, and closing a portal via its own X button (not the browser's
-  // back button) doesn't leave a dangling history entry pointing at a now-
-  // closed portal. The trade-off: closing via that X button doesn't let the
-  // forward button reopen it afterward — reaching for that would mean
-  // driving every close through history.back() instead, which is more
-  // fragile to get right without a real browser to test against; this is
-  // the simpler, more robust half of that trade to make.
-  const profileUsername = (profileConfig.identity?.handle || "").replace(/^@/, "") || "me";
-  const currentAnnouncementId = viewingAnnStory !== null ? (annStories[viewingAnnStory]?.id ?? null) : null;
-  const prevOpenIdRef = useRef(undefined); // undefined = "not yet run" (first effect run, on mount)
-  useEffect(() => {
-    const path = buildPath({ activeSectionId, username: profileUsername, currentThreadId, currentToolId, currentAnnouncementId });
-    if (path === null) { prevOpenIdRef.current = currentThreadId || currentToolId || currentAnnouncementId || null; return; }
-    if (path !== window.location.pathname) {
-      const openId = currentThreadId || currentToolId || currentAnnouncementId || null;
-      const isOpeningSomethingNew = openId !== null && openId !== prevOpenIdRef.current && prevOpenIdRef.current !== undefined;
-      if (isOpeningSomethingNew) window.history.pushState(null, "", path);
-      else window.history.replaceState(null, "", path);
-    }
-    prevOpenIdRef.current = currentThreadId || currentToolId || currentAnnouncementId || null;
-  }, [activeSectionId, currentThreadId, currentToolId, currentAnnouncementId, profileUsername]);
+  // Deep-linking (URL sync — parseRoute/buildPath/pushState/replaceState/
+  // popstate) was removed entirely. It caused the Android back button to
+  // blow past whatever overlay was actually open (an image viewer, a
+  // composer with unsaved text) straight to Home: neither of those ever
+  // pushed its own history entry, so pressing back popped whatever THIS
+  // system had last pushed — which could be several screens behind where
+  // the user actually was, silently discarding anything unsaved in between.
+  // Navigation is plain in-memory state again, same as before deep-linking
+  // existed, no URL involvement at all.
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
