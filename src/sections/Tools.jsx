@@ -209,7 +209,7 @@ function ToolPortal({ tool, onClose, onPortalChange }) {
               wired up yet would) fall back to the placeholder. */}
           <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
             {tool?.component ? (
-              <tool.component />
+              <tool.component isDesktop={isDesktop} />
             ) : (
               <PageContainer isDesktop={isDesktop} variant="workspace">
                 <div style={{ padding: "24px 18px" }}>
