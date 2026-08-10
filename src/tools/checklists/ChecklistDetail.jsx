@@ -28,7 +28,7 @@ function MediaStrip({ media, onOpen }) {
         <div key={m.id || i} onClick={() => onOpen(media, i)}
           style={{ width: 48, height: 48, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }}>
           {m.type === "video" ? (
-            <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <video src={m.url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           )}
@@ -103,7 +103,7 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
                 style={{ width: 84, height: 84, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0, position: "relative" }}>
                 {m.type === "video" ? (
                   <>
-                    <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <video src={m.url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
                       <PlayCircle size={20} color="#fff" />
                     </div>

@@ -22,18 +22,15 @@ import ChecklistEditor from "./ChecklistEditor.jsx";
 const font = "'DM Sans', sans-serif";
 const C = { bg: "#000000", border: "#1c1c2e", text: "#fafafa", gold: "#d4a843" };
 
-function useIsDesktop() {
-  const [v, setV] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
-  useEffect(() => {
-    const fn = () => setV(window.innerWidth >= 768);
-    window.addEventListener("resize", fn);
-    return () => window.removeEventListener("resize", fn);
-  }, []);
-  return v;
-}
-
-export default function ChecklistsPage() {
-  const isDesktop = useIsDesktop();
+export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
+  // ToolPortal (Tools.jsx) already computes isDesktop once for the whole
+  // portal and passes it down — this used to keep its own separate
+  // window-resize listener on top of that, a straight-up duplicate of a
+  // system that already exists one level up (Tools.jsx's own useIsDesktop,
+  // AND ToolPortal's own second one — three concurrent listeners for the
+  // exact same value). The `?? true` fallback only matters if this is ever
+  // rendered standalone outside ToolPortal (e.g. in isolation for testing).
+  const isDesktop = isDesktopProp ?? true;
   const [screen, setScreen] = useState("library"); // "library" | "detail" | "create" | "edit"
   const [checklists, setChecklists] = useState([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);

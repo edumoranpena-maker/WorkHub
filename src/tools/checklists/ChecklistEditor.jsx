@@ -20,7 +20,7 @@
  * exactly like PostComposer does — same component, same viewer, restricted
  * to accept="image/*,video/*" per spec (no generic files for this tool).
  */
-import { useState } from "react";
+import { useState, useRef, useCallback, memo } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import { GripVertical, Trash2, Plus, Image as ImageIcon } from "lucide-react";
 import AttachmentGallery from "../../components/AttachmentZone.jsx";
@@ -49,7 +49,13 @@ let localIdSeq = 0;
 const nextLocalId = () => `local-${Date.now()}-${localIdSeq++}`;
 
 // ─── StepRow — one step, its own media zone (collapsed by default) ─────────
-function StepRow({ item, isEdit, onLabelChange, onLabelCommit, onDelete, onAddMedia, onRemoveMedia, onOpenViewer }) {
+// React.memo'd: with N steps, typing in one step's label used to re-render
+// every OTHER step's row too (their AttachmentGallery, their Reorder.Item)
+// on every keystroke, since the parent re-renders on each character and
+// StepRow had no memoization. The parent now passes stable callback
+// references (useCallback below) so this memoization is actually effective
+// — memo alone does nothing if the props change identity every render.
+const StepRow = memo(function StepRow({ item, isEdit, onLabelChange, onLabelCommit, onDelete, onAddMedia, onRemoveMedia, onOpenViewer }) {
   const controls = useDragControls();
   const [mediaOpen, setMediaOpen] = useState(false);
   const media = [...(item.media || []), ...(item.mediaFiles || [])];
@@ -93,7 +99,7 @@ function StepRow({ item, isEdit, onLabelChange, onLabelCommit, onDelete, onAddMe
       )}
     </Reorder.Item>
   );
-}
+});
 
 export default function ChecklistEditor({ mode, checklistId, initial, onCreate, onExitEdit, isDesktop }) {
   const isEdit = mode === "edit";
@@ -109,6 +115,14 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
 
   const allGeneralMedia = [...generalMedia, ...generalMediaFiles];
 
+  // Read by onLabelCommit below without needing `items` in its own
+  // useCallback deps (which would defeat the memoization — a new
+  // onLabelCommit on every keystroke, in every step, is exactly the
+  // per-render-recreation the audit flagged). Kept in sync every render;
+  // this is just a plain assignment, not an effect — cheap and safe.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
   // ── Steps ──────────────────────────────────────────────────────────────
   const addStep = async () => {
     const label = newStepLabel.trim();
@@ -122,17 +136,24 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
     }
   };
 
-  const onLabelChange = (id, label) => setItems(prev => prev.map(it => it.id === id ? { ...it, label } : it));
-  const onLabelCommit = async (id) => {
-    if (!isEdit) return;
-    const item = items.find(it => it.id === id);
-    if (item) await updateChecklistItemLabel(id, item.label);
-  };
+  // Every one of these is passed straight down to StepRow — stable
+  // references (empty deps, or deps that only change once per component
+  // lifetime like isEdit/checklistId) so StepRow's React.memo can actually
+  // skip re-rendering rows the user isn't touching.
+  const onLabelChange = useCallback((id, label) => {
+    setItems(prev => prev.map(it => it.id === id ? { ...it, label } : it));
+  }, []);
 
-  const onDeleteStep = async (id) => {
+  const onLabelCommit = useCallback(async (id) => {
+    if (!isEdit) return;
+    const item = itemsRef.current.find(it => it.id === id);
+    if (item) await updateChecklistItemLabel(id, item.label);
+  }, [isEdit]);
+
+  const onDeleteStep = useCallback(async (id) => {
     if (isEdit) await deleteChecklistItem(id);
     setItems(prev => prev.filter(it => it.id !== id));
-  };
+  }, [isEdit]);
 
   const onReorder = async (nextOrder) => {
     setItems(nextOrder);
@@ -140,7 +161,7 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
   };
 
   // ── Step media ─────────────────────────────────────────────────────────
-  const onAddStepMedia = async (itemId, mapped) => {
+  const onAddStepMedia = useCallback(async (itemId, mapped) => {
     if (isEdit) {
       const inserted = await addChecklistItemMedia(itemId, mapped);
       const mediaObjs = inserted.map(rowToMedia);
@@ -148,15 +169,18 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
     } else {
       setItems(prev => prev.map(it => it.id === itemId ? { ...it, mediaFiles: [...(it.mediaFiles || []), ...mapped] } : it));
     }
-  };
-  const onRemoveStepMedia = async (itemId, mediaObj) => {
+  }, [isEdit]);
+
+  const onRemoveStepMedia = useCallback(async (itemId, mediaObj) => {
     if (isEdit && mediaObj.id) {
       await removeChecklistItemMedia(mediaObj.id);
       setItems(prev => prev.map(it => it.id === itemId ? { ...it, media: (it.media || []).filter(m => m.id !== mediaObj.id) } : it));
     } else {
       setItems(prev => prev.map(it => it.id === itemId ? { ...it, mediaFiles: (it.mediaFiles || []).filter(m => m !== mediaObj) } : it));
     }
-  };
+  }, [isEdit]);
+
+  const onOpenStepViewer = useCallback((media, i) => openGallery({ items: media, startIndex: i }), [openGallery]);
 
   // ── General media ──────────────────────────────────────────────────────
   const onAddGeneralMedia = async (mapped) => {
@@ -220,7 +244,7 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
             <StepRow key={item.id} item={item} isEdit={isEdit}
               onLabelChange={onLabelChange} onLabelCommit={onLabelCommit} onDelete={onDeleteStep}
               onAddMedia={onAddStepMedia} onRemoveMedia={onRemoveStepMedia}
-              onOpenViewer={(media, i) => openGallery({ items: media, startIndex: i })} />
+              onOpenViewer={onOpenStepViewer} />
           ))}
         </Reorder.Group>
 
