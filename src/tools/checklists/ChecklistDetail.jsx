@@ -12,6 +12,7 @@ import { useState } from "react";
 import { CheckCircle2, Circle, Pencil, Trash2, Image as ImageIcon, PlayCircle } from "lucide-react";
 import { useImageViewer } from "../../components/GlobalImageViewer.jsx";
 import ProgressDots from "./ProgressDots.jsx";
+import { useRenderLog, useMountLog } from "./_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -39,6 +40,8 @@ function MediaStrip({ media, onOpen }) {
 }
 
 export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, onDelete }) {
+  useRenderLog(`ChecklistDetail[${checklist.id}]`); // [CHECKLIST-DEBUG]
+  useMountLog(`ChecklistDetail[${checklist.id}] "${checklist.name}"`); // [CHECKLIST-DEBUG]
   const [checked, setChecked] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { openGallery, ViewerPortal } = useImageViewer();

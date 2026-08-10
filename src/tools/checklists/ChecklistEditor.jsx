@@ -30,6 +30,7 @@ import {
   addChecklistMedia, removeChecklistMedia, addChecklistItemMedia, removeChecklistItemMedia,
   rowToMedia,
 } from "../../lib/checklistsApi.js";
+import { dlog, useRenderLog, useMountLog } from "./_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 const font = "'DM Sans', sans-serif";
 const C = {
@@ -56,6 +57,8 @@ const nextLocalId = () => `local-${Date.now()}-${localIdSeq++}`;
 // references (useCallback below) so this memoization is actually effective
 // — memo alone does nothing if the props change identity every render.
 const StepRow = memo(function StepRow({ item, isEdit, onLabelChange, onLabelCommit, onDelete, onAddMedia, onRemoveMedia, onOpenViewer }) {
+  useRenderLog(`StepRow[${item.id}]`); // [CHECKLIST-DEBUG]
+  useMountLog(`StepRow[${item.id}]`); // [CHECKLIST-DEBUG]
   const controls = useDragControls();
   const [mediaOpen, setMediaOpen] = useState(false);
   const media = [...(item.media || []), ...(item.mediaFiles || [])];
@@ -102,6 +105,8 @@ const StepRow = memo(function StepRow({ item, isEdit, onLabelChange, onLabelComm
 });
 
 export default function ChecklistEditor({ mode, checklistId, initial, onCreate, onExitEdit, isDesktop }) {
+  useRenderLog(`ChecklistEditor[mode=${mode}]`); // [CHECKLIST-DEBUG]
+  useMountLog(`ChecklistEditor[mode=${mode}, checklistId=${checklistId}]`); // [CHECKLIST-DEBUG]
   const isEdit = mode === "edit";
   const [name, setName] = useState(initial?.name || "");
   const [description, setDescription] = useState(initial?.description || "");
@@ -206,6 +211,7 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
 
   const handleCreate = async () => {
     if (!canSubmit) return;
+    dlog("handleCreate() -> onCreate()"); // [CHECKLIST-DEBUG]
     setSaving(true);
     await onCreate({
       name: name.trim(),
@@ -219,6 +225,7 @@ export default function ChecklistEditor({ mode, checklistId, initial, onCreate, 
 
   const handleSaveFields = async () => {
     if (!canSubmit) return;
+    dlog("handleSaveFields() -> onExitEdit()", { name, description, completionMessage }); // [CHECKLIST-DEBUG]
     setSaving(true);
     await onExitEdit({ name: name.trim(), description: description.trim(), completionMessage: completionMessage.trim() });
     setSaving(false);

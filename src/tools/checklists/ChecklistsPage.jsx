@@ -18,11 +18,14 @@ import { fetchChecklists, fetchChecklistById, createChecklist, updateChecklist, 
 import ChecklistLibrary from "./ChecklistLibrary.jsx";
 import ChecklistDetail from "./ChecklistDetail.jsx";
 import ChecklistEditor from "./ChecklistEditor.jsx";
+import { dlog, useRenderLog, useMountLog } from "./_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 const font = "'DM Sans', sans-serif";
 const C = { bg: "#000000", border: "#1c1c2e", text: "#fafafa", gold: "#d4a843" };
 
 export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
+  useRenderLog("ChecklistsPage"); // [CHECKLIST-DEBUG]
+  useMountLog("ChecklistsPage"); // [CHECKLIST-DEBUG]
   // ToolPortal (Tools.jsx) already computes isDesktop once for the whole
   // portal and passes it down — this used to keep its own separate
   // window-resize listener on top of that, a straight-up duplicate of a
@@ -38,6 +41,7 @@ export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
   const [loadingActive, setLoadingActive] = useState(false);
 
   const loadLibrary = useCallback(async () => {
+    dlog("loadLibrary() called"); // [CHECKLIST-DEBUG]
     setLoadingLibrary(true);
     setChecklists(await fetchChecklists());
     setLoadingLibrary(false);
@@ -46,6 +50,7 @@ export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
   useEffect(() => { loadLibrary(); }, [loadLibrary]);
 
   const openChecklist = async (id) => {
+    dlog("openChecklist()", id); // [CHECKLIST-DEBUG]
     setScreen("detail");
     setLoadingActive(true);
     setActive(await fetchChecklistById(id));
@@ -53,12 +58,14 @@ export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
   };
 
   const backToLibrary = () => {
+    dlog("backToLibrary()"); // [CHECKLIST-DEBUG]
     setScreen("library");
     setActive(null);
     loadLibrary(); // refresh counts/names in case the one just closed changed
   };
 
   const handleCreate = async (draft) => {
+    dlog("handleCreate()", draft?.name); // [CHECKLIST-DEBUG]
     const created = await createChecklist(draft);
     if (created) {
       setActive(created);
@@ -72,6 +79,7 @@ export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
   // reload the full checklist so detail reflects everything — steps/media
   // were already persisted immediately by the editor itself).
   const handleExitEdit = async (fields) => {
+    dlog("handleExitEdit()", fields); // [CHECKLIST-DEBUG]
     if (fields) await updateChecklist(active.id, fields);
     setLoadingActive(true);
     setActive(await fetchChecklistById(active.id));
@@ -80,6 +88,7 @@ export default function ChecklistsPage({ isDesktop: isDesktopProp }) {
   };
 
   const handleDelete = async () => {
+    dlog("handleDelete()", active?.id); // [CHECKLIST-DEBUG]
     await deleteChecklist(active.id);
     backToLibrary();
   };
