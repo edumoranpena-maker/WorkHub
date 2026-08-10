@@ -41,6 +41,7 @@ import { ChevronLeft, Calculator, ListChecks } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
 import ChecklistsPage from "../tools/checklists/ChecklistsPage.jsx";
+import { dlog, useRenderLog, useMountLog } from "../tools/checklists/_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
 // Local per-file copy, same convention as every other section (Post.jsx,
@@ -173,6 +174,8 @@ export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp,
 // placeholder for now; the Risk Calculator's real fields/logic are a
 // separate, later pass.
 function ToolPortal({ tool, onClose, onPortalChange }) {
+  useRenderLog(`ToolPortal[tool=${tool?.id ?? "none"}]`); // [CHECKLIST-DEBUG]
+  useMountLog("ToolPortal"); // [CHECKLIST-DEBUG] — ToolPortal ITSELF should mount once ever (it's always in the tree, just visually hidden via AnimatePresence); if this ever logs UNMOUNT, something above it (Tools/App) is remounting the whole portal shell unexpectedly.
   const isDesktop = useIsDesktop();
   const open = !!tool;
 
@@ -180,7 +183,10 @@ function ToolPortal({ tool, onClose, onPortalChange }) {
   // StatsDashboardPortal's onDashboardChange — so the freeze on the section
   // underneath (scroll lock + hidden profile header) commits with no
   // one-frame flash.
-  useLayoutEffect(() => { onPortalChange?.(open); }, [open]); // eslint-disable-line
+  useLayoutEffect(() => {
+    dlog(`ToolPortal onPortalChange(${open})`); // [CHECKLIST-DEBUG]
+    onPortalChange?.(open);
+  }, [open]); // eslint-disable-line
 
   return createPortal(
     <AnimatePresence>
