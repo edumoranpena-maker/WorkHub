@@ -24,6 +24,7 @@ import { createRecapThread } from "./lib/recapsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
 import { WorkContextProvider, useWorkContextStore } from "./lib/workContext.jsx";
+import { NavigationProvider, useNavigation, sectionIdToRouteId, routeIdToSectionId } from "./lib/navigation.jsx";
 
 // ─── Config + Engine imports ──────────────────────────────────────────────────
 import { DEFAULT_PROFILE_CONFIG } from "./config/profileConfig.js";
@@ -1111,65 +1112,86 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function RootShell() {
-  // Deep-linking removed (see the App component's own comment for why) —
-  // this is now a plain in-memory boolean, no URL involvement. The app
-  // always starts on Home; there's no more "opens directly into a
-  // deep-linked screen" behavior since there's no URL being read anymore.
-  const [showHome, setShowHome] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
-
   return (
     <WorkContextProvider>
     <PublishQueueProvider>
     <ComposerLockProvider>
-      <div style={{ width: "100vw", height: "100vh", background: "#000000" }}>
-        {showHome ? (
-          <HomeFeed onEnterProfile={() => setShowHome(false)} />
-        ) : (
-          <ErrorBoundary>
-            <App
-              onGoHome={() => setShowHome(true)}
-              onOpenSettings={() => setShowSettings(true)}
-            />
-          </ErrorBoundary>
-        )}
-        <AnimatePresence>
-          {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
-        </AnimatePresence>
-        <PublishProgressBar />
-      </div>
+    <NavigationProvider>
+      <RootShellInner />
+    </NavigationProvider>
     </ComposerLockProvider>
     </PublishQueueProvider>
     </WorkContextProvider>
   );
 }
 
+// Split out from RootShell only so it can call useNavigation() — that hook
+// needs to be BELOW <NavigationProvider> in the tree, and RootShell is what
+// mounts the provider.
+function RootShellInner() {
+  const { route, navigate } = useNavigation();
+  const [showSettings, setShowSettings] = useState(false);
+  const showHome = route.routeId === "home";
+
+  return (
+    <div style={{ width: "100vw", height: "100vh", background: "#000000" }}>
+      {showHome ? (
+        <HomeFeed onEnterProfile={() => navigate("profile")} />
+      ) : (
+        <ErrorBoundary>
+          <App
+            onGoHome={() => navigate("home")}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        </ErrorBoundary>
+      )}
+      <AnimatePresence>
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      </AnimatePresence>
+      <PublishProgressBar />
+    </div>
+  );
+}
+
 // ─── Workspace App ────────────────────────────────────────────────────────────
 function App({ onGoHome, onOpenSettings }) {
-  const [activeSectionId, _setActiveSectionId] = useState(null); // null = Perfil
+  const { route, navigate: navigateRoute, goBack: goBackRoute } = useNavigation();
+  // activeSectionId is now DERIVED from the real route — there's no local
+  // state that can drift out of sync with the URL, because there's only
+  // one thing that can change it (navigateRoute, below every entry point:
+  // chips, sidebar, mobile swipe, the Perfil grid, FAB shortcuts). Same
+  // vocabulary App's render tree already used (recaps/announcements/stats/
+  // tools/rooms, or null for Perfil) — routeIdToSectionId is the one place
+  // that translates to/from the route table.
+  const activeSectionId = routeIdToSectionId(route.routeId);
   const { locked: navLocked } = useComposerLock();
-  // Guarded setter: while an Update/Subtema composer is open, every navigation
-  // entry point (chips, sidebar, mobile swipe) becomes a no-op automatically.
+  // Guarded direct section-setter — every call site that used to flip
+  // activeSectionId state directly now goes through this, which is what
+  // makes the URL and the visible section impossible to disagree: there is
+  // only one function in the whole component that can change either.
   const setActiveSectionId = useCallback((id) => {
     if (navLocked) return;
-    _setActiveSectionId(id);
-  }, [navLocked]);
+    navigateRoute(sectionIdToRouteId(id));
+  }, [navLocked, navigateRoute]);
   const [direction,       setDirection]       = useState(1);
   const [isHost,          setIsHost]          = useState(true);
-  const [openThreadId,    setOpenThreadId]    = useState(null);
-  // openUpdateId/openToolId/openAnnouncementId used to be set from a parsed
-  // deep-link URL (see the removed router.js) — that whole system is gone,
-  // so these now only ever stay null. Kept as-is (not removed) because
-  // Post.jsx/Tools.jsx/Announcements.jsx still take them as props expecting
-  // "please open this specific thing" or "here's what's currently open";
-  // removing them would mean touching those files too, which is out of
-  // scope for this pass. openThreadId above was never part of the deep-link
-  // system to begin with — plain in-app navigation, untouched.
+  // openThreadId/threadId/subtemaId now come straight from the URL's own
+  // params — Post.jsx already expected an "openThreadId" prop from before
+  // deep-linking existed at all, so it keeps that exact contract; it's just
+  // sourced from the route now instead of local App state.
+  const openThreadId = (route.routeId === "thread" || route.routeId === "subtema") ? route.params.threadId : null;
+  const openSubtemaId = route.routeId === "subtema" ? route.params.subtemaId : null;
+  const openToolId = route.routeId === "tool" ? route.params.toolId : null;
+  // openUpdateId/openAnnouncementId: the old deep-link system used to seed
+  // these from a parsed URL for a one-shot "please open this specific
+  // thing" request; Post.jsx/Announcements.jsx still take them as props for
+  // that same purpose (not for "what's currently open" — that's
+  // openThreadId/openSubtemaId above, which now IS the URL). Real deep
+  // links for updates/announcement-stories aren't in this pass's scope
+  // (see the navigation.jsx header — Announcements isn't touched here), so
+  // these simply stay null, same as they did right after the last removal.
   const [openUpdateId,       setOpenUpdateId]       = useState(null); // → Post
-  const [openToolId,         setOpenToolId]         = useState(null); // → Tools
   const [openAnnouncementId, setOpenAnnouncementId] = useState(null); // → Announcements
-  const [currentThreadId,    setCurrentThreadId]    = useState(null); // ← Post reports what's open
-  const [currentToolId,      setCurrentToolId]      = useState(null); // ← Tools reports what's open
   const [showAddSection,  setShowAddSection]  = useState(false);
   const [checklists,      setChecklists]      = useState([]); // master checklist store
   const [fabOpen,           setFabOpen]           = useState(false);
@@ -1253,39 +1275,42 @@ function App({ onGoHome, onOpenSettings }) {
   const navigate = useCallback((sectionId) => {
     if (navLocked) return;
     if (sectionId === activeSectionId) return;
-    setOpenThreadId(null);
-    setDirection(activeSectionId === null ? 1 : 1);
-    setActiveSectionId(sectionId);
-  }, [activeSectionId, navLocked]);
-
-  const navigateTo = useCallback((sectionId, threadId) => {
-    setOpenThreadId(threadId || null);
     setDirection(1);
-    setActiveSectionId(sectionId);
-  }, []);
+    navigateRoute(sectionIdToRouteId(sectionId));
+  }, [activeSectionId, navLocked, navigateRoute]);
+
+  // Second argument opens a specific Thread directly (used by the Post
+  // composer's post-publish flow, and by Post.jsx itself for a normal
+  // feed-card tap) — goes straight to the "thread" route with a real
+  // threadId param instead of a bare section switch.
+  const navigateTo = useCallback((sectionId, threadId) => {
+    if (navLocked) return;
+    setDirection(1);
+    if (threadId) navigateRoute("thread", { threadId });
+    else navigateRoute(sectionIdToRouteId(sectionId));
+  }, [navLocked, navigateRoute]);
 
   const goHome = useCallback(() => {
     if (navLocked) return;
-    // If we're in a section, first go to Perfil tab
+    // If we're in a section, first go to Perfil tab — same 2-step collapse
+    // as before, now a real navigation (pushes/pops an actual history
+    // entry) instead of local state, so the physical back button retraces
+    // exactly these same steps too.
     if (activeSectionId) {
-      setOpenThreadId(null);
       setDirection(-1);
-      setActiveSectionId(null);
+      navigateRoute("profile");
       return;
     }
-    // If already on Perfil tab, go back to HomeFeed
+    // Already on Perfil tab — hand off to RootShell to leave App entirely.
     if (onGoHome) onGoHome();
-  }, [activeSectionId, onGoHome, navLocked]);
+  }, [activeSectionId, onGoHome, navLocked, navigateRoute]);
 
-  // Deep-linking (URL sync — parseRoute/buildPath/pushState/replaceState/
-  // popstate) was removed entirely. It caused the Android back button to
-  // blow past whatever overlay was actually open (an image viewer, a
-  // composer with unsaved text) straight to Home: neither of those ever
-  // pushed its own history entry, so pressing back popped whatever THIS
-  // system had last pushed — which could be several screens behind where
-  // the user actually was, silently discarding anything unsaved in between.
-  // Navigation is plain in-memory state again, same as before deep-linking
-  // existed, no URL involvement at all.
+  // Deep-linking is implemented above via lib/navigation.jsx — `route` is
+  // the single source of truth for activeSectionId/openThreadId/
+  // openSubtemaId/openToolId, all derived, never independently settable.
+  // A deep link or a page refresh both "just work" because App's render
+  // tree reads the same derived values a normal tap would produce — there's
+  // no separate "consume the URL once on mount" step to keep in sync.
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
   const accentColor   = activeSection?.accentColor || C.accent;
@@ -1417,7 +1442,7 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onOpenThreadIdChange={setCurrentThreadId} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
@@ -1429,7 +1454,7 @@ function App({ onGoHome, onOpenSettings }) {
           <RoomsContent />
         </div>
         <div style={visible("tools")}>
-          <Tools onToolsPortalChange={setInsideFullscreenOverlay} openToolId={openToolId} onOpenToolIdChange={setCurrentToolId} />
+          <Tools onToolsPortalChange={setInsideFullscreenOverlay} openToolId={openToolId} />
         </div>
         {customSections.map(cs => (
           <div key={cs.id} style={visible(cs.id)}>

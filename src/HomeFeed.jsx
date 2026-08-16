@@ -6,6 +6,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NewDiffusionSheet, InstagramStoryCreator } from "./components/Sheets.jsx";
 import { useImageViewer } from "./components/GlobalImageViewer.jsx";
+import { useScrollMemory } from "./lib/workContext.jsx";
 import MediaCarousel from "./components/MediaCarousel.jsx";
 import { Search, MessageSquare, Bell, Heart, MessageCircle, Bookmark,
          MoreHorizontal, X, FileText, Megaphone, Zap, Plus, Mic, Image, Send, ChevronLeft } from "lucide-react";
@@ -248,8 +249,11 @@ export default function HomeFeed({ onEnterProfile }) {
 
   const SUGGESTED = STORIES.slice(2, 6);
 
+  const scrollRef = useRef(null);
+  useScrollMemory("home:scroll", scrollRef);
+
   return (
-    <div style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", justifyContent: "center", overflowY: "auto" }}>
+    <div ref={scrollRef} style={{ height: "100vh", width: "100vw", background: C.bg, display: "flex", justifyContent: "center", overflowY: "auto" }}>
       <div style={{ width: "100%", maxWidth: 935, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
 
         {/* ── TopBar ── */}
