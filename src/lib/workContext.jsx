@@ -34,7 +34,7 @@
  * this", matching "si regreso dentro de un tiempo prudente".
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 
 const TTL_MS = 12 * 60 * 1000; // 12 minutes — within the requested 10–15 min window
 
@@ -119,4 +119,58 @@ export function useWorkContextStore() {
       store.current.set(key, { data, savedAt: Date.now() });
     },
   }).current;
+}
+
+/**
+ * useScrollMemory(key, ref, enabled = true)
+ *
+ * Save-on-scroll + restore-with-retry for a scrollable DOM element, using
+ * this same store — the exact pattern App.jsx's own unified scroll
+ * container (Perfil/Feed/Announcements/Stats/Tools) already hand-rolled for
+ * itself, pulled out here so any OTHER scrollable instance (a Thread, a
+ * Subtema, an open Tool, the Stats Dashboard — anything that's its own
+ * fullscreen overlay with its own internal scroll, outside that unified
+ * container) gets the identical behavior via one hook call instead of
+ * reimplementing the listener + "keep nudging it back while dynamic content
+ * is still loading in" retry loop locally each time.
+ *
+ * `key` should be unique per *instance* (e.g. `recaps:thread:${threadId}`,
+ * not just `"thread"`) — Thread A and Thread B must never share a slot.
+ */
+export function useScrollMemory(key, ref, enabled = true) {
+  const store = useWorkContextStore();
+
+  useEffect(() => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    const onScroll = () => { store.set(key, el.scrollTop); };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled]);
+
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const el = ref.current;
+    if (!el) return;
+    const saved = store.get(key);
+    if (saved === undefined || saved <= 0) return;
+    let attempts = 0;
+    const apply = () => {
+      if (!el.isConnected) return;
+      el.scrollTop = saved;
+      attempts++;
+      // Dynamic content (images/data still loading in) can grow the
+      // scrollable area after our first attempt, undoing a scrollTop set
+      // too early — keep nudging it back for a short window instead of
+      // trusting one synchronous assignment, same reasoning as App.jsx's
+      // own settle-timeout for the unified container.
+      if (attempts < 12 && el.scrollHeight < saved + el.clientHeight) {
+        requestAnimationFrame(apply);
+      }
+    };
+    requestAnimationFrame(apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled]);
 }
