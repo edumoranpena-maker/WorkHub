@@ -33,6 +33,7 @@ import AudioNotePlayer from "./AudioNotePlayer.jsx";
 import ReadAloudButton from "./ReadAloudButton.jsx";
 import { resetAudioSession, pauseActiveAudio } from "../lib/audioPlayback.js";
 import { stopSpeech, pauseSpeechForNavigation } from "../lib/textToSpeech.js";
+import { useOverlayBack } from "../lib/navigation.jsx";
 import { PLATFORM_LABELS } from "../lib/linkPlatforms.js";
 
 // Same tiny local hook every other file in this codebase already keeps its
@@ -1101,7 +1102,12 @@ export function useImageViewer() {
     if (url) setGallery({ items: [{ type: "image", url }], startIndex: 0, context: null, groups: null });
   }, []);
 
-  const closeImage = useCallback(() => {
+  // The actual close side-effect (audio/speech reset, clearing gallery
+  // state) — separate from the overlay-dismissal bookkeeping below so both
+  // the back-triggered path (provider already popped the guard entry) and
+  // the X-button path (needs to pop it explicitly first) can share this
+  // one implementation instead of two versions drifting apart.
+  const performClose = useCallback(() => {
     // Closing the viewer restarts playback (per spec) — every other way of
     // navigating away from this content (switching to a different Post/
     // Update/Subtema, or just backgrounding the viewer) only pauses and
@@ -1116,18 +1122,27 @@ export function useImageViewer() {
     setGallery(null);
   }, [gallery]);
 
-  // The Android/browser back button — the viewer itself never pushes its own
-  // history entry, so without this the physical back button would navigate
-  // whatever's underneath while leaving the viewer open on top of it. Only
-  // listens while a gallery is actually open. Goes through the exact same
-  // closeImage() as the X button, so it resets audio identically — not a
-  // second, parallel close path.
-  useEffect(() => {
-    if (!gallery) return;
-    const onPopState = () => closeImage();
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [gallery, closeImage]);
+  // Registers the viewer on the shared overlay-priority stack (see
+  // lib/navigation.jsx) whenever it's open — this is what makes physical
+  // back close ONLY the viewer and return to exactly whatever was
+  // underneath (a Thread, a Subtema, a Composer's own fullscreen media
+  // preview — anything), never falling through to page navigation, and
+  // never closing something ELSE that happens to also be open (e.g. the
+  // Composer this viewer might have been opened from) — the stack ordering
+  // guarantees the viewer, having opened last, closes first.
+  const dismissViewerOverlay = useOverlayBack(!!gallery, () => {
+    performClose();
+    return "close";
+  });
+
+  // What the X button (and any other in-app close trigger) calls — consumes
+  // the overlay's history guard entry first (a physical back press already
+  // did that automatically via the provider popping it before calling
+  // onBack above), then runs the same close side-effect.
+  const closeImage = useCallback(() => {
+    dismissViewerOverlay();
+    performClose();
+  }, [dismissViewerOverlay, performClose]);
 
   const ViewerPortal = useCallback(
     () => gallery

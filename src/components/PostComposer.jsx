@@ -41,6 +41,7 @@ import { useLinkPreviews, LinkPreviewCard, LinkExpandModal } from "../lib/linkPr
 import { VISIBILITY_OPTIONS, DEFAULT_VISIBILITY } from "../lib/visibility.jsx";
 import { useComposerNavLock } from "../lib/composerLock.jsx";
 import { useImageViewer } from "./GlobalImageViewer.jsx";
+import { useOverlayBack } from "../lib/navigation.jsx";
 import { mapFilesToMedia, usePasteAttachments } from "../lib/attachments.js";
 import { useAudioRecorder } from "../lib/audioRecorder.js";
 import AttachmentGallery from "./AttachmentZone.jsx";
@@ -142,7 +143,53 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
         recording
       );
 
-  const requestClose = () => { isDirty ? setShowCancel(true) : onClose(); };
+  // ── Back-button priority ─────────────────────────────────────────────────
+  // Registers this composer on the shared overlay stack (lib/navigation.jsx)
+  // so physical Android/browser back closes THIS instead of navigating the
+  // page underneath — and, critically, does the exact same thing an X-button
+  // tap does (requestClose below), not a separate code path. isDirtyRef/
+  // showCancelRef exist because onBack is a closure captured once (when the
+  // overlay registers); without them it would keep seeing whatever isDirty/
+  // showCancel were at that moment instead of their current values.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  const showCancelRef = useRef(showCancel);
+  showCancelRef.current = showCancel;
+
+  const closeOverlay = useOverlayBack(true, () => {
+    if (showCancelRef.current) {
+      // Second back press while the confirm dialog is already showing —
+      // treated as Cancel (safe default), never as confirming the discard.
+      setShowCancel(false);
+      return "stay";
+    }
+    if (isDirtyRef.current) {
+      setShowCancel(true);
+      return "stay";
+    }
+    onClose();
+    return "close";
+  });
+
+  // The one function every in-app dismiss path calls (X button, tap
+  // outside, the Cancel/Descartar buttons in the confirm dialog) — same
+  // decision logic onBack above uses, so a physical back press and tapping
+  // X can never behave differently. When this actually closes, it goes
+  // through closeOverlay() first to consume the overlay's history guard
+  // entry (a physical back press already did that automatically; an in-app
+  // button tap didn't, so it has to be done explicitly here).
+  const requestClose = () => {
+    if (showCancel) { setShowCancel(false); return; }
+    if (isDirty) { setShowCancel(true); return; }
+    closeOverlay();
+    onClose();
+  };
+
+  const confirmDiscard = () => {
+    setShowCancel(false);
+    closeOverlay();
+    onClose();
+  };
 
   // ── Media handling ──────────────────────────────────────────────────────────
   // Single entry point for every source of new attachments — the gallery's
@@ -192,6 +239,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
       checklist: attachedChecklist,
       links: previews,
     });
+    closeOverlay();
     onClose();
   };
 
@@ -312,7 +360,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
           <p style={{ margin: "0 0 16px", fontFamily: font, fontSize: 14, color: C.text }}>¿Descartar {isEditing ? "los cambios" : "esta publicación"}?</p>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setShowCancel(false)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.text, cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 600 }}>Seguir editando</button>
-            <button onClick={onClose} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
+            <button onClick={confirmDiscard} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: C.red, color: "#fff", cursor: "pointer", fontFamily: font, fontSize: 13, fontWeight: 700 }}>Descartar</button>
           </div>
         </div>
       </div>
