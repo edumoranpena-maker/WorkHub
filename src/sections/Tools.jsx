@@ -39,6 +39,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Calculator, ListChecks } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
+import { useNavigation } from "../lib/navigation.jsx";
 import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
 import ChecklistsPage from "../tools/checklists/ChecklistsPage.jsx";
 import { dlog, useRenderLog, useMountLog } from "../tools/checklists/_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
@@ -108,23 +109,16 @@ function ToolCard({ tool, onClick }) {
 // onThreadChange, so the section underneath (unified scroll + profile
 // header) freezes the same way it already does for those.
 //
-// openToolId (prop) / onOpenToolIdChange: the deep-linking pair, separate
-// from onToolsPortalChange above on purpose — that one only ever needed a
-// boolean for the freeze mechanism, this needs the actual id so App.jsx can
-// both open a specific tool from a URL (same controlled-handoff pattern as
-// Post's openThreadId prop) and reflect which one is open back into the URL.
-export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp, onOpenToolIdChange }) {
+// openToolId comes straight from the URL — App.jsx derives it from the real
+// route (see lib/navigation.jsx) and passes it down, same controlled-handoff
+// pattern as Post's openThreadId prop. No local state to keep in sync with
+// it, and no separate "report which tool is open" callback back up to
+// App.jsx either — navigate()/goBack() below update the URL directly, which
+// IS what openToolId is derived from one level up.
+export default function Tools({ onToolsPortalChange, openToolId }) {
   const isDesktop = useIsDesktop();
-  const [openToolId, setOpenToolId] = useState(null);
+  const { navigate, goBack } = useNavigation();
   const openTool = TOOLS.find(t => t.id === openToolId) ?? null;
-
-  useEffect(() => {
-    if (openToolIdProp) setOpenToolId(openToolIdProp);
-  }, [openToolIdProp]);
-
-  useEffect(() => {
-    onOpenToolIdChange?.(openToolId);
-  }, [openToolId, onOpenToolIdChange]);
 
   return (
     <PageContainer isDesktop={isDesktop} variant="feed">
@@ -147,14 +141,14 @@ export default function Tools({ onToolsPortalChange, openToolId: openToolIdProp,
           gap: 12,
         }}>
           {TOOLS.map(tool => (
-            <ToolCard key={tool.id} tool={tool} onClick={() => setOpenToolId(tool.id)} />
+            <ToolCard key={tool.id} tool={tool} onClick={() => navigate("tool", { toolId: tool.id })} />
           ))}
         </div>
       </div>
 
       <ToolPortal
         tool={openTool}
-        onClose={() => setOpenToolId(null)}
+        onClose={goBack}
         onPortalChange={onToolsPortalChange}
       />
     </PageContainer>

@@ -52,6 +52,7 @@ import AudioNotePlayer from "../components/AudioNotePlayer.jsx";
 import ReadAloudButton from "../components/ReadAloudButton.jsx";
 import { pauseActiveAudio } from "../lib/audioPlayback.js";
 import { pauseSpeechForNavigation } from "../lib/textToSpeech.js";
+import { useNavigation } from "../lib/navigation.jsx";
 import ChecklistBlock from "../components/ChecklistBlock.jsx";
 import PostComposer from "../components/PostComposer.jsx";
 import PostOptionsMenu, { buildContentMenuActions } from "../components/PostOptionsMenu.jsx";
@@ -59,7 +60,7 @@ import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { useLinkPreviews, useLinkPreviewsBatch, LinkPreviewCard, LinkExpandModal, LinkifiedText, mergeLinksIntoMedia } from "../lib/linkPreview.jsx";
 import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
-import { useSectionMemory, useWorkContextStore } from "../lib/workContext.jsx";
+import { useSectionMemory, useScrollMemory } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
@@ -1289,6 +1290,11 @@ function SubtemaCard({ subtema, onClick }) {
 function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor }) {
   const isDesktop = useIsDesktop();
   const [subtema, setSubtema] = useState(initialSubtema);
+  // Its own scroll position — a real navigable instance (its own URL segment,
+  // /post/:threadId/:subtemaId), same reasoning as ThreadView's own
+  // scrollElRef above.
+  const subtemaScrollRef = useRef(null);
+  useScrollMemory(`recaps:subtema:${subtema.id}:scroll`, subtemaScrollRef);
   const [expandedLink, setExpandedLink] = useState(null);
   const [editingSubtema, setEditingSubtema] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState(null);
@@ -1370,7 +1376,7 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: C.surface }}>
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain" }}>
+      <div ref={subtemaScrollRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain" }}>
         {/* TopBar */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
           style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", position: "sticky", top: 0, zIndex: 30, minHeight: 56 }}>
@@ -1553,14 +1559,15 @@ function buildThreadMediaSequence(thread, linksById = {}) {
   return { items, groups };
 }
 
-function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+  const { navigate, replace: replaceRoute, goBack } = useNavigation();
   const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
   const [thread, setThread] = useState(() => {
     const cached = getCachedSubtemas(initialThread.id);
     return cached ? { ...initialThread, subtemas: cached } : initialThread;
   });
-  const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ scrollTop: 0, openSubtemaId: null }));
+  const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
   const [showComments, setShowComments] = useState(false);
@@ -1630,49 +1637,57 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
   // from memory (see getCachedSubtemas/fetchSubtemasCached in recapsApi.js).
   useEffect(() => {
     let cancelled = false;
-
-    // Restoring whichever Subtema was open needs the resolved list either
-    // way (cache hit or real fetch) — pulled out so both paths share it.
-    const applyRestoration = (subtemas) => {
-      if (tmem.openSubtemaId) {
-        const found = subtemas.find(s => s.id === tmem.openSubtemaId);
-        if (found) setOpenSubtema(found);
-      }
-    };
-
     const cached = getCachedSubtemas(thread.id);
     if (cached) {
       // Already resolved (thread state above was seeded from this same
-      // cache) — nothing to fetch, no skeleton, just restore selection.
+      // cache) — nothing to fetch, no skeleton.
       setSubtemasLoading(false);
-      applyRestoration(cached);
+      setThread(t => (t.subtemas ? t : { ...t, subtemas: cached }));
       return;
     }
-
     setSubtemasLoading(true);
     fetchSubtemasCached(thread.id).then(subtemas => {
       if (cancelled) return;
       setThread(t => ({ ...t, subtemas }));
       setSubtemasLoading(false);
-      applyRestoration(subtemas);
     });
     return () => { cancelled = true; };
   }, [thread.id]); // eslint-disable-line
 
+  // The ONE place that decides which Subtema (if any) should be open —
+  // waits for thread.subtemas to actually be loaded (the effect above), so
+  // it never races the async fetch. The URL's own subtemaId (a real deep
+  // link, or the browser's back/forward moving between /post/:threadId and
+  // /post/:threadId/:subtemaId) takes priority over session memory; when
+  // there's no URL signal but session memory remembers one from earlier
+  // this session, restore it AND canonicalize the URL via replace() — a
+  // silent normalization, not a new Back-able step. Also reactive to
+  // openSubtemaId changing on its own once subtemas are already loaded
+  // (that back/forward case), and to the drag-swipe between adjacent posts
+  // landing back on a thread whose subtema was open before.
+  useEffect(() => {
+    if (!thread.subtemas) return; // not loaded yet — nothing to restore into
+    const wantId = openSubtemaId || tmem.openSubtemaId;
+    if (!wantId) {
+      if (openSubtema) { setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); }
+      return;
+    }
+    if (openSubtema?.id === wantId) return;
+    const found = thread.subtemas.find(s => s.id === wantId);
+    if (!found) return;
+    setOpenSubtema(found);
+    setTmem(m => ({ ...m, openSubtemaId: wantId }));
+    onSubtemaChange?.(true);
+    if (!openSubtemaId) replaceRoute("subtema", { threadId: thread.id, subtemaId: wantId });
+  }, [openSubtemaId, thread.subtemas]); // eslint-disable-line
+
   const scrollElRef = useRef(null);
 
-  // Restore the Thread's own scroll position once its content is in the DOM.
-  useEffect(() => {
-    if (scrollElRef.current) scrollElRef.current.scrollTop = tmem.scrollTop || 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Save it back whenever the Thread is left, so it survives a full unmount.
-  useEffect(() => {
-    return () => {
-      if (scrollElRef.current) setTmem(m => ({ ...m, scrollTop: scrollElRef.current.scrollTop }));
-    };
-  }, []); // eslint-disable-line
+  // Thread's own scroll position — a real navigable instance (its own URL,
+  // not the unified section-level container App.jsx already handles), so it
+  // gets its own key. Continuous save + retry-until-content-settles restore,
+  // same reasoning as everywhere else useScrollMemory is used.
+  useScrollMemory(`recaps:thread:${thread.id}:scroll`, scrollElRef);
 
   // ── Continuous drag-and-commit navigation ─────────────────────────────────
   // One continuous drag: strong resistance for the first ~50px (the "hitting
@@ -1816,8 +1831,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, onStatusChange, onT
     enqueue("Eliminando update…", async () => { await deleteThreadUpdate(update.id); });
   };
 
-  const openSubtemaView = (sub) => { setOpenSubtema(sub); setTmem(m => ({ ...m, openSubtemaId: sub.id })); onSubtemaChange?.(true); };
-  const closeSubtema = () => { setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); };
+  const openSubtemaView = (sub) => {
+    navigate("subtema", { threadId: thread.id, subtemaId: sub.id });
+    setOpenSubtema(sub);
+    setTmem(m => ({ ...m, openSubtemaId: sub.id }));
+    onSubtemaChange?.(true);
+  };
+  const closeSubtema = () => { goBack(); };
 
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
@@ -2205,7 +2225,8 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openUpdateId, onUpdateResolved, onThreadChange, onOpenThreadIdChange, onRegisterPostCallback }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback }) {
+  const { navigate, replace: replaceRoute, goBack } = useNavigation();
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
   // hidden via CSS, never torn down) — so this plain useState already
@@ -2269,31 +2290,26 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (!openThreadId) return;
+    if (!openThreadId) { setOpenThread(null); setSubtemaOpen(false); return; }
+    if (openThread?.id === openThreadId) return; // already correctly open — avoid clobbering optimistic local edits with a stale array copy
     const t = openThreadId.startsWith("p")
       ? threads.find(th => th.planningPostId === openThreadId)
       : threads.find(th => th.id === openThreadId);
     if (t) { setOpenThread(t); }
-  }, [openThreadId]); // eslint-disable-line
+  }, [openThreadId, threads]); // eslint-disable-line
 
   // ── Deep-link: Update ──────────────────────────────────────────────────────
   // An update has no view of its own — it's always rendered inside the
-  // Thread (or Subtema-within-a-Thread) that owns it. Resolving /update/:id
+  // Thread (or Subtema-within-a-Thread) that owns it. Resolving an update id
   // means finding that owner in data Post.jsx already has loaded (no second
-  // fetch, no parallel lookup structure) and opening it the same way a tap
-  // would. If the update lives inside a Subtema, the target subtema id is
-  // written into that thread's OWN existing section-memory slot — the exact
-  // key/shape ThreadView already reads on mount (see its useSectionMemory
-  // call below) to restore "which subtema was open" — so ThreadView opens
-  // it itself, unchanged, with no new prop threaded through it.
-  //
-  // Once resolved, onUpdateResolved reports the thread id upward so App.jsx
-  // can fold this into the exact same openThreadId/currentThreadId state
-  // already used for thread/post links — /update/:id is an entry point, not
-  // a URL that needs to keep existing once it's done its job; the URL
-  // canonicalizes to /thread/:id once the content is actually open.
+  // fetch, no parallel lookup structure) and navigating to it the same way a
+  // tap would — straight to the real "thread" or "subtema" route, which
+  // ThreadView's own restoration effect then opens from the URL like any
+  // other navigation. Currently dormant (nothing sets openUpdateId yet — no
+  // "update" entry in navigation.jsx's ROUTES table in this pass), kept
+  // working end-to-end so wiring one in later is a one-line addition there,
+  // not a change here.
   const resolvedUpdateIdRef = useRef(null);
-  const workStore = useWorkContextStore();
   useEffect(() => {
     if (!openUpdateId || openUpdateId === resolvedUpdateIdRef.current) return;
     let ownerThread = null, ownerSubtemaId = null;
@@ -2304,24 +2320,16 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     }
     if (!ownerThread) return; // not loaded yet, or genuinely doesn't exist — nothing to do
     resolvedUpdateIdRef.current = openUpdateId;
-    if (ownerSubtemaId) {
-      workStore.set(`recaps:thread:${ownerThread.id}`, { scrollTop: 0, openSubtemaId: ownerSubtemaId });
-    }
+    if (ownerSubtemaId) navigate("subtema", { threadId: ownerThread.id, subtemaId: ownerSubtemaId });
+    else navigate("thread", { threadId: ownerThread.id });
     setOpenThread(ownerThread);
     onUpdateResolved?.(ownerThread.id);
   }, [openUpdateId, threads]); // eslint-disable-line
 
-  // ── Deep-link: report which thread is actually open ────────────────────────
-  // openThreadId (above) is a one-shot "please open this" request — it does
-  // NOT reflect what's currently open once the user starts tapping around
-  // normally inside the feed (setOpenThread is called directly in plenty of
-  // places below, deliberately bypassing that prop). This is the other
-  // direction: App.jsx needs to know what's ACTUALLY open, regardless of
-  // how it got that way, purely to keep the URL correct — it never feeds
-  // back into anything here.
-  useEffect(() => {
-    onOpenThreadIdChange?.(openThread?.id ?? null);
-  }, [openThread, onOpenThreadIdChange]);
+  // App.jsx no longer needs a "report which thread is open" callback — the
+  // URL itself (route.params.threadId, read as the openThreadId prop above)
+  // IS what's open, kept that way by every action below going through
+  // navigate()/goBack() directly instead of local-only state.
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleStatusChange = useCallback(async (threadId, newStatus) => {
@@ -2386,13 +2394,15 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     setThreads(prev => [newThread, ...prev]);
   }, []);
 
-  const openThreadView = useCallback((thread) => {
+  const openThreadView = useCallback((thread, opts = {}) => {
+    if (opts.replace) replaceRoute("thread", { threadId: thread.id });
+    else navigate("thread", { threadId: thread.id });
     setOpenThread(thread);
     // Mark as seen: clear the dot immediately, then persist in the background.
     setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, newUpdates: 0 } : t));
     setUnseenSubtemas(prev => ({ ...prev, [thread.id]: false }));
     resetThreadNewUpdates(thread.id);
-  }, []);
+  }, [navigate, replaceRoute]);
 
   // Same visible order PostFeed renders — needed so "next/prev post" from
   // inside a Thread matches what the user would actually see in the feed.
@@ -2408,7 +2418,11 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     if (idx === -1) return;
     const target = direction === "older" ? feedOrder[idx + 1] : feedOrder[idx - 1];
     if (!target) return; // already at the first/last post in the feed — nothing to navigate to
-    openThreadView(target);
+    // Lateral move (still "a Thread", just a different one) — replace()
+    // instead of navigate() so swiping through several in a row doesn't
+    // stack one Back press per swipe; the URL still ends up correct and
+    // shareable for whichever one you land on, refresh-safe either way.
+    openThreadView(target, { replace: true });
   }, [openThread, feedOrder, openThreadView]);
 
   // The actual neighbor objects, so ThreadView can render a real peek preview
@@ -2420,9 +2434,12 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     return { older: feedOrder[idx + 1] || null, newer: feedOrder[idx - 1] || null };
   }, [openThread, feedOrder]);
 
-  const closeThread = useCallback(() => {
-    setOpenThread(null); setSubtemaOpen(false);
-  }, []);
+  // Goes through the real back system instead of clearing local state
+  // directly — this is what makes the Android/browser back button and this
+  // in-app back arrow behave identically (see lib/navigation.jsx). openThread
+  // itself is cleared by the openThreadId-driven effect above once the URL
+  // actually changes to reflect it.
+  const closeThread = useCallback(() => { goBack(); }, [goBack]);
 
 
   // Notify parent when thread open state changes so it can hide the purple FAB
@@ -2500,6 +2517,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 500, background: C.surface }}>
               <ThreadView key={openThread.id} thread={openThread} onBack={closeThread} isHost={isHost}
+                openSubtemaId={openThread.id === openThreadId ? openSubtemaId : null}
                 onNavigateAdjacent={navigateAdjacentThread}
                 adjacentThreads={adjacentThreads}
                 onStatusChange={handleStatusChange}

@@ -47,6 +47,7 @@ import {
 } from "../lib/doersJournalBridge.js";
 import { fetchAllTimeStats } from "../lib/statsApi.js";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
+import { useNavigation } from "../lib/navigation.jsx";
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
 // Local per-file copy, same convention as every other section (Post.jsx,
@@ -104,7 +105,8 @@ function summaryFromStats(stats) {
 // same way it already is for Thread.
 export default function Stats({ onDashboardChange }) {
   const isDesktop = useIsDesktop();
-  const [dashboardOpen, setDashboardOpen] = useState(false);
+  const { route, navigate, goBack } = useNavigation();
+  const dashboardOpen = route.routeId === "statsDashboard";
 
   // All-Time summary. Populated automatically on mount via a direct read
   // (fetchAllTimeStats → v_alltime_stats), independent of the Dashboard
@@ -130,6 +132,8 @@ export default function Stats({ onDashboardChange }) {
   }, []);
 
   useEffect(() => { refreshStats(); }, [refreshStats]);
+
+  const handleCloseDashboard = useCallback(() => { goBack(); refreshStats(); }, [goBack, refreshStats]);
 
   const summary = summaryFromStats(allTimeStats);
 
@@ -163,8 +167,8 @@ export default function Stats({ onDashboardChange }) {
         </p>
       )}
 
-      {/* CTA — opens the fullscreen Dashboard portal, not a navigation/replace */}
-      <motion.button whileTap={{ scale: 0.97 }} onClick={() => setDashboardOpen(true)}
+      {/* CTA — opens the fullscreen Dashboard portal via a real navigation */}
+      <motion.button whileTap={{ scale: 0.97 }} onClick={() => navigate("statsDashboard")}
         style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 18px", borderRadius: 16, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 700, boxShadow: `0 6px 24px ${C.accent}45` }}>
         Ver Dashboard completo
         <ArrowRight size={17} strokeWidth={2.4} />
@@ -172,7 +176,7 @@ export default function Stats({ onDashboardChange }) {
 
       <StatsDashboardPortal
         open={dashboardOpen}
-        onClose={() => { setDashboardOpen(false); refreshStats(); }}
+        onClose={handleCloseDashboard}
         onDashboardChange={onDashboardChange}
         onStatsUpdate={setAllTimeStats}
       />
