@@ -1665,9 +1665,23 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
   // openSubtemaId changing on its own once subtemas are already loaded
   // (that back/forward case), and to the drag-swipe between adjacent posts
   // landing back on a thread whose subtema was open before.
+  //
+  // resolvedFromUrlOnceRef gates that session-memory fallback to this
+  // effect's FIRST resolution only. Without it, tmem.openSubtemaId (which
+  // this same effect also writes) would keep re-supplying the old id on
+  // every later run too — so when the URL's own openSubtemaId genuinely
+  // goes back to null (the user pressed Back and the browser moved from
+  // /post/:threadId/:subtemaId to /post/:threadId), `wantId` would still
+  // resolve truthy from tmem and the subtema would never actually close:
+  // Back would silently do nothing on the first press, then jump straight
+  // to the Post Feed on the second, since the still-open Subtema overlay
+  // was masking the Thread underneath the whole time. After the first
+  // resolution, the URL is the sole source of truth for open/closed.
+  const resolvedFromUrlOnceRef = useRef(false);
   useEffect(() => {
     if (!thread.subtemas) return; // not loaded yet — nothing to restore into
-    const wantId = openSubtemaId || tmem.openSubtemaId;
+    const wantId = openSubtemaId || (resolvedFromUrlOnceRef.current ? null : tmem.openSubtemaId);
+    resolvedFromUrlOnceRef.current = true;
     if (!wantId) {
       if (openSubtema) { setOpenSubtema(null); setTmem(m => ({ ...m, openSubtemaId: null })); onSubtemaChange?.(false); }
       return;
