@@ -37,11 +37,12 @@
 import { useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, Calculator, ListChecks } from "lucide-react";
+import { ChevronLeft, Calculator, ListChecks, StickyNote } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import { useNavigation } from "../lib/navigation.jsx";
 import RiskCalculatorPage from "../tools/riskCalculator/RiskCalculatorPage.jsx";
 import ChecklistsPage from "../tools/checklists/ChecklistsPage.jsx";
+import StickyNotesPage from "../tools/stickyNotes/StickyNotesPage.jsx";
 import { dlog, useRenderLog, useMountLog } from "../tools/checklists/_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 // ─── useIsDesktop ───────────────────────────────────────────────────────────
@@ -76,6 +77,7 @@ const font = "'DM Sans', sans-serif";
 const TOOLS = [
   { id: "risk-calculator", name: "Risk Calculator",      icon: Calculator, available: true,  component: RiskCalculatorPage },
   { id: "checklists",      name: "Checklist",            icon: ListChecks, available: true,  component: ChecklistsPage },
+  { id: "sticky-notes",    name: "Sticky Notes",         icon: StickyNote, available: true,  component: StickyNotesPage },
   { id: "position-sizer",  name: "Position Sizer",       icon: Calculator, available: false },
   { id: "r-converter",     name: "R Multiple Converter", icon: Calculator, available: false },
 ];
