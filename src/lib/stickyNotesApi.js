@@ -25,6 +25,7 @@ function rowToNote(row) {
     id: row.id,
     title: row.title ?? "",
     content: row.content ?? "",
+    color: row.color || "yellow",
     author: row.author ?? "Me",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -57,19 +58,32 @@ export async function fetchStickyNote(id) {
   return data ? rowToNote(data) : null;
 }
 
-export async function createStickyNote({ title, content }) {
+export async function createStickyNote({ title, content, color }) {
   const { data, error } = await supabase
     .from("sticky_notes")
-    .insert({ title: title?.trim() || "Sin título", content: content ?? "" })
+    .insert({ title: title?.trim() || "Sin título", content: content ?? "", color: color || "yellow" })
     .select().single();
   if (error) { console.error("[stickyNotesApi] create:", error.message); return null; }
   return rowToNote(data);
 }
 
-export async function updateStickyNote(id, { title, content }) {
+/**
+ * Partial update — only the keys actually present in `patch` are written.
+ * This is what the inline-editing autosave in StickyNoteExpanded.jsx relies
+ * on: a debounced text edit sends {title} or {content} without touching
+ * color, and an immediate color change from the ⋮ menu sends {color}
+ * without touching whatever the user is mid-typing. The old whole-object
+ * update (always overwriting title AND content together) is gone since
+ * there's no longer a separate composer that submits both at once.
+ */
+export async function updateStickyNote(id, patch) {
+  const payload = { updated_at: new Date().toISOString() };
+  if ("title" in patch) payload.title = patch.title?.trim() || "Sin título";
+  if ("content" in patch) payload.content = patch.content ?? "";
+  if ("color" in patch) payload.color = patch.color || "yellow";
   const { data, error } = await supabase
     .from("sticky_notes")
-    .update({ title: title?.trim() || "Sin título", content: content ?? "", updated_at: new Date().toISOString() })
+    .update(payload)
     .eq("id", id)
     .select().single();
   if (error) { console.error("[stickyNotesApi] update:", error.message); return null; }
