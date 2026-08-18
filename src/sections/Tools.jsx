@@ -36,7 +36,7 @@
  */
 import { useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, usePresence } from "framer-motion";
 import { ChevronLeft, Calculator, ListChecks, StickyNote } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import { useNavigation } from "../lib/navigation.jsx";
@@ -157,6 +157,88 @@ export default function Tools({ onToolsPortalChange, openToolId }) {
   );
 }
 
+// ─── ToolPortalOverlay — the actual animated/portaled node ─────────────────
+// Split out from ToolPortal so it can call usePresence(): Framer Motion's
+// own documented escape hatch for a known upstream class of bugs where
+// AnimatePresence's exit-completion tracking gets confused and NEVER
+// removes the exiting node from the DOM (motiondivision/motion issues
+// #2554, #1914 — "gets stuck ... no longer removes the element", "never
+// unmounted if its exit is started during the animation of another item").
+//
+// That's exactly what was happening here: closing the tool while a nested
+// motion component was still mid-gesture/mid-animation — Reorder.Item's
+// drag in Checklist's editor, or the expanded note's `drag="x"` /
+// imperative `animate` in Sticky Notes — left THIS div (the one with
+// key="tool-portal-overlay", zIndex 9999) permanently stuck in the DOM at
+// opacity:0 with the browser's default pointer-events:auto, silently
+// eating every click across the whole app. Confirmed by hand: forcing
+// pointerEvents:"none" on that stuck node immediately un-froze the app.
+//
+// Two independent, redundant safeguards — either one alone would fix the
+// freeze, both together mean it can never regress even if the other stops
+// working for some reason:
+//   1. pointerEvents is part of the `exit` variant itself, so it's applied
+//      the INSTANT the exit begins, not after the fade finishes — a node
+//      that never gets removed still can never intercept a click.
+//   2. usePresence()'s safeToRemove(), called from a timeout well past the
+//      0.18s transition, is Framer's own sanctioned fallback for "finish
+//      removing this even if my own completion signal didn't fire" (see
+//      the usePresence docs' exact "setTimeout(safeToRemove, 1000)"
+//      example). If Framer's normal removal already worked, this timeout
+//      is cleared on unmount and never fires — zero behavior change on
+//      the happy path.
+function ToolPortalOverlay({ tool, onClose, isDesktop }) {
+  const [isPresent, safeToRemove] = usePresence();
+
+  useEffect(() => {
+    if (isPresent) return; // still mounted/open — nothing to guard yet
+    const t = setTimeout(safeToRemove, 400); // 0.18s transition + generous buffer
+    return () => clearTimeout(t);
+  }, [isPresent, safeToRemove]);
+
+  return (
+    <motion.div {...isolateOverlayGestures}
+      initial={{ opacity: 0, pointerEvents: "none" }}
+      animate={{ opacity: 1, pointerEvents: "auto" }}
+      exit={{ opacity: 0, pointerEvents: "none" }}
+      transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
+
+      {/* Topbar — owned entirely by this portal, full width, independent
+          of PlanSpace's TopBar/ProfileRegion underneath. */}
+      <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", flexShrink: 0, minHeight: 56 }}>
+        <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 3, color: C.gold, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+          <ChevronLeft size={19} strokeWidth={2.2} /> Tools
+        </button>
+        <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {tool?.name ?? ""}
+        </span>
+      </div>
+
+      {/* Body — delegates its own width/centering to whatever renders
+          inside (each tool component owns its own PageContainer, same
+          as RiskCalculatorPage does with variant="workspace"), so this
+          stays a plain scroll area, not a second width decision. Tools
+          without a real interface yet (available:false ones can never
+          reach here; a future available:true tool with no component
+          wired up yet would) fall back to the placeholder. */}
+      <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
+        {tool?.component ? (
+          <tool.component isDesktop={isDesktop} />
+        ) : (
+          <PageContainer isDesktop={isDesktop} variant="workspace">
+            <div style={{ padding: "24px 18px" }}>
+              <div style={{ minHeight: 240, borderRadius: 16, border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Próximamente</span>
+              </div>
+            </div>
+          </PageContainer>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── ToolPortal — Level 2, fullscreen overlay hosting a single tool ────────
 // Same pattern as StatsDashboardPortal / ThreadView's overlay:
 // createPortal(..., document.body) so this escapes any clipping/transformed
@@ -186,44 +268,7 @@ function ToolPortal({ tool, onClose, onPortalChange }) {
 
   return createPortal(
     <AnimatePresence>
-      {open && (
-        <motion.div key="tool-portal-overlay" {...isolateOverlayGestures}
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-          style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
-
-          {/* Topbar — owned entirely by this portal, full width, independent
-              of PlanSpace's TopBar/ProfileRegion underneath. */}
-          <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", flexShrink: 0, minHeight: 56 }}>
-            <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 3, color: C.gold, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-              <ChevronLeft size={19} strokeWidth={2.2} /> Tools
-            </button>
-            <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {tool?.name ?? ""}
-            </span>
-          </div>
-
-          {/* Body — delegates its own width/centering to whatever renders
-              inside (each tool component owns its own PageContainer, same
-              as RiskCalculatorPage does with variant="workspace"), so this
-              stays a plain scroll area, not a second width decision. Tools
-              without a real interface yet (available:false ones can never
-              reach here; a future available:true tool with no component
-              wired up yet would) fall back to the placeholder. */}
-          <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
-            {tool?.component ? (
-              <tool.component isDesktop={isDesktop} />
-            ) : (
-              <PageContainer isDesktop={isDesktop} variant="workspace">
-                <div style={{ padding: "24px 18px" }}>
-                  <div style={{ minHeight: 240, borderRadius: 16, border: `1px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Próximamente</span>
-                  </div>
-                </div>
-              </PageContainer>
-            )}
-          </div>
-        </motion.div>
-      )}
+      {open && <ToolPortalOverlay key="tool-portal-overlay" tool={tool} onClose={onClose} isDesktop={isDesktop} />}
     </AnimatePresence>,
     document.body
   );
