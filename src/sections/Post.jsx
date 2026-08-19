@@ -796,7 +796,7 @@ const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFi
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onRegister, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -807,7 +807,7 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
   // option simply doesn't appear rather than being clickable-but-a-no-op.
   const menuActions = buildContentMenuActions({
     onEdit:      onEdit   && (() => onEdit(thread)),
-    onRegister:  () => {}, // placeholder — no functionality defined yet, UI-only per request
+    onRegister:  onRegister && (() => onRegister({ source: "post", postId: thread.id })),
     onDelete:    onDelete && (() => setConfirmDelete(true)),
     onShare:     onShare  && (() => onShare(thread)),
     onReport:    onReport && (() => onReport(thread)),
@@ -938,7 +938,7 @@ function getFilteredThreads(threads, searchQuery, filters) {
   return list;
 }
 
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onRegisterTrade, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
   const filtered = useMemo(
     () => getFilteredThreads(threads, searchQuery, filters),
     [threads, searchQuery, filters]
@@ -995,7 +995,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {pinned.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -1010,7 +1010,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {items.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -1287,7 +1287,7 @@ function SubtemaCard({ subtema, onClick }) {
 }
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
-function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor }) {
+function SubtemaView({ subtema: initialSubtema, threadId, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor, onRegisterTrade }) {
   const isDesktop = useIsDesktop();
   const [subtema, setSubtema] = useState(initialSubtema);
   // Its own scroll position — a real navigable instance (its own URL segment,
@@ -1368,10 +1368,11 @@ function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, on
   };
 
   const menuActions = buildContentMenuActions({
-    onEdit:   () => setEditingSubtema(true),
-    onDelete: () => setConfirmDeleteSubtema(true),
-    onShare:  () => {},
-    onReport: () => {},
+    onEdit:     () => setEditingSubtema(true),
+    onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "subtema", postId: threadId, subtemaId: subtema.id })),
+    onDelete:   () => setConfirmDeleteSubtema(true),
+    onShare:    () => {},
+    onReport:   () => {},
   });
 
   return (
@@ -1559,7 +1560,7 @@ function buildThreadMediaSequence(thread, linksById = {}) {
   return { items, groups };
 }
 
-function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads }) {
+function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
@@ -1861,7 +1862,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
 
   const menuActions = buildContentMenuActions({
     onEdit:     () => setEditingThread(true),
-    onRegister: () => {}, // placeholder — no functionality defined yet, UI-only per request
+    onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "post", postId: thread.id })),
     onDelete:   () => setConfirmDeleteThread(true),
     onShare:    () => {},
     onReport:   () => {},
@@ -2084,13 +2085,14 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
             <motion.div key="subtema-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
-              <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
+              <SubtemaView subtema={openSubtema} threadId={thread.id} onBack={closeSubtema} isHost={isHost}
                 parentVisibility={thread.visibility}
                 onSubtemaEdited={(subId, patch) => { setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) })); patchCachedSubtema(thread.id, subId, patch); }}
                 onSubtemaDeleted={(subId) => { setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) })); removeCachedSubtema(thread.id, subId); }}
                 showComposer={showComposer && composerMode === "update"}
                 onHideComposer={onHideComposer}
-                openGalleryFor={openGalleryFor} />
+                openGalleryFor={openGalleryFor}
+                onRegisterTrade={onRegisterTrade} />
             </motion.div>
           )}
         </AnimatePresence>,
@@ -2239,7 +2241,7 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
@@ -2505,7 +2507,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             </div>
           ) : (
             <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                      onEditThread={setEditingFeedThread} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
                       onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
           )}
         </div>
@@ -2542,6 +2544,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 onHideComposer={closeComposer}
                 onSubtemaChange={setSubtemaOpen}
                 onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); addCachedSubtema(threadId, sub); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
+                onRegisterTrade={onRegisterTrade}
               />
             </motion.div>
           )}

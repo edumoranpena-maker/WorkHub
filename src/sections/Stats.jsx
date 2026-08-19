@@ -44,6 +44,7 @@ import { ArrowRight, ChevronLeft, Loader } from "lucide-react";
 import {
   DOERS_JOURNAL_URL, MSG,
   postToDoersJournal, readBridgeMessage, parseAllTimeStatsPayload,
+  TRADE_MSG, postTradeOpenForm, readTradeBridgeMessage, isValidTradeContext,
 } from "../lib/doersJournalBridge.js";
 import { fetchAllTimeStats } from "../lib/statsApi.js";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
@@ -103,7 +104,7 @@ function summaryFromStats(stats) {
 // portal opens/closes, same contract as Post.jsx's onThreadChange, so the
 // section underneath (unified scroll + profile header) can be frozen the
 // same way it already is for Thread.
-export default function Stats({ onDashboardChange }) {
+export default function Stats({ onDashboardChange, pendingTradeContext, onClearPendingTrade }) {
   const isDesktop = useIsDesktop();
   const { route, navigate, goBack } = useNavigation();
   const dashboardOpen = route.routeId === "statsDashboard";
@@ -133,7 +134,19 @@ export default function Stats({ onDashboardChange }) {
 
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
-  const handleCloseDashboard = useCallback(() => { goBack(); refreshStats(); }, [goBack, refreshStats]);
+  // Single close path for the Dashboard portal — used by the topbar Back
+  // button (cancel/close without saving) AND, unchanged, by a valid
+  // trade:saved arriving in StatsDashboardPortal (see its onClose call
+  // below): both cases are "the Dashboard is done, go back to where the
+  // user came from" and must behave identically. Clearing
+  // pendingTradeContext here — not just after a successful trade:saved —
+  // is what stops a cancelled Registrar session from being inherited by a
+  // later, unrelated one (see App.jsx's handleRegisterTrade).
+  const handleCloseDashboard = useCallback(() => {
+    goBack();
+    refreshStats();
+    onClearPendingTrade?.();
+  }, [goBack, refreshStats, onClearPendingTrade]);
 
   const summary = summaryFromStats(allTimeStats);
 
@@ -179,6 +192,7 @@ export default function Stats({ onDashboardChange }) {
         onClose={handleCloseDashboard}
         onDashboardChange={onDashboardChange}
         onStatsUpdate={setAllTimeStats}
+        pendingTradeContext={pendingTradeContext}
       />
     </div>
     </PageContainer>
@@ -198,7 +212,7 @@ export default function Stats({ onDashboardChange }) {
 //
 // onStatsUpdate: bubbles a parsed { winrate, expectancy, totalTrades, profit }
 // up to Stats every time a valid "stats:all-time" message arrives.
-function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate }) {
+function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate, pendingTradeContext }) {
   const isDesktop = useIsDesktop();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef(null);
@@ -218,33 +232,59 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate 
   // The bridge: listens for postMessage from the iframe for as long as the
   // portal is open, tears the listener down on close/unmount. Only accepts
   // messages whose origin AND source window match this exact iframe.
+  //
+  // Checks BOTH channels independently in the same handler — the Stats
+  // channel (readBridgeMessage/BRIDGE_CHANNEL) and the separate Trade
+  // channel (readTradeBridgeMessage/TRADE_BRIDGE_CHANNEL). A message
+  // belongs to at most one of them (different `channel` string), so this
+  // can't misfire across the two; the Stats integration's own handling
+  // below is completely unchanged.
   useEffect(() => {
     if (!open) return;
     function handleMessage(event) {
       const msg = readBridgeMessage(event, iframeRef.current?.contentWindow);
-      if (!msg) return; // wrong origin/source/envelope — ignore, don't throw
-      if (msg.type === MSG.STATS_ALL_TIME) {
-        const parsed = parseAllTimeStatsPayload(msg.payload);
-        if (parsed) onStatsUpdate?.(parsed);
-        // A malformed payload is silently dropped rather than blanking out
-        // whatever the cards were already showing.
+      if (msg) {
+        if (msg.type === MSG.STATS_ALL_TIME) {
+          const parsed = parseAllTimeStatsPayload(msg.payload);
+          if (parsed) onStatsUpdate?.(parsed);
+          // A malformed payload is silently dropped rather than blanking out
+          // whatever the cards were already showing.
+        }
+        // Unknown types are ignored on purpose — forward-compatible with
+        // message types this build doesn't handle yet (see bridge file).
+        return;
       }
-      // Unknown types are ignored on purpose — forward-compatible with
-      // message types this build doesn't handle yet (see bridge file).
+
+      const tradeMsg = readTradeBridgeMessage(event, iframeRef.current?.contentWindow);
+      if (!tradeMsg) return; // neither channel matched — not a message for us
+      if (tradeMsg.type !== TRADE_MSG.SAVED) return; // only type this side needs to react to
+      if (!isValidTradeContext(tradeMsg.context)) return; // malformed — ignore rather than close on faith
+      // Success, confirmed by Doers Journal after its own Supabase insert.
+      // Reuse the exact same close path the topbar Back button uses —
+      // goBack() + refreshStats() + clearing pendingTradeContext — so a
+      // trade:saved close and a manual close can never behave differently.
+      onClose?.();
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [open]); // eslint-disable-line
 
   // Once the iframe has actually loaded, tell Doers Journal PlanSpace is
-  // ready and ask for the All-Time snapshot. Explicit request (rather than
-  // relying purely on Doers Journal pushing on its own) so a fresh mount
-  // always gets a snapshot instead of waiting for the next data change.
+  // ready and ask for the All-Time snapshot — unchanged. If Registrar sent
+  // the user here (pendingTradeContext is set), also open Nuevo Trade
+  // directly, right after those two, still only once the iframe is
+  // actually ready to receive it (never before onLoad). A normal "Ver
+  // Dashboard completo" visit has pendingTradeContext === null, so this
+  // branch simply never runs — Stats' case 13 (no automatic Nuevo Trade)
+  // needs no separate code path, it's just the absence of a context.
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     const target = iframeRef.current?.contentWindow;
     postToDoersJournal(target, MSG.READY);
     postToDoersJournal(target, MSG.STATS_REQUEST, { scope: "all-time" });
+    if (pendingTradeContext) {
+      postTradeOpenForm(target, pendingTradeContext);
+    }
   };
 
   return createPortal(
