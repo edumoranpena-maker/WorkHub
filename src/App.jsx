@@ -1202,6 +1202,34 @@ function App({ onGoHome, onOpenSettings }) {
   // onDashboardChange contracts.
   const [insideFullscreenOverlay, setInsideFullscreenOverlay] = useState(false);
 
+  // "Registrar" (Post/Subtema → Doers Journal → Nuevo Trade). Lifted here,
+  // same reasoning as insideFullscreenOverlay just above: Registrar lives in
+  // Post.jsx, but the Dashboard portal that needs to read it lives in
+  // Stats.jsx — two permanently-mounted sibling sections with no shared
+  // parent state of their own, so App.jsx is the natural (and, per this
+  // task's own instructions, preferred) place to hold it temporarily.
+  //
+  // Not itself a navigation mechanism — navigateRoute("statsDashboard")
+  // right below is what actually moves the user there; this is purely the
+  // "what was I registering for" payload that rides along for the ~one
+  // screen's worth of time between Registrar and Doers Journal confirming
+  // trade:saved (or the user cancelling). Cleared by Stats.jsx's
+  // handleCloseDashboard on EVERY dashboard close — success or cancel —
+  // so it can never leak into an unrelated later Registrar session.
+  const [pendingTradeContext, setPendingTradeContext] = useState(null);
+
+  // Post/ThreadView/SubtemaView's "Registrar" action calls this with
+  // { source: "post", postId } or { source: "subtema", postId, subtemaId }.
+  // navigate("statsDashboard") — never replace(), never navigating straight
+  // to "stats" — is what stacks the Dashboard on top of whatever Post/
+  // Subtema route the user was already on, so goBack() (fired either by
+  // the Dashboard's own topbar Back button or by a valid trade:saved)
+  // lands the user back on that exact instance.
+  const handleRegisterTrade = useCallback((context) => {
+    setPendingTradeContext(context);
+    navigateRoute("statsDashboard");
+  }, [navigateRoute]);
+
   // Close the purple speed-dial and reset thread flag whenever the section changes
   useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
 
@@ -1442,13 +1470,13 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
         </div>
         <div style={visible("stats")}>
-          <Stats onDashboardChange={setInsideFullscreenOverlay} />
+          <Stats onDashboardChange={setInsideFullscreenOverlay} pendingTradeContext={pendingTradeContext} onClearPendingTrade={() => setPendingTradeContext(null)} />
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
