@@ -1287,7 +1287,7 @@ function SubtemaCard({ subtema, onClick }) {
 }
 
 // ─── SubtemaView — like ThreadView but for a Subtema, no nested subtemas ──────
-function SubtemaView({ subtema: initialSubtema, threadId, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor, onRegisterTrade }) {
+function SubtemaView({ subtema: initialSubtema, onBack, isHost, showComposer, onHideComposer, parentVisibility, onSubtemaEdited, onSubtemaDeleted, openGalleryFor }) {
   const isDesktop = useIsDesktop();
   const [subtema, setSubtema] = useState(initialSubtema);
   // Its own scroll position — a real navigable instance (its own URL segment,
@@ -1368,11 +1368,10 @@ function SubtemaView({ subtema: initialSubtema, threadId, onBack, isHost, showCo
   };
 
   const menuActions = buildContentMenuActions({
-    onEdit:     () => setEditingSubtema(true),
-    onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "subtema", postId: threadId, subtemaId: subtema.id })),
-    onDelete:   () => setConfirmDeleteSubtema(true),
-    onShare:    () => {},
-    onReport:   () => {},
+    onEdit:   () => setEditingSubtema(true),
+    onDelete: () => setConfirmDeleteSubtema(true),
+    onShare:  () => {},
+    onReport: () => {},
   });
 
   return (
@@ -2085,14 +2084,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
             <motion.div key="subtema-overlay" {...isolateOverlayGestures}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               style={{ position: "fixed", inset: 0, zIndex: 600, background: C.surface }}>
-              <SubtemaView subtema={openSubtema} threadId={thread.id} onBack={closeSubtema} isHost={isHost}
+              <SubtemaView subtema={openSubtema} onBack={closeSubtema} isHost={isHost}
                 parentVisibility={thread.visibility}
                 onSubtemaEdited={(subId, patch) => { setThread(t => ({ ...t, subtemas: t.subtemas.map(s => s.id === subId ? { ...s, ...patch } : s) })); patchCachedSubtema(thread.id, subId, patch); }}
                 onSubtemaDeleted={(subId) => { setThread(t => ({ ...t, subtemas: t.subtemas.filter(s => s.id !== subId) })); removeCachedSubtema(thread.id, subId); }}
                 showComposer={showComposer && composerMode === "update"}
                 onHideComposer={onHideComposer}
-                openGalleryFor={openGalleryFor}
-                onRegisterTrade={onRegisterTrade} />
+                openGalleryFor={openGalleryFor} />
             </motion.div>
           )}
         </AnimatePresence>,

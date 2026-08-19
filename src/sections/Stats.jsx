@@ -39,7 +39,7 @@
  */
 import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, usePresence } from "framer-motion";
 import { ArrowRight, ChevronLeft, Loader } from "lucide-react";
 import {
   DOERS_JOURNAL_URL, MSG,
@@ -199,38 +199,50 @@ export default function Stats({ onDashboardChange, pendingTradeContext, onClearP
   );
 }
 
-// ─── StatsDashboardPortal — Level 2, fullscreen overlay hosting Doers Journal ─
-// Same pattern as ThreadView's overlay (Post.jsx): createPortal(..., document.body)
-// so this escapes any clipping/transformed ancestor regardless of whether Stats
-// is being rendered from the desktop or mobile shell. zIndex 9999 sits above
-// every other fixed element in the app (FABs at 999, role toggle at 9998), so
-// it's a true top-level fullscreen layer, not just visually full-bleed.
+// ─── DashboardOverlay — the actual animated/portaled node ──────────────────
+// Split out from StatsDashboardPortal so it can call usePresence() — Framer
+// Motion's own documented escape hatch for a known upstream bug class where
+// AnimatePresence's exit-completion tracking gets confused and never
+// actually removes the exiting node from the DOM (see Tools.jsx's
+// ToolPortalOverlay, which hit the exact same thing and has the full
+// writeup — motion issues #2554/#1914).
 //
-// Opens/closes exactly like ThreadView: AnimatePresence fade, mounted only
-// while `open` is true, closed via the topbar Back button — nothing else can
-// dismiss it (no backdrop-click-to-close), same as Thread.
+// THIS is what was silently breaking "Registrar → trade:open-form": if the
+// Dashboard had been opened and closed even once before (e.g. the user
+// tried "Ver Dashboard completo" first, or opened/cancelled a previous
+// Registrar attempt), the outgoing <motion.div key="stats-dashboard-overlay">
+// could get stuck mid-exit instead of actually being removed. On the NEXT
+// open, AnimatePresence sees the same key still present and revives that
+// SAME component instance instead of mounting a fresh one — so the
+// <iframe> never gets a new load cycle, `onLoad` never fires again, and
+// handleIframeLoad() (the only place trade:open-form is ever sent) simply
+// never runs for that visit. Visually this is invisible: the already-
+// loaded Dashboard just reappears, looking completely normal — which is
+// exactly why "Registrar → Dashboard" looked like it worked while "Nuevo
+// Trade" silently never opened.
 //
-// onStatsUpdate: bubbles a parsed { winrate, expectancy, totalTrades, profit }
-// up to Stats every time a valid "stats:all-time" message arrives.
-function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate, pendingTradeContext }) {
+// Same two-layer fix as ToolPortalOverlay:
+//   1. pointerEvents set directly in the `exit` variant, applied the
+//      instant exit begins rather than after it finishes.
+//   2. usePresence()'s safeToRemove(), forced via a timeout well past the
+//      0.18s transition, guarantees the node is ACTUALLY torn down even if
+//      Framer's own completion callback gets stuck — which is what
+//      guarantees the next open is a genuinely fresh mount (fresh iframe,
+//      fresh onLoad, pendingTradeContext correctly picked up).
+function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext }) {
+  const [isPresent, safeToRemove] = usePresence();
   const isDesktop = useIsDesktop();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef(null);
 
-  // Reset the loading state each time the portal is reopened, so a second
-  // visit shows the spinner again instead of a stale "loaded" flag from the
-  // previous mount — the iframe itself remounts too (unmounted entirely on
-  // close, since this whole tree is `{open && (...)}`).
-  useLayoutEffect(() => { if (open) setIframeLoaded(false); }, [open]);
+  useEffect(() => {
+    if (isPresent) return;
+    const t = setTimeout(safeToRemove, 400); // 0.18s transition + generous buffer
+    return () => clearTimeout(t);
+  }, [isPresent, safeToRemove]);
 
-  // Reports open/closed up to App.jsx — same useLayoutEffect timing as
-  // Post.jsx's `useLayoutEffect(() => { onThreadChange?.(!!openThread) }, ...)`
-  // so the freeze on the section underneath (scroll lock + hidden profile
-  // header) commits before paint, no one-frame flash of the frozen section.
-  useLayoutEffect(() => { onDashboardChange?.(open); }, [open]); // eslint-disable-line
-
-  // The bridge: listens for postMessage from the iframe for as long as the
-  // portal is open, tears the listener down on close/unmount. Only accepts
+  // The bridge: listens for postMessage from the iframe for as long as this
+  // overlay is mounted, tears the listener down on unmount. Only accepts
   // messages whose origin AND source window match this exact iframe.
   //
   // Checks BOTH channels independently in the same handler — the Stats
@@ -240,7 +252,6 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate,
   // can't misfire across the two; the Stats integration's own handling
   // below is completely unchanged.
   useEffect(() => {
-    if (!open) return;
     function handleMessage(event) {
       const msg = readBridgeMessage(event, iframeRef.current?.contentWindow);
       if (msg) {
@@ -267,7 +278,7 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate,
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [open]); // eslint-disable-line
+  }, []); // eslint-disable-line — mounted only while this overlay itself exists, no [open] gate needed anymore
 
   // Once the iframe has actually loaded, tell Doers Journal PlanSpace is
   // ready and ask for the All-Time snapshot — unchanged. If Registrar sent
@@ -275,8 +286,7 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate,
   // directly, right after those two, still only once the iframe is
   // actually ready to receive it (never before onLoad). A normal "Ver
   // Dashboard completo" visit has pendingTradeContext === null, so this
-  // branch simply never runs — Stats' case 13 (no automatic Nuevo Trade)
-  // needs no separate code path, it's just the absence of a context.
+  // branch simply never runs.
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     const target = iframeRef.current?.contentWindow;
@@ -287,64 +297,92 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate,
     }
   };
 
+  return (
+    <motion.div {...isolateOverlayGestures}
+      initial={{ opacity: 0, pointerEvents: "none" }}
+      animate={{ opacity: 1, pointerEvents: "auto" }}
+      exit={{ opacity: 0, pointerEvents: "none" }}
+      transition={{ duration: 0.18 }}
+      style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
+
+      {/* Topbar — owned entirely by this portal, independent of PlanSpace's
+          MobileTopBar/Sidebar/Chips underneath. */}
+      <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", flexShrink: 0, minHeight: 56 }}>
+        <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
+          <ChevronLeft size={19} strokeWidth={2.2} /> Stats
+        </button>
+        <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          Dashboard
+        </span>
+      </div>
+
+      {/* Doers Journal — fills all remaining space below the topbar.
+          flex:1 + position:relative with no overflow/scroll of its own
+          imposed here; the iframe is sized to 100%/100% so Doers Journal's
+          own layout (sticky header, modals, scroll) drives everything
+          inside it, completely independent of PlanSpace's scroll. */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: C.bg }}>
+        {/* Capped + centered workspace column — the iframe lives in here,
+            sized to fill it (100%/100%), while the outer flex:1 area above
+            keeps showing background:C.bg on the sides, same "chrome vs
+            content" split used everywhere else in this redesign. */}
+        <PageContainer isDesktop={isDesktop} variant="dashboard" style={{ position: "relative", height: "100%" }}>
+          {/* Loading state — shown until the iframe fires onLoad */}
+          {!iframeLoaded && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, background: C.bg, zIndex: 1 }}>
+              <Loader size={20} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+              <span style={{ fontFamily: font, fontSize: 13, color: C.textMuted }}>Cargando Dashboard…</span>
+              <style>{"@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }"}</style>
+            </div>
+          )}
+
+          <iframe
+            ref={iframeRef}
+            src={DOERS_JOURNAL_URL}
+            title="Doers Journal Dashboard"
+            onLoad={handleIframeLoad}
+            style={{
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              border: "none", display: "block",
+              background: C.bg,
+            }}
+            // No sandbox restrictions — Doers Journal needs its own scripts,
+            // storage and forms to run normally. Revisit once "Nuevo Trade"
+            // and auth handoff are in scope.
+            allow="clipboard-write"
+          />
+        </PageContainer>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── StatsDashboardPortal — Level 2, fullscreen overlay hosting Doers Journal ─
+// Same pattern as ThreadView's overlay (Post.jsx): createPortal(..., document.body)
+// so this escapes any clipping/transformed ancestor regardless of whether Stats
+// is being rendered from the desktop or mobile shell. zIndex 9999 sits above
+// every other fixed element in the app (FABs at 999, role toggle at 9998), so
+// it's a true top-level fullscreen layer, not just visually full-bleed.
+//
+// Opens/closes exactly like ThreadView: AnimatePresence fade, mounted only
+// while `open` is true, closed via the topbar Back button — nothing else can
+// dismiss it (no backdrop-click-to-close), same as Thread.
+//
+// onStatsUpdate: bubbles a parsed { winrate, expectancy, totalTrades, profit }
+// up to Stats every time a valid "stats:all-time" message arrives.
+function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate, pendingTradeContext }) {
+  // Reports open/closed up to App.jsx — same useLayoutEffect timing as
+  // Post.jsx's `useLayoutEffect(() => { onThreadChange?.(!!openThread) }, ...)`
+  // so the freeze on the section underneath (scroll lock + hidden profile
+  // header) commits before paint, no one-frame flash of the frozen section.
+  useLayoutEffect(() => { onDashboardChange?.(open); }, [open]); // eslint-disable-line
+
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div key="stats-dashboard-overlay" {...isolateOverlayGestures}
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-          style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
-
-          {/* Topbar — owned entirely by this portal, independent of PlanSpace's
-              MobileTopBar/Sidebar/Chips underneath. */}
-          <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", flexShrink: 0, minHeight: 56 }}>
-            <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-              <ChevronLeft size={19} strokeWidth={2.2} /> Stats
-            </button>
-            <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              Dashboard
-            </span>
-          </div>
-
-          {/* Doers Journal — fills all remaining space below the topbar.
-              flex:1 + position:relative with no overflow/scroll of its own
-              imposed here; the iframe is sized to 100%/100% so Doers Journal's
-              own layout (sticky header, modals, scroll) drives everything
-              inside it, completely independent of PlanSpace's scroll. */}
-          <div style={{ flex: 1, position: "relative", overflow: "hidden", background: C.bg }}>
-            {/* Capped + centered workspace column — the iframe lives in here,
-                sized to fill it (100%/100%), while the outer flex:1 area above
-                keeps showing background:C.bg on the sides, same "chrome vs
-                content" split used everywhere else in this redesign. */}
-            <PageContainer isDesktop={isDesktop} variant="dashboard" style={{ position: "relative", height: "100%" }}>
-              {/* Loading state — shown until the iframe fires onLoad */}
-              {!iframeLoaded && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, background: C.bg, zIndex: 1 }}>
-                  <Loader size={20} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-                  <span style={{ fontFamily: font, fontSize: 13, color: C.textMuted }}>Cargando Dashboard…</span>
-                  <style>{"@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }"}</style>
-                </div>
-              )}
-
-              <iframe
-                ref={iframeRef}
-                key="doers-journal-iframe"
-                src={DOERS_JOURNAL_URL}
-                title="Doers Journal Dashboard"
-                onLoad={handleIframeLoad}
-                style={{
-                  position: "absolute", inset: 0,
-                  width: "100%", height: "100%",
-                  border: "none", display: "block",
-                  background: C.bg,
-                }}
-                // No sandbox restrictions — Doers Journal needs its own scripts,
-                // storage and forms to run normally. Revisit once "Nuevo Trade"
-                // and auth handoff are in scope.
-                allow="clipboard-write"
-              />
-            </PageContainer>
-          </div>
-        </motion.div>
+        <DashboardOverlay key="stats-dashboard-overlay"
+          onClose={onClose} onStatsUpdate={onStatsUpdate} pendingTradeContext={pendingTradeContext} />
       )}
     </AnimatePresence>,
     document.body
