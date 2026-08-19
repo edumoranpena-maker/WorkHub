@@ -37,9 +37,14 @@
  *
  * ── Reserved for later (not sent/handled yet, listed so the shape of the
  *    channel doesn't need to change when we get to them) ──────────────────
- *     "trade:open-form"     — PlanSpace → Doers Journal, opens "Nuevo Trade".
  *     "profile:metric-update" — Doers Journal → PlanSpace, pushes a single
  *                              updated metric for the profile header.
+ *
+ * ── Trade bridge ─────────────────────────────────────────────────────────
+ * "trade:open-form" / "trade:saved" are NOT part of this channel — they're
+ * a separate, independently-versioned envelope (TRADE_BRIDGE_CHANNEL) below,
+ * since Doers Journal was already built against that exact contract on its
+ * own side. See that section further down for the full message catalogue.
  */
 
 export const DOERS_JOURNAL_URL    = "https://doers-journal.vercel.app/";
@@ -105,4 +110,87 @@ export function parseAllTimeStatsPayload(payload) {
     if (typeof nums[key] !== "number" || Number.isNaN(nums[key])) return null;
   }
   return { winrate, expectancy, totalTrades, profit };
+}
+
+/**
+ * ── Trade bridge (Registrar → Doers → trade:saved) ─────────────────────────
+ *
+ * A SEPARATE envelope from the Stats channel above — different `channel`
+ * string, different version counter, different shape (`context`/`trade`
+ * instead of `payload`). Doers Journal was already built to this exact
+ * contract on its own side, so this mirrors it rather than reusing
+ * BRIDGE_CHANNEL/BRIDGE_VERSION. The two channels are independent and must
+ * both keep working: readBridgeMessage() only ever matches BRIDGE_CHANNEL,
+ * readTradeBridgeMessage() only ever matches TRADE_BRIDGE_CHANNEL — a
+ * message on one channel is simply ignored (returns null) by the other's
+ * reader, so nothing here can cross-contaminate the Stats integration.
+ *
+ * Still the same DOERS_JOURNAL_ORIGIN (same iframe, same site) for every
+ * origin check and every postMessage target — never "*".
+ *
+ * ── Message types ─────────────────────────────────────────────────────────
+ *   PlanSpace → Doers Journal
+ *     "trade:open-form" — { context: { source: "post", postId } |
+ *                                     { source: "subtema", postId, subtemaId } }
+ *                          Opens "Nuevo Trade" directly, pre-loaded with
+ *                          where the user should return to.
+ *
+ *   Doers Journal → PlanSpace
+ *     "trade:saved"     — { context: <the same context sent above>,
+ *                            trade: { id } }
+ *                          Sent only after a successful Supabase insert —
+ *                          never on a failed save (Doers Journal keeps its
+ *                          form open in that case and simply doesn't send
+ *                          anything).
+ */
+export const TRADE_BRIDGE_CHANNEL = "xplannation-doers-bridge";
+export const TRADE_BRIDGE_VERSION = 1;
+
+export const TRADE_MSG = {
+  OPEN_FORM: "trade:open-form",
+  SAVED:     "trade:saved",
+};
+
+/** True for a well-formed { source: "post", postId } or
+ *  { source: "subtema", postId, subtemaId } context — the same minimal
+ *  shape Doers Journal itself validates on its side. */
+export function isValidTradeContext(context) {
+  if (!context || typeof context !== "object") return false;
+  if (context.source === "post") {
+    return typeof context.postId === "string" && context.postId.length > 0;
+  }
+  if (context.source === "subtema") {
+    return typeof context.postId === "string" && context.postId.length > 0
+        && typeof context.subtemaId === "string" && context.subtemaId.length > 0;
+  }
+  return false;
+}
+
+/** Sends "trade:open-form" with the given context. targetOrigin is always
+ *  DOERS_JOURNAL_ORIGIN, never "*" — same rule as postToDoersJournal above. */
+export function postTradeOpenForm(targetWindow, context) {
+  if (!targetWindow) return;
+  if (!isValidTradeContext(context)) return; // never send a malformed context — Doers would just ignore it anyway
+  targetWindow.postMessage(
+    { channel: TRADE_BRIDGE_CHANNEL, version: TRADE_BRIDGE_VERSION, type: TRADE_MSG.OPEN_FORM, context },
+    DOERS_JOURNAL_ORIGIN
+  );
+}
+
+/**
+ * Validates an inbound MessageEvent against the Trade channel specifically
+ * (origin + envelope shape) — returns { type, context, trade } if valid,
+ * null otherwise. A message on the Stats channel (different `channel`
+ * string) correctly falls through to null here, same as this one falling
+ * through readBridgeMessage() above.
+ */
+export function readTradeBridgeMessage(event, expectedSourceWindow) {
+  if (event.origin !== DOERS_JOURNAL_ORIGIN) return null;
+  if (expectedSourceWindow && event.source !== expectedSourceWindow) return null;
+  const data = event.data;
+  if (!data || typeof data !== "object") return null;
+  if (data.channel !== TRADE_BRIDGE_CHANNEL) return null;
+  if (data.version !== TRADE_BRIDGE_VERSION) return null;
+  if (typeof data.type !== "string") return null;
+  return { type: data.type, context: data.context ?? null, trade: data.trade ?? null };
 }
