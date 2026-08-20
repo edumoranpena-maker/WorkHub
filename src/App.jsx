@@ -1261,19 +1261,6 @@ function App({ onGoHome, onOpenSettings }) {
     return () => { cancelled = true; };
   }, []);
 
-  // profileConfig.stats stays exactly what it is (the user-editable config,
-  // untouched) — this only overlays the live Winrate value onto the
-  // "winrate" entry at render time, the same way `hidden`/hidden-portal
-  // state overlays visibility without mutating config elsewhere in this file.
-  const profileStats = useMemo(
-    () => profileConfig.stats.map(s =>
-      s.key === "winrate"
-        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : "—" }
-        : s
-    ),
-    [profileConfig.stats, allTimeStats]
-  );
-
   // Close the purple speed-dial and reset thread flag whenever the section changes
   useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
 
@@ -1321,6 +1308,26 @@ function App({ onGoHome, onOpenSettings }) {
 
   // ── Central profile config — static source of truth, render engine reads it ──
   const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
+
+  // profileConfig.stats stays exactly what it is (the user-editable config,
+  // untouched) — this only overlays the live Winrate value onto the
+  // "winrate" entry at render time. Lives here, right after profileConfig
+  // itself is declared, specifically because it reads profileConfig — this
+  // exact useMemo previously sat much earlier in the component (up near
+  // pendingTradeContext/allTimeStats), referencing profileConfig before its
+  // own `const` declaration had run in that render — a TDZ ReferenceError
+  // ("Cannot access 'profileConfig' before initialization", minified to
+  // "Ie" in the production bundle). allTimeStats itself is still fetched
+  // in its own effect near pendingTradeContext — that part never touched
+  // profileConfig and was never the problem.
+  const profileStats = useMemo(
+    () => profileConfig.stats.map(s =>
+      s.key === "winrate"
+        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : "—" }
+        : s
+    ),
+    [profileConfig.stats, allTimeStats]
+  );
 
   // Derive runtime data from profileConfig
   const allSections   = useMemo(
