@@ -85,7 +85,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
   const stats = profile?.stats ?? [
     { key: "followers", label: "Followers", value: "12.4k" },
     { key: "posts",      label: "Posts",     value: "86" },
-    { key: "ev",         label: "Exp Value", value: "2.8R" },
+    { key: "winrate",    label: "Winrate",   value: "—" },
   ];
   const socials = profile?.socials ?? [];
 

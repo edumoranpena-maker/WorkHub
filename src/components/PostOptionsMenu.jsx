@@ -34,6 +34,10 @@ const C = {
  * onRegister is optional and only used by Post/PostCard right now — passing
  * it inserts "Registrar" right after "Editar"; omit it anywhere else (Update,
  * Subtema) and it simply doesn't appear, same as any other action here.
+ * Pass registerCount alongside it (the number of trades already registered
+ * from that Post) to switch the label to "Registrar (N)" once it's above 0
+ * — same conditional-label idiom already used for onTogglePin below.
+ * Omitting registerCount (or passing 0) keeps the plain "Registrar" label.
  *
  * onTogglePin is optional too, only used by PostCard (top-level Posts in
  * PostFeed — pinning doesn't apply to Updates or Subtemas). Pass `pinned`
@@ -49,10 +53,10 @@ const C = {
  * Only pass the callbacks that make sense for the calling context — an
  * action is included only if its onSelect was actually provided.
  */
-export function buildContentMenuActions({ onEdit, onRegister, onShare, onDelete, onReport, pinned, onTogglePin }) {
+export function buildContentMenuActions({ onEdit, onRegister, registerCount, onShare, onDelete, onReport, pinned, onTogglePin }) {
   return [
     { id: "edit",     label: "Editar",    icon: Pencil,        roles: ["host"],           onSelect: onEdit },
-    { id: "register", label: "Registrar", icon: ClipboardCheck, roles: ["host"],           onSelect: onRegister },
+    { id: "register", label: registerCount > 0 ? `Registrar (${registerCount})` : "Registrar", icon: ClipboardCheck, roles: ["host"], onSelect: onRegister },
     { id: "share",    label: "Compartir", icon: Share2,        roles: ["host", "member"], onSelect: onShare },
     { id: "delete",   label: "Eliminar",  icon: Trash2,        roles: ["host"],           onSelect: onDelete, danger: true },
     { id: "report",   label: "Reportar",  icon: Flag,          roles: ["host", "member"], onSelect: onReport, danger: true },
