@@ -29,10 +29,15 @@ export const DEFAULT_PROFILE_CONFIG = {
   socials: [],
 
   // ── Stats shown in profile header (order = display order) ──────────────────
+  // "winrate"'s value here is only the placeholder shown before
+  // fetchAllTimeStats() resolves — App.jsx overwrites it with the real
+  // All-Time Winrate from Doers Journal every render (see profileStats
+  // there). Kept as a real entry (not omitted) so the stat's position in
+  // the row never shifts once real data arrives.
   stats: [
     { key: "followers",  label: "Followers",   value: "12.4k" },
     { key: "posts",      label: "Posts",        value: "86"    },
-    { key: "ev",         label: "Exp Value",    value: "2.8R"  },
+    { key: "winrate",    label: "Winrate",      value: "—"     },
   ],
 
   // ── Theme ───────────────────────────────────────────────────────────────────
