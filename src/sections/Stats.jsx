@@ -280,21 +280,47 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext }) {
     return () => window.removeEventListener("message", handleMessage);
   }, []); // eslint-disable-line — mounted only while this overlay itself exists, no [open] gate needed anymore
 
+  // Sends "trade:open-form" — deliberately NOT inside handleIframeLoad
+  // below. Relying only on the onLoad event to gate this send is fragile:
+  // if this DashboardOverlay instance ever ends up reused rather than
+  // freshly mounted (AnimatePresence reviving an exit-in-progress node —
+  // see this component's own header comment), `iframeLoaded` can already
+  // be `true` from a previous open and onLoad simply never fires again,
+  // silently dropping the message. This effect instead treats
+  // `iframeLoaded` as a piece of STATE to react to, not an EVENT to catch:
+  // it fires whenever iframeLoaded and pendingTradeContext are BOTH true
+  // at the same time, however that came to be — a fresh onLoad just now,
+  // or an already-true iframeLoaded from before combined with a brand-new
+  // Registrar click supplying a fresh pendingTradeContext. Either path
+  // ends up here and sends correctly.
+  //
+  // sentForRef tracks the exact context OBJECT already sent (App.jsx's
+  // setPendingTradeContext always creates a new object per Registrar
+  // click, so this is a reliable per-click identity) — guarantees exactly
+  // one send per Registrar click, never a repeat on unrelated re-renders,
+  // and correctly sends again for a genuinely new click even if the
+  // iframe was already loaded from before.
+  const sentForRef = useRef(null);
+  useEffect(() => {
+    if (!iframeLoaded) return; // iframe not confirmed ready yet
+    if (!pendingTradeContext) { sentForRef.current = null; return; } // nothing pending — also resets, so a later click is never mistaken for "already sent"
+    if (sentForRef.current === pendingTradeContext) return; // already sent for this exact click
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    postTradeOpenForm(target, pendingTradeContext);
+    sentForRef.current = pendingTradeContext;
+  }, [iframeLoaded, pendingTradeContext]);
+
   // Once the iframe has actually loaded, tell Doers Journal PlanSpace is
-  // ready and ask for the All-Time snapshot — unchanged. If Registrar sent
-  // the user here (pendingTradeContext is set), also open Nuevo Trade
-  // directly, right after those two, still only once the iframe is
-  // actually ready to receive it (never before onLoad). A normal "Ver
-  // Dashboard completo" visit has pendingTradeContext === null, so this
-  // branch simply never runs.
+  // ready and ask for the All-Time snapshot — unchanged, Stats bridge only.
+  // trade:open-form is NOT sent from here anymore (see the effect above) —
+  // this only flips iframeLoaded to true, which is what that effect
+  // actually reacts to.
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     const target = iframeRef.current?.contentWindow;
     postToDoersJournal(target, MSG.READY);
     postToDoersJournal(target, MSG.STATS_REQUEST, { scope: "all-time" });
-    if (pendingTradeContext) {
-      postTradeOpenForm(target, pendingTradeContext);
-    }
   };
 
   return (
