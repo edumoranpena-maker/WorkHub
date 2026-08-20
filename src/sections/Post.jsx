@@ -62,6 +62,7 @@ import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory, useScrollMemory } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
+import { fetchTradeCounts } from "../lib/postTradeLinksApi.js";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -796,7 +797,7 @@ const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFi
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onRegister, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onRegister, registerCount = 0, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -808,6 +809,7 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
   const menuActions = buildContentMenuActions({
     onEdit:      onEdit   && (() => onEdit(thread)),
     onRegister:  onRegister && (() => onRegister({ source: "post", postId: thread.id })),
+    registerCount,
     onDelete:    onDelete && (() => setConfirmDelete(true)),
     onShare:     onShare  && (() => onShare(thread)),
     onReport:    onReport && (() => onReport(thread)),
@@ -938,7 +940,7 @@ function getFilteredThreads(threads, searchQuery, filters) {
   return list;
 }
 
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onRegisterTrade, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onRegisterTrade, tradeCounts, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
   const filtered = useMemo(
     () => getFilteredThreads(threads, searchQuery, filters),
     [threads, searchQuery, filters]
@@ -995,7 +997,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {pinned.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onRegister={onRegisterTrade} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -1010,7 +1012,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {items.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onRegister={onRegisterTrade} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -1559,7 +1561,7 @@ function buildThreadMediaSequence(thread, linksById = {}) {
   return { items, groups };
 }
 
-function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade }) {
+function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade, registerCount = 0 }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
@@ -1862,6 +1864,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
   const menuActions = buildContentMenuActions({
     onEdit:     () => setEditingThread(true),
     onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "post", postId: thread.id })),
+    registerCount,
     onDelete:   () => setConfirmDeleteThread(true),
     onShare:    () => {},
     onReport:   () => {},
@@ -2239,7 +2242,7 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade }) {
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade, tradeLinkedSignal }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
@@ -2283,13 +2286,22 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const openComposer = (mode) => { setFabMenuOpen(false); setActiveComposer(mode); };
   const closeComposer = () => setActiveComposer(null);
 
+  // Registrar (N) — how many trades are linked to each Post. Batch-fetched
+  // once here (one query for the whole list, not one per PostCard) right
+  // after threads resolve, so it's correct on first paint and survives a
+  // reload — see postTradeLinksApi.js for why a persisted lookup is needed
+  // at all instead of just trusting trade:saved in the moment.
+  const [tradeCounts, setTradeCounts] = useState({}); // { [postId]: count }
+
   // ── Load from Supabase ─────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     fetchRecapThreads().then(data => {
       if (cancelled) return;
+      const effectiveThreads = data.length > 0 ? data : MOCK_THREADS;
       if (data.length > 0) setThreads(data);
       setLoadingThreads(false);
+      fetchTradeCounts(effectiveThreads.map(t => t.id)).then(counts => { if (!cancelled) setTradeCounts(counts); });
       if (openThreadId) {
         const t = openThreadId.startsWith("p")
           ? data.find(th => th.planningPostId === openThreadId)
@@ -2302,6 +2314,18 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     }).catch(() => setLoadingThreads(false));
     return () => { cancelled = true; };
   }, []); // eslint-disable-line
+
+  // Registrar → Doers → trade:saved lands here the instant Stats.jsx
+  // finishes persisting the Post↔Trade link (App.jsx's handleTradeLinked),
+  // so "Registrar (N)" updates immediately on return instead of waiting
+  // for a re-fetch. The link is already in Supabase by the time this
+  // fires, so this is purely an optimistic local bump on top of data
+  // that's already durably saved — a reload independently recomputes the
+  // same true count via the batch fetch above.
+  useEffect(() => {
+    if (!tradeLinkedSignal?.postId) return;
+    setTradeCounts(prev => ({ ...prev, [tradeLinkedSignal.postId]: (prev[tradeLinkedSignal.postId] || 0) + 1 }));
+  }, [tradeLinkedSignal]);
 
   useEffect(() => {
     if (!openThreadId) { setOpenThread(null); setSubtemaOpen(false); return; }
@@ -2505,7 +2529,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             </div>
           ) : (
             <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} tradeCounts={tradeCounts} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
                       onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
           )}
         </div>
@@ -2543,6 +2567,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 onSubtemaChange={setSubtemaOpen}
                 onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); addCachedSubtema(threadId, sub); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
                 onRegisterTrade={onRegisterTrade}
+                registerCount={tradeCounts[openThread.id] || 0}
               />
             </motion.div>
           )}

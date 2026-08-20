@@ -46,6 +46,7 @@ import {
   postToDoersJournal, readBridgeMessage, parseAllTimeStatsPayload,
   TRADE_MSG, postTradeOpenForm, readTradeBridgeMessage, isValidTradeContext,
 } from "../lib/doersJournalBridge.js";
+import { linkTradeToPost } from "../lib/postTradeLinksApi.js";
 import { fetchAllTimeStats } from "../lib/statsApi.js";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import { useNavigation } from "../lib/navigation.jsx";
@@ -104,7 +105,7 @@ function summaryFromStats(stats) {
 // portal opens/closes, same contract as Post.jsx's onThreadChange, so the
 // section underneath (unified scroll + profile header) can be frozen the
 // same way it already is for Thread.
-export default function Stats({ onDashboardChange, pendingTradeContext, onClearPendingTrade }) {
+export default function Stats({ onDashboardChange, pendingTradeContext, onClearPendingTrade, onTradeLinked }) {
   const isDesktop = useIsDesktop();
   const { route, navigate, goBack } = useNavigation();
   const dashboardOpen = route.routeId === "statsDashboard";
@@ -193,6 +194,7 @@ export default function Stats({ onDashboardChange, pendingTradeContext, onClearP
         onDashboardChange={onDashboardChange}
         onStatsUpdate={setAllTimeStats}
         pendingTradeContext={pendingTradeContext}
+        onTradeLinked={onTradeLinked}
       />
     </div>
     </PageContainer>
@@ -229,11 +231,12 @@ export default function Stats({ onDashboardChange, pendingTradeContext, onClearP
 //      Framer's own completion callback gets stuck — which is what
 //      guarantees the next open is a genuinely fresh mount (fresh iframe,
 //      fresh onLoad, pendingTradeContext correctly picked up).
-function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext }) {
+function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext, onTradeLinked }) {
   const [isPresent, safeToRemove] = usePresence();
   const isDesktop = useIsDesktop();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef(null);
+  const handledTradeIdsRef = useRef(new Set()); // trade.id values already linked this session — see the trade:saved handler below
 
   useEffect(() => {
     if (isPresent) return;
@@ -270,10 +273,31 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext }) {
       if (!tradeMsg) return; // neither channel matched — not a message for us
       if (tradeMsg.type !== TRADE_MSG.SAVED) return; // only type this side needs to react to
       if (!isValidTradeContext(tradeMsg.context)) return; // malformed — ignore rather than close on faith
+
       // Success, confirmed by Doers Journal after its own Supabase insert.
+      // Persist the Post↔Trade link (see postTradeLinksApi.js — this is
+      // the ONLY place this ever gets written) before closing, so
+      // Registrar (N) is already correct in Supabase by the time the user
+      // is back on their Post — not just an optimistic local bump that a
+      // reload would silently lose. handledTradeIdsRef guards against
+      // processing the same trade.id twice (e.g. a stray repeated
+      // message); the table's own unique index on trade_id would reject a
+      // real duplicate insert anyway, this just avoids a pointless second
+      // network round-trip for the common case.
+      const tradeId = tradeMsg.trade?.id;
+      if (tradeId && !handledTradeIdsRef.current.has(tradeId)) {
+        handledTradeIdsRef.current.add(tradeId);
+        linkTradeToPost(tradeMsg.context.postId, tradeId).then(ok => {
+          if (ok) onTradeLinked?.(tradeMsg.context.postId);
+        });
+      }
       // Reuse the exact same close path the topbar Back button uses —
       // goBack() + refreshStats() + clearing pendingTradeContext — so a
       // trade:saved close and a manual close can never behave differently.
+      // Not awaited on the link write above: the trade itself is already
+      // safely saved in Doers Journal by this point, so a slow/failed
+      // bookkeeping write here shouldn't trap the user inside the
+      // Dashboard over a secondary concern.
       onClose?.();
     }
     window.addEventListener("message", handleMessage);
@@ -397,7 +421,7 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext }) {
 //
 // onStatsUpdate: bubbles a parsed { winrate, expectancy, totalTrades, profit }
 // up to Stats every time a valid "stats:all-time" message arrives.
-function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate, pendingTradeContext }) {
+function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate, pendingTradeContext, onTradeLinked }) {
   // Reports open/closed up to App.jsx — same useLayoutEffect timing as
   // Post.jsx's `useLayoutEffect(() => { onThreadChange?.(!!openThread) }, ...)`
   // so the freeze on the section underneath (scroll lock + hidden profile
@@ -408,7 +432,7 @@ function StatsDashboardPortal({ open, onClose, onDashboardChange, onStatsUpdate,
     <AnimatePresence>
       {open && (
         <DashboardOverlay key="stats-dashboard-overlay"
-          onClose={onClose} onStatsUpdate={onStatsUpdate} pendingTradeContext={pendingTradeContext} />
+          onClose={onClose} onStatsUpdate={onStatsUpdate} pendingTradeContext={pendingTradeContext} onTradeLinked={onTradeLinked} />
       )}
     </AnimatePresence>,
     document.body
