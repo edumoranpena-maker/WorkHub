@@ -21,6 +21,7 @@ import { PageContainer } from "./lib/layout.jsx";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
+import { fetchAllTimeStats } from "./lib/statsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
 import { WorkContextProvider, useWorkContextStore } from "./lib/workContext.jsx";
@@ -1218,7 +1219,7 @@ function App({ onGoHome, onOpenSettings }) {
   // so it can never leak into an unrelated later Registrar session.
   const [pendingTradeContext, setPendingTradeContext] = useState(null);
 
-  // Post/ThreadView/SubtemaView's "Registrar" action calls this with
+  // Post/ThreadView's "Registrar" action calls this with
   // { source: "post", postId } or { source: "subtema", postId, subtemaId }.
   // navigate("statsDashboard") — never replace(), never navigating straight
   // to "stats" — is what stacks the Dashboard on top of whatever Post/
@@ -1229,6 +1230,49 @@ function App({ onGoHome, onOpenSettings }) {
     setPendingTradeContext(context);
     navigateRoute("statsDashboard");
   }, [navigateRoute]);
+
+  // Fires once, right after Stats.jsx's DashboardOverlay successfully
+  // records a new Post↔Trade link (see postTradeLinksApi.js) following a
+  // valid trade:saved — never on a normal "Ver Dashboard completo" visit,
+  // which never has a pendingTradeContext to link against. Post.jsx reacts
+  // to this to optimistically bump its own tradeCounts map by 1 for that
+  // postId, so "Registrar (N)" updates the instant the user is back,
+  // without waiting on a full re-fetch. The link itself is already
+  // persisted in Supabase by the time this fires, so a page reload
+  // recomputes the same true count independently — this is purely the
+  // "don't make the user wait for it" optimistic layer on top of that.
+  const [tradeLinkedSignal, setTradeLinkedSignal] = useState(null); // { postId, at } | null
+  const handleTradeLinked = useCallback((postId) => {
+    setTradeLinkedSignal({ postId, at: Date.now() });
+  }, []);
+
+  // All-Time Winrate for the Perfil header stat — same fetchAllTimeStats()
+  // Stats.jsx already uses for its own Dashboard cards (see statsApi.js),
+  // called a second time from here rather than threading Stats' own copy
+  // across sections; not a duplicated QUERY, just a second call to the one
+  // shared function, same as the file's own docs describe as the intended
+  // usage pattern. null until it resolves, and again if there's no data —
+  // profileStats below turns that into the "—" placeholder rather than a
+  // made-up percentage.
+  const [allTimeStats, setAllTimeStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllTimeStats().then(s => { if (!cancelled) setAllTimeStats(s); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // profileConfig.stats stays exactly what it is (the user-editable config,
+  // untouched) — this only overlays the live Winrate value onto the
+  // "winrate" entry at render time, the same way `hidden`/hidden-portal
+  // state overlays visibility without mutating config elsewhere in this file.
+  const profileStats = useMemo(
+    () => profileConfig.stats.map(s =>
+      s.key === "winrate"
+        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : "—" }
+        : s
+    ),
+    [profileConfig.stats, allTimeStats]
+  );
 
   // Close the purple speed-dial and reset thread flag whenever the section changes
   useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
@@ -1470,13 +1514,13 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
         </div>
         <div style={visible("stats")}>
-          <Stats onDashboardChange={setInsideFullscreenOverlay} pendingTradeContext={pendingTradeContext} onClearPendingTrade={() => setPendingTradeContext(null)} />
+          <Stats onDashboardChange={setInsideFullscreenOverlay} pendingTradeContext={pendingTradeContext} onClearPendingTrade={() => setPendingTradeContext(null)} onTradeLinked={handleTradeLinked} />
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
@@ -1562,7 +1606,7 @@ function App({ onGoHome, onOpenSettings }) {
             triggered there. */}
         <ProfileRegion
           hidden={insideFullscreenOverlay}
-          profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileConfig.stats, socials: profileConfig.socials }}
+          profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileStats, socials: profileConfig.socials }}
           isOwner={false}
           onEditAvatar={onOpenSettings}
           followed={followed}
