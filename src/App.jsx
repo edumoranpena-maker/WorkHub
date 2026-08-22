@@ -1251,15 +1251,27 @@ function App({ onGoHome, onOpenSettings }) {
   // called a second time from here rather than threading Stats' own copy
   // across sections; not a duplicated QUERY, just a second call to the one
   // shared function, same as the file's own docs describe as the intended
-  // usage pattern. null until it resolves, and again if there's no data —
-  // profileStats below turns that into the "—" placeholder rather than a
-  // made-up percentage.
+  // usage pattern.
+  //
+  // Re-runs on every tradeLinkedSignal (once on mount, since that starts
+  // null, then again each time a trade gets linked to a Post) — Doers'
+  // All-Time Winrate genuinely changes once a new trade is registered, so
+  // Perfil needs to pick that up rather than only ever fetching once.
+  //
+  // setAllTimeStats(prev => s ?? prev): a resolved value always replaces
+  // whatever was there ("reemplazar automáticamente el valor anterior por
+  // el nuevo" once the query actually has fresh data) — but a fetch that
+  // comes back null/no-data keeps the last known good value instead of
+  // blanking it, so a mid-session refetch (or a transient failure) never
+  // regresses an already-showing real percentage back to "—". "—" is only
+  // ever seen before the very first value has ever arrived this session —
+  // exactly the one case where there's genuinely nothing to fall back to.
   const [allTimeStats, setAllTimeStats] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    fetchAllTimeStats().then(s => { if (!cancelled) setAllTimeStats(s); });
+    fetchAllTimeStats().then(s => { if (!cancelled) setAllTimeStats(prev => s ?? prev); });
     return () => { cancelled = true; };
-  }, []);
+  }, [tradeLinkedSignal]);
 
   // Close the purple speed-dial and reset thread flag whenever the section changes
   useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
