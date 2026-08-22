@@ -276,14 +276,23 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext, onTrade
 
       // Success, confirmed by Doers Journal after its own Supabase insert.
       // Persist the Post↔Trade link (see postTradeLinksApi.js — this is
-      // the ONLY place this ever gets written) before closing, so
-      // Registrar (N) is already correct in Supabase by the time the user
-      // is back on their Post — not just an optimistic local bump that a
-      // reload would silently lose. handledTradeIdsRef guards against
-      // processing the same trade.id twice (e.g. a stray repeated
-      // message); the table's own unique index on trade_id would reject a
-      // real duplicate insert anyway, this just avoids a pointless second
-      // network round-trip for the common case.
+      // the ONLY place this ever gets written), so Registrar (N) is
+      // already correct in Supabase the moment the user eventually leaves.
+      // handledTradeIdsRef guards against processing the same trade.id
+      // twice (e.g. a stray repeated message); the table's own unique
+      // index on trade_id would reject a real duplicate insert anyway,
+      // this just avoids a pointless second network round-trip for the
+      // common case.
+      //
+      // Deliberately does NOT call onClose() anymore — trade:saved used to
+      // close the Dashboard and goBack() automatically; now the user stays
+      // inside Doers Journal (which shows its own "✓ Trade registrado
+      // correctamente" confirmation) and leaves manually via the topbar
+      // arrow whenever they're ready. onClose is still exactly what that
+      // arrow calls (see the topbar button below) — trade:saved and a
+      // manual close both still end up going through the same
+      // handleCloseDashboard in Stats.jsx, just no longer triggered
+      // automatically from here.
       const tradeId = tradeMsg.trade?.id;
       if (tradeId && !handledTradeIdsRef.current.has(tradeId)) {
         handledTradeIdsRef.current.add(tradeId);
@@ -291,14 +300,6 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext, onTrade
           if (ok) onTradeLinked?.(tradeMsg.context.postId);
         });
       }
-      // Reuse the exact same close path the topbar Back button uses —
-      // goBack() + refreshStats() + clearing pendingTradeContext — so a
-      // trade:saved close and a manual close can never behave differently.
-      // Not awaited on the link write above: the trade itself is already
-      // safely saved in Doers Journal by this point, so a slow/failed
-      // bookkeeping write here shouldn't trap the user inside the
-      // Dashboard over a secondary concern.
-      onClose?.();
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
@@ -356,10 +357,16 @@ function DashboardOverlay({ onClose, onStatsUpdate, pendingTradeContext, onTrade
       style={{ position: "fixed", inset: 0, zIndex: 9999, background: C.surface, display: "flex", flexDirection: "column" }}>
 
       {/* Topbar — owned entirely by this portal, independent of PlanSpace's
-          MobileTopBar/Sidebar/Chips underneath. */}
+          MobileTopBar/Sidebar/Chips underneath. The arrow's label depends
+          on how we got here: pendingTradeContext only ever has a value
+          when this Dashboard was opened via Registrar from a Post (see
+          App.jsx's handleRegisterTrade) — in that case the arrow means
+          "go back to that Post", not "go back to Stats", so it's shown
+          bare. A normal "Ver Dashboard completo" open never sets
+          pendingTradeContext, so that case is completely unchanged. */}
       <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", gap: 12, borderBottom: `1px solid ${C.border}`, background: `${C.surface}f0`, backdropFilter: "blur(24px)", flexShrink: 0, minHeight: 56 }}>
         <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 3, color: C.teal, background: "none", border: "none", cursor: "pointer", fontFamily: font, fontSize: 15, fontWeight: 500, padding: "4px 0", flexShrink: 0 }}>
-          <ChevronLeft size={19} strokeWidth={2.2} /> Stats
+          <ChevronLeft size={19} strokeWidth={2.2} /> {!pendingTradeContext && "Stats"}
         </button>
         <span style={{ flex: 1, color: C.text, fontFamily: font, fontSize: 15, fontWeight: 700, letterSpacing: "-0.015em", textAlign: "center", marginRight: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           Dashboard
