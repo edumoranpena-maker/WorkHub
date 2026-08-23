@@ -33,6 +33,28 @@ import { resolveTheme, tokensToC }                   from "./config/themes.js";
 import { resolveIcon, ICON_OPTIONS as ICON_REG_OPTIONS } from "./registry/icons.js";
 import { ThemeProvider, useTheme }                   from "./engine/ThemeProvider.jsx";
 
+// ─── Winrate placeholder persistence ───────────────────────────────────────
+// No existing cache/storage mechanism in this project holds a single scalar
+// like this one (WorkContextProvider is a TTL'd in-memory store for section
+// state like scroll position, not meant to survive a reload — checked
+// before adding this), so a small dedicated localStorage key is the
+// smallest fit rather than reusing something not built for persistence.
+// Only ever written a valid finite number — never null/undefined/"—" (see
+// refreshStats in App() below, the only call site for the write side).
+const WINRATE_CACHE_KEY = "xplannation:lastWinrate";
+function readCachedWinrate() {
+  try {
+    const raw = localStorage.getItem(WINRATE_CACHE_KEY);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch { return null; } // private browsing / storage disabled — degrade to no placeholder, never throw
+}
+function writeCachedWinrate(n) {
+  try {
+    if (typeof n === "number" && Number.isFinite(n)) localStorage.setItem(WINRATE_CACHE_KEY, String(n));
+  } catch { /* ignore — same as above */ }
+}
+
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 // C and font are now derived from ThemeProvider at runtime.
 // Components inside ThemeProvider use useTheme() to access them.
@@ -1246,32 +1268,48 @@ function App({ onGoHome, onOpenSettings }) {
     setTradeLinkedSignal({ postId, at: Date.now() });
   }, []);
 
-  // All-Time Winrate for the Perfil header stat — same fetchAllTimeStats()
-  // Stats.jsx already uses for its own Dashboard cards (see statsApi.js),
-  // called a second time from here rather than threading Stats' own copy
-  // across sections; not a duplicated QUERY, just a second call to the one
-  // shared function, same as the file's own docs describe as the intended
-  // usage pattern.
+  // ── All-Time stats (Doers) — single source of truth, shared by Stats.jsx's
+  // own summary cards AND Perfil's Winrate stat ──────────────────────────────
+  // This USED to be two independent fetchAllTimeStats() calls: one here
+  // (refetching only when tradeLinkedSignal changed — i.e. only after a
+  // NEW trade was registered via Registrar) and one inside Stats.jsx
+  // itself (refetching on mount AND every time the Dashboard portal
+  // closed, for ANY reason). That mismatch was exactly why Perfil lagged
+  // behind Stats: deleting a trade in Doers never touched
+  // tradeLinkedSignal at all, so Perfil never found out, while Stats
+  // always refreshes on close regardless of add/delete.
   //
-  // Re-runs on every tradeLinkedSignal (once on mount, since that starts
-  // null, then again each time a trade gets linked to a Post) — Doers'
-  // All-Time Winrate genuinely changes once a new trade is registered, so
-  // Perfil needs to pick that up rather than only ever fetching once.
-  //
-  // setAllTimeStats(prev => s ?? prev): a resolved value always replaces
-  // whatever was there ("reemplazar automáticamente el valor anterior por
-  // el nuevo" once the query actually has fresh data) — but a fetch that
-  // comes back null/no-data keeps the last known good value instead of
-  // blanking it, so a mid-session refetch (or a transient failure) never
-  // regresses an already-showing real percentage back to "—". "—" is only
-  // ever seen before the very first value has ever arrived this session —
-  // exactly the one case where there's genuinely nothing to fall back to.
+  // Now there's exactly one fetchAllTimeStats() call site, one piece of
+  // state, and one refresh trigger — Stats.jsx no longer keeps its own
+  // copy, it reads these as props and calls refreshStats (passed down as
+  // onRefreshStats) at the same close-the-Dashboard moment it always did.
+  // tradeLinkedSignal is untouched and still exists — Post.jsx's
+  // "Registrar (N)" counter still depends on it, that's a separate concern
+  // from Winrate.
   const [allTimeStats, setAllTimeStats] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchAllTimeStats().then(s => { if (!cancelled) setAllTimeStats(prev => s ?? prev); });
-    return () => { cancelled = true; };
-  }, [tradeLinkedSignal]);
+  const [statsLoaded,  setStatsLoaded]  = useState(false);
+
+  // Last known Winrate, used ONLY as a placeholder while a fresh fetch is
+  // in flight (or hasn't started yet) — the live allTimeStats.winrate above
+  // always wins the moment it's available; this is never the value that's
+  // considered authoritative, purely what's shown instead of "—" so the
+  // header isn't blank on every load. Seeded from localStorage so it
+  // survives a reload/reopen — "durante la sesión" isn't enough per this
+  // round's spec, it has to survive closing the app entirely.
+  const [lastKnownWinrate, setLastKnownWinrate] = useState(() => readCachedWinrate());
+
+  const refreshStats = useCallback(() => {
+    fetchAllTimeStats().then(stats => {
+      setAllTimeStats(stats);
+      setStatsLoaded(true);
+      if (stats && typeof stats.winrate === "number" && Number.isFinite(stats.winrate)) {
+        setLastKnownWinrate(stats.winrate);
+        writeCachedWinrate(stats.winrate); // only ever a valid finite number — never null/undefined/"—"
+      }
+    });
+  }, []);
+
+  useEffect(() => { refreshStats(); }, [refreshStats]);
 
   // Close the purple speed-dial and reset thread flag whenever the section changes
   useEffect(() => { setFabOpen(false); setInsideFullscreenOverlay(false); }, [activeSectionId]);
@@ -1322,23 +1360,26 @@ function App({ onGoHome, onOpenSettings }) {
   const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
 
   // profileConfig.stats stays exactly what it is (the user-editable config,
-  // untouched) — this only overlays the live Winrate value onto the
-  // "winrate" entry at render time. Lives here, right after profileConfig
-  // itself is declared, specifically because it reads profileConfig — this
-  // exact useMemo previously sat much earlier in the component (up near
-  // pendingTradeContext/allTimeStats), referencing profileConfig before its
-  // own `const` declaration had run in that render — a TDZ ReferenceError
-  // ("Cannot access 'profileConfig' before initialization", minified to
-  // "Ie" in the production bundle). allTimeStats itself is still fetched
-  // in its own effect near pendingTradeContext — that part never touched
-  // profileConfig and was never the problem.
+  // untouched) — this only overlays the Winrate value onto the "winrate"
+  // entry at render time. Lives here, right after profileConfig itself is
+  // declared (reads profileConfig — see the TDZ note this comment used to
+  // carry, now resolved by this placement).
+  //
+  // allTimeStats (the live, just-fetched value) always wins when present.
+  // While it's still loading — or hasn't been fetched yet this page load —
+  // lastKnownWinrate (seeded from localStorage, see readCachedWinrate near
+  // the top of this file) is shown instead of blanking to "—", so a
+  // returning user sees their last real Winrate immediately rather than a
+  // dash that then jumps to a number a moment later. "—" only appears the
+  // very first time this app has ever loaded on this device, before either
+  // value has ever existed.
   const profileStats = useMemo(
     () => profileConfig.stats.map(s =>
       s.key === "winrate"
-        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : "—" }
+        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : (lastKnownWinrate != null ? `${lastKnownWinrate.toFixed(1)}%` : "—") }
         : s
     ),
-    [profileConfig.stats, allTimeStats]
+    [profileConfig.stats, allTimeStats, lastKnownWinrate]
   );
 
   // Derive runtime data from profileConfig
@@ -1539,7 +1580,7 @@ function App({ onGoHome, onOpenSettings }) {
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
         </div>
         <div style={visible("stats")}>
-          <Stats onDashboardChange={setInsideFullscreenOverlay} pendingTradeContext={pendingTradeContext} onClearPendingTrade={() => setPendingTradeContext(null)} onTradeLinked={handleTradeLinked} />
+          <Stats onDashboardChange={setInsideFullscreenOverlay} pendingTradeContext={pendingTradeContext} onClearPendingTrade={() => setPendingTradeContext(null)} onTradeLinked={handleTradeLinked} allTimeStats={allTimeStats} statsLoaded={statsLoaded} onRefreshStats={refreshStats} onStatsUpdate={setAllTimeStats} />
         </div>
         <div style={visible("rooms")}>
           <RoomsContent />
