@@ -20,21 +20,23 @@
  * ── Where the summary cards' data comes from ────────────────────────────
  * lib/statsApi.js#fetchAllTimeStats() — a direct Supabase read against the
  * `v_alltime_stats` view (same Postgres project Doers Journal itself writes
- * to, after the shared-Supabase migration). Fetched once when Stats mounts,
- * completely independent of whether the user ever opens the Dashboard
- * portal — that's the whole point: the cards are real data from the moment
- * the user lands on the section, no iframe load required. Doers Journal and
- * PlanSpace read the exact same view, so there's no duplicated calculation
- * logic anywhere.
+ * to, after the shared-Supabase migration). The fetch itself, and the
+ * resulting allTimeStats/statsLoaded state, now live in App.jsx — NOT
+ * here — because Perfil's Winrate stat needs the exact same value on the
+ * exact same refresh schedule (see App.jsx's own comment on allTimeStats
+ * for why two independent copies used to drift out of sync). Stats.jsx
+ * receives allTimeStats/statsLoaded/onRefreshStats/onStatsUpdate as props
+ * and is otherwise unchanged — same cards, same empty-state message, same
+ * refresh-on-Dashboard-close timing.
  *
  * ── The postMessage bridge (lib/doersJournalBridge.js) ──────────────────
  * Still lives here, still wired into StatsDashboardPortal via onStatsUpdate
  * — if Doers Journal happens to push a fresher stats:all-time message while
  * the Dashboard is open (e.g. right after the user logs a trade in there),
- * the cards pick it up live. But it's no longer the ONLY way the cards get
- * data, and it's not what populates them on first load. Its real reason for
- * being here going forward is the message types reserved for later features
- * — trade:open-form, profile:metric-update — see that file for the full
+ * the cards (and, now, Perfil too, since it's the same shared state) pick
+ * it up live. But it's not what populates them on first load. Its real
+ * reason for being here going forward is the message types reserved for
+ * later features — profile:metric-update — see that file for the full
  * catalogue.
  */
 import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
@@ -47,7 +49,6 @@ import {
   TRADE_MSG, postTradeOpenForm, readTradeBridgeMessage, isValidTradeContext,
 } from "../lib/doersJournalBridge.js";
 import { linkTradeToPost } from "../lib/postTradeLinksApi.js";
-import { fetchAllTimeStats } from "../lib/statsApi.js";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import { useNavigation } from "../lib/navigation.jsx";
 
@@ -105,35 +106,19 @@ function summaryFromStats(stats) {
 // portal opens/closes, same contract as Post.jsx's onThreadChange, so the
 // section underneath (unified scroll + profile header) can be frozen the
 // same way it already is for Thread.
-export default function Stats({ onDashboardChange, pendingTradeContext, onClearPendingTrade, onTradeLinked }) {
+export default function Stats({ onDashboardChange, pendingTradeContext, onClearPendingTrade, onTradeLinked, allTimeStats, statsLoaded, onRefreshStats, onStatsUpdate }) {
   const isDesktop = useIsDesktop();
   const { route, navigate, goBack } = useNavigation();
   const dashboardOpen = route.routeId === "statsDashboard";
 
-  // All-Time summary. Populated automatically on mount via a direct read
-  // (fetchAllTimeStats → v_alltime_stats), independent of the Dashboard
-  // portal. `statsLoaded` distinguishes "haven't fetched yet" from "fetched,
-  // genuinely nothing to show" so the empty-state message below only
-  // appears once we actually know there are no trades, not during the brief
-  // initial load.
-  //
-  // Stats stays permanently mounted while the app is open (App.jsx toggles
-  // it with display:none/block on tab switch, it never unmounts) — so a
-  // plain mount-only fetch would go stale forever after the first load and
-  // never notice a trade edited later. refreshStats is called again when the
-  // Dashboard portal closes (the moment the user is most likely to have just
-  // edited something in Doers Journal), so the cards catch up right after.
-  const [allTimeStats, setAllTimeStats] = useState(null);
-  const [statsLoaded, setStatsLoaded] = useState(false);
-
-  const refreshStats = useCallback(() => {
-    fetchAllTimeStats().then(stats => {
-      setAllTimeStats(stats);
-      setStatsLoaded(true);
-    });
-  }, []);
-
-  useEffect(() => { refreshStats(); }, [refreshStats]);
+  // allTimeStats/statsLoaded and the refresh trigger itself now live in
+  // App.jsx (see its own comment there for why: this used to be a second,
+  // independent fetchAllTimeStats() call refreshing on a different
+  // schedule than Perfil's copy, which is exactly why Perfil used to lag
+  // behind these same cards after a trade was added or deleted). Stats.jsx
+  // keeps calling it "refreshStats" locally purely so the rest of this
+  // file doesn't need to change — it's App's onRefreshStats underneath.
+  const refreshStats = onRefreshStats;
 
   // Single close path for the Dashboard portal — used by the topbar Back
   // button (cancel/close without saving) AND, unchanged, by a valid
@@ -192,7 +177,7 @@ export default function Stats({ onDashboardChange, pendingTradeContext, onClearP
         open={dashboardOpen}
         onClose={handleCloseDashboard}
         onDashboardChange={onDashboardChange}
-        onStatsUpdate={setAllTimeStats}
+        onStatsUpdate={onStatsUpdate}
         pendingTradeContext={pendingTradeContext}
         onTradeLinked={onTradeLinked}
       />
