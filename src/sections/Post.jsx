@@ -63,6 +63,7 @@ import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory, useScrollMemory } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 import { fetchTradeCounts } from "../lib/postTradeLinksApi.js";
+import { getPostUrl } from "../lib/internalUrls.js";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
 if (typeof document !== "undefined" && !document.getElementById("post-kf")) {
@@ -808,7 +809,7 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
   // option simply doesn't appear rather than being clickable-but-a-no-op.
   const menuActions = buildContentMenuActions({
     onEdit:      onEdit   && (() => onEdit(thread)),
-    onRegister:  onRegister && (() => onRegister({ source: "post", postId: thread.id })),
+    onRegister:  onRegister && (() => onRegister({ source: "post", postId: thread.id, postUrl: getPostUrl(thread.id) })),
     registerCount,
     onDelete:    onDelete && (() => setConfirmDelete(true)),
     onShare:     onShare  && (() => onShare(thread)),
@@ -1863,7 +1864,7 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
 
   const menuActions = buildContentMenuActions({
     onEdit:     () => setEditingThread(true),
-    onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "post", postId: thread.id })),
+    onRegister: onRegisterTrade && (() => onRegisterTrade({ source: "post", postId: thread.id, postUrl: getPostUrl(thread.id) })),
     registerCount,
     onDelete:   () => setConfirmDeleteThread(true),
     onShare:    () => {},
