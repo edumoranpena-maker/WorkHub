@@ -130,10 +130,15 @@ export function parseAllTimeStatsPayload(payload) {
  *
  * ── Message types ─────────────────────────────────────────────────────────
  *   PlanSpace → Doers Journal
- *     "trade:open-form" — { context: { source: "post", postId } |
+ *     "trade:open-form" — { context: { source: "post", postId, postUrl? } |
  *                                     { source: "subtema", postId, subtemaId } }
  *                          Opens "Nuevo Trade" directly, pre-loaded with
- *                          where the user should return to.
+ *                          where the user should return to. `postUrl`
+ *                          (optional, Post only) is a full URL from
+ *                          lib/internalUrls.js — Doers Journal uses it only
+ *                          to pre-fill the Link field, never required by
+ *                          isValidTradeContext below since its absence
+ *                          shouldn't block opening the form.
  *
  *   Doers Journal → PlanSpace
  *     "trade:saved"     — { context: <the same context sent above>,
