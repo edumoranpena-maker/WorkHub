@@ -1365,21 +1365,27 @@ function App({ onGoHome, onOpenSettings }) {
   // declared (reads profileConfig — see the TDZ note this comment used to
   // carry, now resolved by this placement).
   //
-  // allTimeStats (the live, just-fetched value) always wins when present.
-  // While it's still loading — or hasn't been fetched yet this page load —
-  // lastKnownWinrate (seeded from localStorage, see readCachedWinrate near
-  // the top of this file) is shown instead of blanking to "—", so a
-  // returning user sees their last real Winrate immediately rather than a
-  // dash that then jumps to a number a moment later. "—" only appears the
-  // very first time this app has ever loaded on this device, before either
-  // value has ever existed.
+  // allTimeStats (the live, shared value — same one Stats.jsx's own cards
+  // read via summaryFromStats) always wins when present. The ONLY case
+  // where allTimeStats is null AND we don't show "—" is before the very
+  // first fetch of this page load has resolved (!statsLoaded) — that's the
+  // narrow window lastKnownWinrate (seeded from localStorage) exists for.
+  //
+  // Critically: once statsLoaded is true, a null allTimeStats is trusted
+  // exactly like Stats.jsx trusts it (→ "—"), never masked by
+  // lastKnownWinrate. Gating on statsLoaded was the actual missing piece —
+  // without it, a refetch that legitimately (or transiently) resolves to
+  // null after the first load would keep showing the stale cached number
+  // in Profile while Stats correctly went to "—", which is exactly the
+  // "Profile lags behind Stats" symptom: not a timing difference, a
+  // permanent fallback that never let go once the first value arrived.
   const profileStats = useMemo(
     () => profileConfig.stats.map(s =>
       s.key === "winrate"
-        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : (lastKnownWinrate != null ? `${lastKnownWinrate.toFixed(1)}%` : "—") }
+        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : (!statsLoaded && lastKnownWinrate != null ? `${lastKnownWinrate.toFixed(1)}%` : "—") }
         : s
     ),
-    [profileConfig.stats, allTimeStats, lastKnownWinrate]
+    [profileConfig.stats, allTimeStats, statsLoaded, lastKnownWinrate]
   );
 
   // Derive runtime data from profileConfig
