@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
   Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
-  Users, BarChart2, TrendingUp, TrendingDown, Star, X, Plus, Zap, Pencil, CheckSquare,
+  Users, BarChart2, TrendingUp, TrendingDown, Minus, Star, X, Plus, Zap, Pencil, CheckSquare,
 } from "lucide-react";
 import ProfileRegion from "./components/ProfileRegion.jsx";
 import HomeFeed      from "./HomeFeed.jsx";
@@ -21,7 +21,7 @@ import { PageContainer } from "./lib/layout.jsx";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
 import { createRecapThread } from "./lib/recapsApi.js";
-import { fetchAllTimeStats } from "./lib/statsApi.js";
+import { fetchAllTimeStats, fetchLatestTrades } from "./lib/statsApi.js";
 import { PublishQueueProvider, usePublishQueue } from "./lib/publishQueue.jsx";
 import { ComposerLockProvider, useComposerLock } from "./lib/composerLock.jsx";
 import { WorkContextProvider, useWorkContextStore } from "./lib/workContext.jsx";
@@ -204,34 +204,57 @@ function TopBar({ onHome, profileName, onOpenSettings, isDesktop, showProfileNam
 }
 
 // ─── Latest Trades Mini Card ──────────────────────────────────────────────────
-function LatestTradesCard({ onNavigate }) {
-  const trades = [
-    { symbol: "XAUUSD", pnl: "+3.2R",  win: true  },
-    { symbol: "DXY",    pnl: "-1.0R",  win: false },
-    { symbol: "EURUSD", pnl: "+2.5R",  win: true  },
-    { symbol: "GBPUSD", pnl: "+1.8R",  win: true  },
-  ];
+function LatestTradesCard({ onNavigate, trades }) {
+  const rows = (trades || []).slice(0, 5);
+  // Subtle blue-gray surface, scoped to this card only — the app's true
+  // background is pure black (C.bg), and this sits just barely above it.
+  // Deliberately NOT C.card (that token is the "dark-purple" theme's own
+  // purple-tinted surface, which is exactly what this card is moving away
+  // from) — a bespoke slate wash instead, translucent enough that it
+  // reads as "a slightly different plane of black", not a colored block.
+  const cardBg     = "rgba(71,85,105,0.06)";
+  const cardBorder = "rgba(100,116,139,0.16)";
+
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "14px 15px", flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onNavigate("stats")}>
+    <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 18, padding: "14px 15px", flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Latest Trades</span>
-        <span style={{ fontFamily: font, fontSize: 10, color: C.accentLight, fontWeight: 600 }}>→ Stats</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {trades.map((t, i) => (
-          <motion.div key={t.symbol} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.06 + i * 0.05 }}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              {t.win
-                ? <TrendingUp  size={12} color={C.green} strokeWidth={2.2} />
-                : <TrendingDown size={12} color={C.red}  strokeWidth={2.2} />}
-              <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text }}>{t.symbol}</span>
-            </div>
-            <span style={{ fontFamily: font, fontSize: 13, fontWeight: 800, color: t.win ? C.green : C.red }}>{t.pnl}</span>
-          </motion.div>
-        ))}
       </div>
 
+      {rows.length === 0 ? (
+        <p style={{ margin: "2px 0 12px", fontFamily: font, fontSize: 12, color: C.textDim, fontStyle: "italic" }}>
+          Aún no hay trades registrados.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {rows.map((t, i) => {
+            // t.result comes from statsApi.js#fetchLatestTrades — the exact
+            // same rr>0/<0/=0 rule Doers Journal's own monthly_summary SQL
+            // view uses, not a second classification invented here.
+            const color = t.result === "win" ? C.green : t.result === "loss" ? C.red : C.textMuted;
+            const Icon  = t.result === "win" ? TrendingUp : t.result === "loss" ? TrendingDown : Minus; // BE: flat line, no new color, no new icon language
+            const rrLabel = t.result === "be" ? "0R" : `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`;
+            return (
+              <motion.div key={t.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.06 + i * 0.05 }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                  <Icon size={12} color={color} strokeWidth={2.2} style={{ flexShrink: 0 }} />
+                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.pair}</span>
+                </div>
+                <span style={{ fontFamily: font, fontSize: 13, fontWeight: 800, color, flexShrink: 0 }}>{rrLabel}</span>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* "Ver Stats" — a text CTA, not a button (no fill, no border, no
+          padding-box) — gold, matching the Binance-inspired accent used
+          elsewhere (Tools, Sticky Notes), never the old purple accentLight. */}
+      <motion.div whileHover={{ x: 2 }} onClick={() => onNavigate("stats")} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+        <span style={{ fontFamily: font, fontSize: 12, fontWeight: 700, color: C.gold }}>Ver Stats</span>
+        <ArrowRight size={12} color={C.gold} strokeWidth={2.5} />
+      </motion.div>
     </div>
   );
 }
@@ -341,7 +364,7 @@ function BadgesMuseum() {
 }
 
 // ─── Perfil Content (replaces old OverviewContent) ───────────────────────────
-function PerfilContent({ onNavigate, visibleWidgets, sections, isHost, onCreatePost, isDesktop }) {
+function PerfilContent({ onNavigate, visibleWidgets, sections, isHost, onCreatePost, isDesktop, latestTrades }) {
   // Sections to show preview cards for (skip metrics — no PREVIEW_POSTS for it)
   const feedSections = (sections || SECTIONS).filter(s => PREVIEW_POSTS[s.id]);
 
@@ -350,7 +373,7 @@ function PerfilContent({ onNavigate, visibleWidgets, sections, isHost, onCreateP
     <div style={{ paddingBottom: 40 }}>
       {/* ── Two-column cards row: Latest Trades + Reviews ── */}
       <div style={{ padding: "18px 18px 0", display: "flex", gap: 12 }}>
-        <LatestTradesCard onNavigate={onNavigate} />
+        <LatestTradesCard onNavigate={onNavigate} trades={latestTrades} />
         <ReviewsCard onVerMas={() => onNavigate("rooms")} />
       </div>
 
@@ -1289,6 +1312,12 @@ function App({ onGoHome, onOpenSettings }) {
   const [allTimeStats, setAllTimeStats] = useState(null);
   const [statsLoaded,  setStatsLoaded]  = useState(false);
 
+  // Latest Trades card (Perfil feed) — fetched by this SAME refreshStats,
+  // not a separate mechanism. "no quiero polling / intervalos / esperar a
+  // que Profile vuelva a montar" is satisfied the same way Winrate already
+  // satisfies it: one shared refresh trigger (Dashboard-close), reused.
+  const [latestTrades, setLatestTrades] = useState([]);
+
   // Last known Winrate, used ONLY as a placeholder while a fresh fetch is
   // in flight (or hasn't started yet) — the live allTimeStats.winrate above
   // always wins the moment it's available; this is never the value that's
@@ -1307,6 +1336,7 @@ function App({ onGoHome, onOpenSettings }) {
         writeCachedWinrate(stats.winrate); // only ever a valid finite number — never null/undefined/"—"
       }
     });
+    fetchLatestTrades(5).then(setLatestTrades);
   }, []);
 
   useEffect(() => { refreshStats(); }, [refreshStats]);
@@ -1577,7 +1607,7 @@ function App({ onGoHome, onOpenSettings }) {
     return (
       <>
         <div style={visible(null)}>
-          <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} />
+          <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} latestTrades={latestTrades} />
         </div>
         <div style={visible("recaps")}>
           <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} />
