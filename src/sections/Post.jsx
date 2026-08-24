@@ -88,6 +88,7 @@ const C = {
   green: "#1ed99a", greenDim: "rgba(30,217,154,0.12)",
   amber: "#f5a623", blue: "#4fa3ff", red: "#ff4f6a",
   teal: "#22d3a0", tealDim: "rgba(34,211,160,0.14)",
+  gold: "#d4a843",
 };
 const font = "'DM Sans', sans-serif";
 
@@ -1562,6 +1563,72 @@ function buildThreadMediaSequence(thread, linksById = {}) {
   return { items, groups };
 }
 
+// ─── Thread's internal tab strip (Thread | Resumen | Checklist | Stats) ────
+// Purely a navigation/visual scaffold for this pass — only the "Thread" tab
+// has real content (exactly what ThreadView already rendered before this
+// change); the other three are placeholders, wired up in later tasks.
+// Belongs to Thread/Post only — SubtemaView never receives this (see its
+// own render, unchanged).
+const THREAD_TABS = [
+  { id: "thread",    label: "Thread" },
+  { id: "summary",   label: "Resumen" },
+  { id: "checklist", label: "Checklist" },
+  { id: "stats",     label: "Stats" },
+];
+
+// Browser-tab visual language, not buttons/pills/cards: a flat strip that
+// sits on the same near-black surface as everything else, where the active
+// tab is picked out only by a barely-lighter blue-gray fill (same subtle
+// slate wash used elsewhere in the new palette — see LatestTradesCard in
+// App.jsx) plus a hairline gold underline — never a gold FILL, gold stays
+// reserved for accents. Inactive tabs carry no background at all, just
+// dimmer text, so they read as "recessed into the strip" rather than as
+// separate elements.
+function ThreadTabsBar({ active, onChange }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-end", gap: 2,
+      padding: "0 12px", overflowX: "auto", WebkitOverflowScrolling: "touch",
+      background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0,
+      position: "sticky", top: 56, zIndex: 29, // 56 = TopBar's own minHeight, so this sits flush right beneath it and stays visible while the tab's own body scrolls underneath — same "always-visible" behavior as real browser tabs
+    }}>
+      {THREAD_TABS.map(tab => {
+        const isActive = active === tab.id;
+        return (
+          <button key={tab.id} onClick={() => onChange(tab.id)}
+            style={{
+              position: "relative", flexShrink: 0, whiteSpace: "nowrap",
+              padding: "9px 13px", marginBottom: isActive ? -1 : 0,
+              background: isActive ? "rgba(100,116,139,0.12)" : "transparent",
+              border: "none", borderRadius: "8px 8px 0 0",
+              color: isActive ? C.text : C.textMuted,
+              fontFamily: font, fontSize: 12.5, fontWeight: isActive ? 700 : 500,
+              cursor: "pointer", transition: "background 0.18s ease, color 0.18s ease",
+            }}>
+            {tab.label}
+            {isActive && (
+              <span style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 2, borderRadius: 1, background: C.gold }} />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Minimal placeholder body for the three not-yet-implemented tabs — same
+// PageContainer width/centering as the real Thread content, so switching
+// tabs doesn't visibly shift the content column.
+function ThreadTabPlaceholder({ isDesktop, label }) {
+  return (
+    <PageContainer isDesktop={isDesktop} variant="reading">
+      <div style={{ minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 16px" }}>
+        <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>{label}</span>
+      </div>
+    </PageContainer>
+  );
+}
+
 function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade, registerCount = 0 }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   const isDesktop = useIsDesktop();
@@ -1570,6 +1637,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
     const cached = getCachedSubtemas(initialThread.id);
     return cached ? { ...initialThread, subtemas: cached } : initialThread;
   });
+  // Thread | Resumen | Checklist | Stats — purely a display switch inside
+  // THIS Thread instance, not a route (see file header notes on this task's
+  // scope). Defaults to "thread" on every open: since ThreadView remounts
+  // fresh per thread (key={openThread.id} at the call site in Post()),
+  // opening a different Thread — or reopening this same one later — always
+  // starts back on the "Thread" tab with no extra reset logic needed.
+  const [activeThreadTab, setActiveThreadTab] = useState("thread");
   const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -1898,7 +1972,17 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
           </span>
         </motion.div>
 
+        {/* Thread's internal tab strip — Thread | Resumen | Checklist | Stats.
+            Only the interactive (currently-open) surface gets it: the
+            adjacent, non-interactive previews rendered during a
+            swipe-between-threads gesture always show their normal Thread
+            body regardless of this Thread's own tab state — switching
+            threads via swipe is a different navigation than switching tabs
+            within one Thread, so tab state never applies to those. */}
+        {interactive && <ThreadTabsBar active={activeThreadTab} onChange={setActiveThreadTab} />}
+
         {/* Body content — capped + centered; only the TopBar above stays full width */}
+        {(!interactive || activeThreadTab === "thread") ? (
         <PageContainer isDesktop={isDesktop} variant="reading">
         {/* Root Post */}
         <div style={{
@@ -2033,6 +2117,10 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
 
         <div style={{ height: 90 }} />
         </PageContainer>
+        ) : (
+          <ThreadTabPlaceholder isDesktop={isDesktop}
+            label={THREAD_TABS.find(t => t.id === activeThreadTab)?.label} />
+        )}
       </>
     );
   };
