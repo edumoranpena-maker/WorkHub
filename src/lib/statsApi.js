@@ -66,7 +66,7 @@ export async function fetchAllTimeStats() {
  * aggregated in SQL, because the Latest Trades card needs the individual
  * outcome per row, not just a count.
  */
-function tradeResult(rr) {
+export function tradeResult(rr) {
   if (rr > 0) return "win";
   if (rr < 0) return "loss";
   return "be";

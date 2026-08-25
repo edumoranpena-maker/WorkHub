@@ -12,6 +12,7 @@
  * components never import supabase.js directly.
  */
 import { supabase } from "./supabase.js";
+import { tradeResult } from "./statsApi.js";
 
 /**
  * Batch trade-count lookup for every postId in the list — one query for
@@ -47,4 +48,50 @@ export async function linkTradeToPost(postId, tradeId) {
     .insert({ post_id: postId, trade_id: tradeId });
   if (error) { console.error("[postTradeLinksApi] linkTradeToPost:", error.message); return false; }
   return true;
+}
+
+/**
+ * The actual trades registered from ONE specific Post — this is the real
+ * Post↔Trade relation the Thread's Stats tab uses (see Post.jsx's
+ * ThreadStatsTab), not "the latest trades globally" and not a second,
+ * separately-maintained relationship.
+ *
+ * Uses PostgREST's foreign-table embedding across the genuine FK
+ * (post_trade_links.trade_id → trades.id, both tables in the same shared
+ * Supabase project) to fetch post_trade_links joined with their trades in
+ * one round trip, ordered by post_trade_links.created_at — the order each
+ * trade was actually REGISTERED from this Post (Registrar → trade:saved),
+ * which is the "session sequence" this tab wants, not PnL or alphabetical.
+ *
+ * Only ejecutado trades are included — same reasoning as
+ * statsApi.js#fetchLatestTrades: an un-executed "setup seen" row has no
+ * real Win/Loss/BE outcome, so it's filtered out rather than shown with a
+ * misleading result. Because trade_id has `on delete cascade`, a trade
+ * deleted in Doers Journal already has its link row removed by Postgres
+ * itself — this never has to filter out a "ghost" deleted trade by hand.
+ */
+export async function fetchTradesForPost(postId) {
+  if (!postId) return [];
+  const { data, error } = await supabase
+    .from("post_trade_links")
+    .select("created_at, trades(id, pair, rr, pnl, direction, date, hora, ejecutado)")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+  if (error) { console.error("[postTradeLinksApi] fetchTradesForPost:", error.message); return []; }
+  return (data ?? [])
+    .map(row => row.trades)
+    .filter(t => t && t.ejecutado)
+    .map(t => {
+      const rr = Number(t.rr) || 0;
+      return {
+        id: t.id,
+        pair: t.pair,
+        rr,
+        pnl: Number(t.pnl) || 0,
+        direction: t.direction === "short" || t.direction === "long" ? t.direction : null,
+        date: t.date,
+        hora: t.hora,
+        result: tradeResult(rr),
+      };
+    });
 }
