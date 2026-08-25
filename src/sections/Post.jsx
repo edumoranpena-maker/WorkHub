@@ -62,7 +62,7 @@ import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory, useScrollMemory } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
-import { fetchTradeCounts } from "../lib/postTradeLinksApi.js";
+import { fetchTradeCounts, fetchTradesForPost } from "../lib/postTradeLinksApi.js";
 import { getPostUrl } from "../lib/internalUrls.js";
 
 // ─── Keyframes ─────────────────────────────────────────────────────────────────
@@ -1629,7 +1629,104 @@ function ThreadTabPlaceholder({ isDesktop, label }) {
   );
 }
 
-function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade, registerCount = 0 }) {
+// ─── Thread's "Stats" tab — trades registered from THIS Post only ─────────
+// POST = sesión, TRADE = operación individual — this stays deliberately
+// tiny: a count + accumulated R, then a compact accordion list. No
+// Winrate/Profit Factor/Expectancy here on purpose (see Post.jsx's own
+// task notes) — a session usually has 1-2 trades, far too small a sample
+// for those to mean anything.
+function ThreadStatsDetailRow({ label, value, valueColor }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <span style={{ fontFamily: font, fontSize: 11.5, color: C.textMuted }}>{label}</span>
+      <span style={{ fontFamily: font, fontSize: 11.5, fontWeight: 700, color: valueColor || C.text }}>{value}</span>
+    </div>
+  );
+}
+
+function formatThreadStatsDate(isoDate) {
+  if (!isoDate) return null;
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${MONTHS[m - 1]} ${d}`;
+}
+
+function ThreadStatsTradeRow({ trade, expanded, onToggle }) {
+  const color = trade.result === "win" ? C.green : trade.result === "loss" ? C.red : C.textMuted;
+  const resultLabel = trade.result === "win" ? "Win" : trade.result === "loss" ? "Loss" : "BE";
+  const directionLabel = trade.direction === "long" ? "Long" : trade.direction === "short" ? "Short" : null; // trades antiguos sin dirección: se omite, nunca se inventa
+  const rrLabel = trade.result === "be" ? "0R" : `${trade.rr > 0 ? "+" : ""}${trade.rr.toFixed(1)}R`;
+  const dateLabel = formatThreadStatsDate(trade.date);
+
+  return (
+    <div style={{ borderBottom: `1px solid ${C.border}` }}>
+      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 2px", cursor: "pointer", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.pair}</div>
+          <div style={{ fontFamily: font, fontSize: 11.5, color, marginTop: 2 }}>
+            {resultLabel}{directionLabel ? ` · ${directionLabel}` : ""}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontFamily: font, fontSize: 14, fontWeight: 800, color }}>{rrLabel}</span>
+          <ChevronDown size={14} color={C.textMuted} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }} />
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: "0 2px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+          {/* Solo campos reales del modelo de trades — Entry/Exit/Risk no
+              existen en el schema actual de Doers, así que no se muestran
+              (nunca se inventan). "Resultado: Win" no se repite aquí — ya
+              aparece arriba junto a la dirección. */}
+          <ThreadStatsDetailRow label="PnL" value={`${trade.pnl >= 0 ? "+" : "-"}$${Math.abs(trade.pnl).toFixed(2)}`} valueColor={color} />
+          <ThreadStatsDetailRow label="R:R" value={rrLabel} valueColor={color} />
+          {directionLabel && <ThreadStatsDetailRow label="Direction" value={directionLabel} />}
+          {dateLabel && <ThreadStatsDetailRow label="Date" value={dateLabel} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThreadStatsTab({ isDesktop, trades, loaded }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const count = trades.length;
+  const totalR = trades.reduce((s, t) => s + t.rr, 0);
+
+  return (
+    <PageContainer isDesktop={isDesktop} variant="reading">
+      <div style={{ padding: "18px 16px 40px" }}>
+        {!loaded ? (
+          <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Cargando…</span>
+        ) : (
+          <>
+            <div style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text, marginBottom: count > 0 ? 20 : 4 }}>
+              {count} Trade{count !== 1 ? "s" : ""}{count > 0 ? ` · ${totalR >= 0 ? "+" : ""}${totalR.toFixed(1)}R` : ""}
+            </div>
+
+            {count > 0 && (
+              <>
+                <div style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                  Trades
+                </div>
+                <div>
+                  {trades.map(t => (
+                    <ThreadStatsTradeRow key={t.id} trade={t} expanded={expandedId === t.id}
+                      onToggle={() => setExpandedId(id => (id === t.id ? null : t.id))} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </PageContainer>
+  );
+}
+
+function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onStatusChange, onThreadEdited, onThreadDeleted, showComposer, composerMode, onHideComposer, onAddSubtema, onSubtemaChange, onNavigateAdjacent, adjacentThreads, onRegisterTrade, registerCount = 0, tradeLinkedSignal }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   const isDesktop = useIsDesktop();
   const [skipEntrance] = useState(() => { const v = pendingSwipeArrival; pendingSwipeArrival = false; return v; });
@@ -1644,6 +1741,27 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
   // opening a different Thread — or reopening this same one later — always
   // starts back on the "Thread" tab with no extra reset logic needed.
   const [activeThreadTab, setActiveThreadTab] = useState("thread");
+
+  // Stats tab's data — trades registered from THIS Post, via the real
+  // Post↔Trade relation (post_trade_links, see postTradeLinksApi.js).
+  // Fetched (not just once on mount) whenever activeThreadTab becomes
+  // "stats" — covers both the first visit AND any revisit after the user
+  // has been in Doers Journal editing/deleting a trade and comes back to
+  // this Thread, without needing a live push mechanism Doers Journal
+  // doesn't have for edits/deletes. Also refetches if a trade gets linked
+  // to THIS post (tradeLinkedSignal) while already sitting on the tab —
+  // covers Registrar completing without having to leave and reopen it.
+  const [postTrades, setPostTrades] = useState([]);
+  const [postTradesLoaded, setPostTradesLoaded] = useState(false);
+  useEffect(() => {
+    if (activeThreadTab !== "stats") return;
+    let cancelled = false;
+    fetchTradesForPost(thread.id).then(trades => {
+      if (!cancelled) { setPostTrades(trades); setPostTradesLoaded(true); }
+    });
+    return () => { cancelled = true; };
+  }, [activeThreadTab, thread.id, tradeLinkedSignal]);
+
   const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
   const [likeCount, setLikeCount] = useState(initialThread.likes);
@@ -2117,6 +2235,8 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
 
         <div style={{ height: 90 }} />
         </PageContainer>
+        ) : activeThreadTab === "stats" ? (
+          <ThreadStatsTab isDesktop={isDesktop} trades={postTrades} loaded={postTradesLoaded} />
         ) : (
           <ThreadTabPlaceholder isDesktop={isDesktop}
             label={THREAD_TABS.find(t => t.id === activeThreadTab)?.label} />
@@ -2657,6 +2777,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
                 onAddSubtema={(threadId, sub) => { setThreads(prev => prev.map(t => t.id === threadId ? { ...t, subtemas: [...(t.subtemas || []), sub] } : t)); addCachedSubtema(threadId, sub); setUnseenSubtemas(prev => ({ ...prev, [threadId]: true })); }}
                 onRegisterTrade={onRegisterTrade}
                 registerCount={tradeCounts[openThread.id] || 0}
+                tradeLinkedSignal={tradeLinkedSignal}
               />
             </motion.div>
           )}
