@@ -228,12 +228,13 @@ function LatestTradesCard({ onNavigate, trades }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
           {rows.map((t, i) => {
-            // t.result comes from statsApi.js#fetchLatestTrades — the exact
-            // same rr>0/<0/=0 rule Doers Journal's own monthly_summary SQL
-            // view uses, not a second classification invented here.
+            // t.result comes from statsApi.js#tradeResult — a $1 PnL band,
+            // matching Doers Journal's own CALENDAR classification exactly
+            // (not an R-multiple sign check). Visual only — never touches
+            // any aggregate stat (those come from fetchAllTimeStats()).
             const color = t.result === "win" ? C.green : t.result === "loss" ? C.red : C.textMuted;
             const Icon  = t.result === "win" ? TrendingUp : t.result === "loss" ? TrendingDown : Minus; // BE: flat line, no new color, no new icon language
-            const rrLabel = t.result === "be" ? "0R" : `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`;
+            const rrLabel = `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`; // valor real siempre — el umbral de PnL clasifica Win/Loss/BE, pero no altera el R mostrado
             return (
               <motion.div key={t.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.06 + i * 0.05 }}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
