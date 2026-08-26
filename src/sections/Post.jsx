@@ -1652,38 +1652,72 @@ function formatThreadStatsDate(isoDate) {
   return `${MONTHS[m - 1]} ${d}`;
 }
 
+// Catálogo de campos reales mostrados en el detalle expandido — data-driven
+// a propósito: agregar un campo nuevo al modelo de trades es agregar UNA
+// línea aquí, sin tocar el resto de ThreadStatsTradeRow/ThreadStatsTab.
+// Symbol/Activo (ya en la cabecera de la fila) y Link (excluido a
+// propósito) nunca aparecen en esta lista — todos los demás campos reales
+// del formulario de Doers sí. Cada entrada extrae y formatea su propio
+// valor desde el trade; si el resultado es null/vacío, esa fila
+// simplemente no se renderiza más abajo — nunca se inventa un valor ni se
+// muestra un placeholder falso.
+const THREAD_STATS_DETAIL_FIELDS = [
+  { key: "pnl",           label: "PnL",           format: t => `${t.pnl >= 0 ? "+" : "-"}$${Math.abs(t.pnl).toFixed(2)}`, colored: true },
+  { key: "rr",            label: "R:R",           format: t => `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`, colored: true },
+  { key: "direction",     label: "Direction",     format: t => t.direction === "long" ? "Long" : t.direction === "short" ? "Short" : null },
+  { key: "date",          label: "Date",          format: t => formatThreadStatsDate(t.date) },
+  { key: "hora",          label: "Hora",          format: t => t.hora || null },
+  { key: "mercado",       label: "Mercado",       format: t => t.mercado || null },
+  { key: "sesion",        label: "Sesión",        format: t => t.sesion || null },
+  { key: "capital",       label: "Capital",       format: t => (t.capital != null ? `$${Number(t.capital).toFixed(2)}` : null) },
+  { key: "setup",         label: "Setup",         format: t => t.setup || null },
+  { key: "ejecutado",     label: "Ejecutado",     format: t => (t.ejecutado ? "Sí" : "No") },
+  { key: "validez",       label: "Validez",       format: t => (t.validez != null ? String(t.validez) : null) },
+  { key: "confluencias",  label: "Confluencias",  format: t => ((t.confluencias && t.confluencias.length) ? t.confluencias.join(", ") : null) },
+  { key: "estado_mental", label: "Estado mental", format: t => t.estado_mental || null },
+  { key: "notas",         label: "Notas",         format: t => t.notas || null },
+];
+
+function ThreadStatsDetailRow({ label, value, valueColor }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <span style={{ fontFamily: font, fontSize: 11.5, color: C.textMuted }}>{label}</span>
+      <span style={{ fontFamily: font, fontSize: 11.5, fontWeight: 700, color: valueColor || C.text }}>{value}</span>
+    </div>
+  );
+}
+
 function ThreadStatsTradeRow({ trade, expanded, onToggle }) {
   const color = trade.result === "win" ? C.green : trade.result === "loss" ? C.red : C.textMuted;
   const resultLabel = trade.result === "win" ? "Win" : trade.result === "loss" ? "Loss" : "BE";
   const directionLabel = trade.direction === "long" ? "Long" : trade.direction === "short" ? "Short" : null; // trades antiguos sin dirección: se omite, nunca se inventa
-  const rrLabel = trade.result === "be" ? "0R" : `${trade.rr > 0 ? "+" : ""}${trade.rr.toFixed(1)}R`;
-  const dateLabel = formatThreadStatsDate(trade.date);
+  const rrLabel = `${trade.rr > 0 ? "+" : ""}${trade.rr.toFixed(1)}R`; // valor real siempre — el umbral de PnL clasifica Win/Loss/BE, pero no altera el R mostrado
 
   return (
     <div style={{ borderBottom: `1px solid ${C.border}` }}>
-      <div onClick={onToggle} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 2px", cursor: "pointer", gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.pair}</div>
-          <div style={{ fontFamily: font, fontSize: 11.5, color, marginTop: 2 }}>
-            {resultLabel}{directionLabel ? ` · ${directionLabel}` : ""}
+      <div onClick={onToggle} style={{ padding: "11px 2px", cursor: "pointer" }}>
+        {/* Fila 1: activo — R */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: C.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.pair}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ fontFamily: font, fontSize: 14, fontWeight: 800, color }}>{rrLabel}</span>
+            <ChevronDown size={14} color={C.textMuted} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }} />
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontFamily: font, fontSize: 14, fontWeight: 800, color }}>{rrLabel}</span>
-          <ChevronDown size={14} color={C.textMuted} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }} />
+        {/* Fila 2: dirección (izquierda) — resultado (derecha), sin separador */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+          <span style={{ fontFamily: font, fontSize: 11.5, color: C.textMuted }}>{directionLabel || ""}</span>
+          <span style={{ fontFamily: font, fontSize: 11.5, fontWeight: 700, color }}>{resultLabel}</span>
         </div>
       </div>
 
       {expanded && (
         <div style={{ padding: "0 2px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
-          {/* Solo campos reales del modelo de trades — Entry/Exit/Risk no
-              existen en el schema actual de Doers, así que no se muestran
-              (nunca se inventan). "Resultado: Win" no se repite aquí — ya
-              aparece arriba junto a la dirección. */}
-          <ThreadStatsDetailRow label="PnL" value={`${trade.pnl >= 0 ? "+" : "-"}$${Math.abs(trade.pnl).toFixed(2)}`} valueColor={color} />
-          <ThreadStatsDetailRow label="R:R" value={rrLabel} valueColor={color} />
-          {directionLabel && <ThreadStatsDetailRow label="Direction" value={directionLabel} />}
-          {dateLabel && <ThreadStatsDetailRow label="Date" value={dateLabel} />}
+          {THREAD_STATS_DETAIL_FIELDS.map(f => {
+            const value = f.format(trade);
+            if (value === null || value === undefined || value === "") return null; // campo vacío/ausente: se omite, nunca se inventa
+            return <ThreadStatsDetailRow key={f.key} label={f.label} value={value} valueColor={f.colored ? color : undefined} />;
+          })}
         </div>
       )}
     </div>
