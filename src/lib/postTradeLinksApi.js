@@ -63,6 +63,12 @@ export async function linkTradeToPost(postId, tradeId) {
  * trade was actually REGISTERED from this Post (Registrar → trade:saved),
  * which is the "session sequence" this tab wants, not PnL or alphabetical.
  *
+ * Selects every real column the Thread Stats toggle needs to show (every
+ * field of the trade model except pair/link, which the UI excludes on
+ * purpose — see ThreadStatsTradeRow in Post.jsx) — not just the handful
+ * the collapsed row itself needs, so the expanded detail never has to
+ * re-fetch or guess at a field it doesn't have.
+ *
  * Only ejecutado trades are included — same reasoning as
  * statsApi.js#fetchLatestTrades: an un-executed "setup seen" row has no
  * real Win/Loss/BE outcome, so it's filtered out rather than shown with a
@@ -74,7 +80,10 @@ export async function fetchTradesForPost(postId) {
   if (!postId) return [];
   const { data, error } = await supabase
     .from("post_trade_links")
-    .select("created_at, trades(id, pair, rr, pnl, direction, date, hora, ejecutado)")
+    .select(`created_at, trades(
+      id, pair, rr, pnl, direction, date, hora, ejecutado,
+      mercado, sesion, capital, setup, validez, confluencias, estado_mental, notas
+    )`)
     .eq("post_id", postId)
     .order("created_at", { ascending: true });
   if (error) { console.error("[postTradeLinksApi] fetchTradesForPost:", error.message); return []; }
@@ -83,15 +92,25 @@ export async function fetchTradesForPost(postId) {
     .filter(t => t && t.ejecutado)
     .map(t => {
       const rr = Number(t.rr) || 0;
+      const pnl = Number(t.pnl) || 0;
       return {
         id: t.id,
         pair: t.pair,
         rr,
-        pnl: Number(t.pnl) || 0,
+        pnl,
         direction: t.direction === "short" || t.direction === "long" ? t.direction : null,
         date: t.date,
         hora: t.hora,
-        result: tradeResult(rr),
+        ejecutado: t.ejecutado,
+        mercado: t.mercado ?? null,
+        sesion: t.sesion ?? null,
+        capital: t.capital != null ? Number(t.capital) : null,
+        setup: t.setup ?? null,
+        validez: t.validez ?? null,
+        confluencias: Array.isArray(t.confluencias) ? t.confluencias : [],
+        estado_mental: t.estado_mental || null,
+        notas: t.notas || null,
+        result: tradeResult(pnl),
       };
     });
 }

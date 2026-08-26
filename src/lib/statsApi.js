@@ -58,30 +58,38 @@ export async function fetchAllTimeStats() {
 }
 
 /**
- * Win/Loss/BE for a single trade — the exact same rule Doers Journal's own
- * `monthly_summary` SQL view uses (see supabase-schema.sql there: `wins`
- * filters `rr > 0`, `losses` filters `rr < 0`, `bes` filters `rr = 0`, all
- * gated on `ejecutado`). Not a second, parallel classification — this is
- * that same comparison, just evaluated client-side per row instead of
- * aggregated in SQL, because the Latest Trades card needs the individual
- * outcome per row, not just a count.
+ * Win/Loss/BE for a single trade — VISUAL classification only, used to pick
+ * the icon/color in LatestTradesCard and ThreadStatsTab. Never touches any
+ * aggregate statistic: Winrate/Expectancy/PnL/RR all come from
+ * fetchAllTimeStats() (v_alltime_stats), a completely separate query this
+ * function has no relationship to.
+ *
+ * Matches Doers Journal's own CALENDAR classification exactly (see its
+ * getCalendarDayResult in App.jsx) — a $1 PnL band, not an R-multiple sign
+ * check. A trade can carry a positive rr but a PnL under $1 on a very small
+ * position (or the reverse), and this deliberately follows PnL per this
+ * task's explicit instruction to align Latest Trades / Thread Stats with
+ * the calendar's own rule rather than the R-based one used previously.
+ *   pnl >= 1   → "win"
+ *   pnl <= -1  → "loss"
+ *   otherwise  → "be"
  */
-export function tradeResult(rr) {
-  if (rr > 0) return "win";
-  if (rr < 0) return "loss";
+export function tradeResult(pnl) {
+  if (pnl >= 1) return "win";
+  if (pnl <= -1) return "loss";
   return "be";
 }
 
 function rowToTradeSummary(row) {
-  const rr = Number(row.rr) || 0;
+  const pnl = Number(row.pnl) || 0;
   return {
     id: row.id,
     pair: row.pair,
-    rr,
-    pnl: Number(row.pnl) || 0,
+    rr: Number(row.rr) || 0,
+    pnl,
     date: row.date,
     hora: row.hora,
-    result: tradeResult(rr),
+    result: tradeResult(pnl),
   };
 }
 
