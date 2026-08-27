@@ -228,13 +228,13 @@ function LatestTradesCard({ onNavigate, trades }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
           {rows.map((t, i) => {
-            // t.result comes from statsApi.js#tradeResult — a $1 PnL band,
-            // matching Doers Journal's own CALENDAR classification exactly
-            // (not an R-multiple sign check). Visual only — never touches
-            // any aggregate stat (those come from fetchAllTimeStats()).
+            // t.result comes from statsApi.js#tradeResult — a ±0.5R band
+            // on `rr` (matching Doers Journal's own calendar + trades-table
+            // classification exactly). Visual only — never touches any
+            // aggregate stat (those come from fetchAllTimeStats()).
             const color = t.result === "win" ? C.green : t.result === "loss" ? C.red : C.textMuted;
             const Icon  = t.result === "win" ? TrendingUp : t.result === "loss" ? TrendingDown : Minus; // BE: flat line, no new color, no new icon language
-            const rrLabel = `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`; // valor real siempre — el umbral de PnL clasifica Win/Loss/BE, pero no altera el R mostrado
+            const rrLabel = `${t.rr > 0 ? "+" : ""}${t.rr.toFixed(1)}R`; // mismo valor de rr usado para clasificar Win/Loss/BE — se muestra tal cual
             return (
               <motion.div key={t.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.06 + i * 0.05 }}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
