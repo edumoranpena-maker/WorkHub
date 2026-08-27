@@ -1682,7 +1682,7 @@ function ThreadStatsTradeRow({ trade, expanded, onToggle }) {
   const color = trade.result === "win" ? C.green : trade.result === "loss" ? C.red : C.textMuted;
   const resultLabel = trade.result === "win" ? "Win" : trade.result === "loss" ? "Loss" : "BE";
   const directionLabel = trade.direction === "long" ? "Long" : trade.direction === "short" ? "Short" : null; // trades antiguos sin dirección: se omite, nunca se inventa
-  const rrLabel = `${trade.rr > 0 ? "+" : ""}${trade.rr.toFixed(1)}R`; // valor real siempre — el umbral de PnL clasifica Win/Loss/BE, pero no altera el R mostrado
+  const rrLabel = `${trade.rr > 0 ? "+" : ""}${trade.rr.toFixed(1)}R`; // mismo valor de rr usado para clasificar Win/Loss/BE — se muestra tal cual, sin redondear el umbral
 
   return (
     <div style={{ borderBottom: `1px solid ${C.border}` }}>
