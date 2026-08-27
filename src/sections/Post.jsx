@@ -1635,15 +1635,6 @@ function ThreadTabPlaceholder({ isDesktop, label }) {
 // Winrate/Profit Factor/Expectancy here on purpose (see Post.jsx's own
 // task notes) — a session usually has 1-2 trades, far too small a sample
 // for those to mean anything.
-function ThreadStatsDetailRow({ label, value, valueColor }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <span style={{ fontFamily: font, fontSize: 11.5, color: C.textMuted }}>{label}</span>
-      <span style={{ fontFamily: font, fontSize: 11.5, fontWeight: 700, color: valueColor || C.text }}>{value}</span>
-    </div>
-  );
-}
-
 function formatThreadStatsDate(isoDate) {
   if (!isoDate) return null;
   const [y, m, d] = isoDate.split("-").map(Number);
