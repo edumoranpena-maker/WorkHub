@@ -110,7 +110,7 @@ export async function fetchTradesForPost(postId) {
         confluencias: Array.isArray(t.confluencias) ? t.confluencias : [],
         estado_mental: t.estado_mental || null,
         notas: t.notas || null,
-        result: tradeResult(pnl),
+        result: tradeResult(rr),
       };
     });
 }

@@ -62,34 +62,33 @@ export async function fetchAllTimeStats() {
  * the icon/color in LatestTradesCard and ThreadStatsTab. Never touches any
  * aggregate statistic: Winrate/Expectancy/PnL/RR all come from
  * fetchAllTimeStats() (v_alltime_stats), a completely separate query this
- * function has no relationship to.
+ * function has no relationship to. Doesn't change how `rr` itself is
+ * calculated or stored — only reads it to decide a color.
  *
- * Matches Doers Journal's own CALENDAR classification exactly (see its
- * getCalendarDayResult in App.jsx) — a $1 PnL band, not an R-multiple sign
- * check. A trade can carry a positive rr but a PnL under $1 on a very small
- * position (or the reverse), and this deliberately follows PnL per this
- * task's explicit instruction to align Latest Trades / Thread Stats with
- * the calendar's own rule rather than the R-based one used previously.
- *   pnl >= 1   → "win"
- *   pnl <= -1  → "loss"
- *   otherwise  → "be"
+ * Matches Doers Journal's own calendar + trades-table classification
+ * exactly (see its shared tradeVisualResult in App.jsx) — an R-multiple
+ * band on `rr`, NOT a dollar-PnL threshold (that was this function's
+ * previous rule, replaced per this task). Inclusive on both ends.
+ *   rr >= 0.5   → "win"
+ *   rr <= -0.5  → "loss"
+ *   otherwise   → "be"
  */
-export function tradeResult(pnl) {
-  if (pnl >= 1) return "win";
-  if (pnl <= -1) return "loss";
+export function tradeResult(rr) {
+  if (rr >= 0.5) return "win";
+  if (rr <= -0.5) return "loss";
   return "be";
 }
 
 function rowToTradeSummary(row) {
-  const pnl = Number(row.pnl) || 0;
+  const rr = Number(row.rr) || 0;
   return {
     id: row.id,
     pair: row.pair,
-    rr: Number(row.rr) || 0,
-    pnl,
+    rr,
+    pnl: Number(row.pnl) || 0,
     date: row.date,
     hora: row.hora,
-    result: tradeResult(pnl),
+    result: tradeResult(rr),
   };
 }
 
