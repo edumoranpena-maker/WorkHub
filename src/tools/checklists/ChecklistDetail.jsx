@@ -5,13 +5,28 @@
  * checked) is PURE local component state — intentionally never persisted
  * anywhere (see checklistsApi.js's header comment): closing this screen and
  * reopening the checklist always starts at 0/N. The checklist itself
- * (name/description/steps/media) is what survives a refresh, not the
- * execution state — that split is the whole point of this phase.
+ * (name/description/steps) is what survives a refresh, not the execution
+ * state — that split is the whole point of this phase. (This is
+ * deliberately different from Thread → Checklist's own executions, which
+ * DO persist progress — see ThreadChecklistTab in Post.jsx and
+ * checklistExecutionsApi.js. This screen is the checklist's DEFINITION and
+ * a scratch-pad preview of it, not an execution.)
+ *
+ * Media/reference attachments were removed from this checklist entirely —
+ * see the "POST" section at the bottom instead: the real reference for a
+ * checklist is now the actual Posts where it was used, not manually
+ * attached images.
+ *
+ * Same visual language (checkbox style, ProgressDots, completion box) is
+ * shared with Post.jsx's ThreadChecklistTab, including the new
+ * green-on-fully-complete treatment — see the shared color logic in both
+ * files' headers.
  */
-import { useState } from "react";
-import { CheckCircle2, Circle, Pencil, Trash2, Image as ImageIcon, PlayCircle } from "lucide-react";
-import { useImageViewer } from "../../components/GlobalImageViewer.jsx";
+import { useState, useEffect } from "react";
+import { CheckCircle2, Circle, Pencil, Trash2, FileText } from "lucide-react";
 import ProgressDots from "./ProgressDots.jsx";
+import { fetchPostsForChecklist } from "../../lib/checklistExecutionsApi.js";
+import { useNavigation } from "../../lib/navigation.jsx";
 import { useRenderLog, useMountLog } from "./_debug.js"; // [CHECKLIST-DEBUG] temporary — see file header
 
 const font = "'DM Sans', sans-serif";
@@ -21,20 +36,51 @@ const C = {
   gold: "#d4a843", green: "#22c55e", red: "#ef4444",
 };
 
-function MediaStrip({ media, onOpen }) {
-  if (!media?.length) return null;
+// ─── POST section — real Posts where this checklist was actually used ─────
+// Not a copy, not a manual reference: fetchPostsForChecklist reads real
+// checklist_executions rows joined to recap_threads. Clicking a row
+// navigates to the real Post via the app's own navigation (useNavigation),
+// which also closes this Tools portal automatically (openToolId derives
+// from the route, same mechanism Registrar already relies on) — no
+// parallel "open a copy" view.
+function ChecklistPostsSection({ checklistId }) {
+  const { navigate } = useNavigation();
+  const [posts, setPosts] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPostsForChecklist(checklistId).then(rows => {
+      if (!cancelled) { setPosts(rows); setLoaded(true); }
+    });
+    return () => { cancelled = true; };
+  }, [checklistId]);
+
+  if (!loaded) return null;
+
   return (
-    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-      {media.map((m, i) => (
-        <div key={m.id || i} onClick={() => onOpen(media, i)}
-          style={{ width: 48, height: 48, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0 }}>
-          {m.type === "video" ? (
-            <video src={m.url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          )}
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <FileText size={12} color={C.textMuted} />
+        <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>Post</span>
+      </div>
+
+      {posts.length === 0 ? (
+        <p style={{ margin: 0, fontFamily: font, fontSize: 12.5, color: C.textDim, fontStyle: "italic" }}>
+          Este checklist todavía no se ha usado en ningún Post.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {posts.map(p => (
+            <div key={p.id} onClick={() => navigate("thread", { threadId: p.id })}
+              style={{ padding: "11px 13px", borderRadius: 11, background: C.card, border: `1px solid ${C.border}`, cursor: "pointer" }}>
+              <p style={{ margin: 0, fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.title}
+              </p>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -44,7 +90,6 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
   useMountLog(`ChecklistDetail[${checklist.id}] "${checklist.name}"`); // [CHECKLIST-DEBUG]
   const [checked, setChecked] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { openGallery, ViewerPortal } = useImageViewer();
 
   const total = checklist.items.length;
   const completedCount = checklist.items.filter(it => checked.has(it.id)).length;
@@ -94,32 +139,6 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
         </div>
       </div>
 
-      {checklist.media?.length > 0 && (
-        <div style={{ marginBottom: 22 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <ImageIcon size={12} color={C.textMuted} />
-            <span style={{ fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>Media general</span>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {checklist.media.map((m, i) => (
-              <div key={m.id || i} onClick={() => openGallery({ items: checklist.media, startIndex: i })}
-                style={{ width: 84, height: 84, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, cursor: "pointer", flexShrink: 0, position: "relative" }}>
-                {m.type === "video" ? (
-                  <>
-                    <video src={m.url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.25)" }}>
-                      <PlayCircle size={20} color="#fff" />
-                    </div>
-                  </>
-                ) : (
-                  <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {total === 0 ? (
         <div style={{ padding: "32px 16px", textAlign: "center", borderRadius: 14, border: `1px dashed ${C.border}` }}>
           <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.textMuted }}>Este checklist todavía no tiene pasos.</p>
@@ -129,29 +148,33 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
             {checklist.items.map((item, i) => {
               const isChecked = checked.has(item.id);
+              // Green only once EVERY step is done — an individually-checked
+              // step while others remain pending keeps the existing gold
+              // treatment (see this file's header: "no convertir todo el
+              // componente en verde").
+              const stepColor = isChecked ? (allDone ? C.green : C.gold) : null;
               return (
                 <div key={item.id}
-                  style={{ padding: "12px 14px", borderRadius: 12, background: C.card, border: `1px solid ${isChecked ? C.gold + "40" : C.border}`, transition: "border-color 0.2s" }}>
+                  style={{ padding: "12px 14px", borderRadius: 12, background: C.card, border: `1px solid ${isChecked ? stepColor + "40" : C.border}`, transition: "border-color 0.2s" }}>
                   <button onClick={() => toggleStep(i)}
                     style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
-                    {isChecked ? <CheckCircle2 size={19} color={C.gold} fill={`${C.gold}22`} /> : <Circle size={19} color={C.textDim} />}
-                    <span style={{ fontFamily: font, fontSize: 14, fontWeight: 600, color: isChecked ? C.text : C.text, textDecoration: isChecked ? "line-through" : "none", opacity: isChecked ? 0.75 : 1 }}>
+                    {isChecked ? <CheckCircle2 size={19} color={stepColor} fill={`${stepColor}22`} /> : <Circle size={19} color={C.textDim} />}
+                    <span style={{ fontFamily: font, fontSize: 14, fontWeight: 600, color: C.text, textDecoration: isChecked ? "line-through" : "none", opacity: isChecked ? 0.75 : 1 }}>
                       {item.label}
                     </span>
                   </button>
-                  <MediaStrip media={item.media} onOpen={(media, idx) => openGallery({ items: media, startIndex: idx })} />
                 </div>
               );
             })}
           </div>
 
           <div style={{ padding: "20px 16px", borderRadius: 14, background: C.card, border: `1px solid ${C.border}`, marginBottom: allDone && checklist.completionMessage ? 14 : 0 }}>
-            <ProgressDots total={total} completed={completedCount} accent={C.gold} trackColor={C.border} />
+            <ProgressDots total={total} completed={completedCount} accent={allDone ? C.green : C.gold} trackColor={C.border} />
           </div>
 
           {allDone && checklist.completionMessage && (
-            <div style={{ padding: "16px 18px", borderRadius: 14, background: `${C.gold}12`, border: `1px solid ${C.gold}35`, display: "flex", gap: 10, alignItems: "flex-start" }}>
-              <CheckCircle2 size={18} color={C.gold} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ padding: "16px 18px", borderRadius: 14, background: `${C.green}12`, border: `1px solid ${C.green}35`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <CheckCircle2 size={18} color={C.green} style={{ flexShrink: 0, marginTop: 1 }} />
               <p style={{ margin: 0, fontFamily: font, fontSize: 13.5, color: C.text, lineHeight: 1.55, fontWeight: 600 }}>
                 {checklist.completionMessage}
               </p>
@@ -160,6 +183,8 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
         </>
       )}
 
+      <ChecklistPostsSection checklistId={checklist.id} />
+
       {confirmDelete && (
         <div style={{ position: "fixed", inset: 0, zIndex: 10050, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)", padding: 20 }}
           onClick={() => setConfirmDelete(false)}>
@@ -167,7 +192,7 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
             style={{ width: "100%", maxWidth: 340, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }}>
             <p style={{ margin: "0 0 6px", fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>¿Eliminar este checklist?</p>
             <p style={{ margin: "0 0 18px", fontFamily: font, fontSize: 13, color: C.textMuted, lineHeight: 1.5 }}>
-              Se eliminará "{checklist.name}" y todos sus pasos y media. Esta acción no se puede deshacer.
+              Se eliminará "{checklist.name}" y todos sus pasos. Esta acción no se puede deshacer.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setConfirmDelete(false)}
@@ -182,8 +207,6 @@ export default function ChecklistDetail({ checklist, isDesktop, onBack, onEdit, 
           </div>
         </div>
       )}
-
-      <ViewerPortal />
     </div>
   );
 }
