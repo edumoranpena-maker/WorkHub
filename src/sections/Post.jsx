@@ -1774,27 +1774,32 @@ function ThreadChecklistExecutionCard({ execution, onToggleItem }) {
   const allDone = total > 0 && completedCount === total;
 
   return (
-    <div style={{ padding: "14px 15px", borderRadius: 14, background: C.card, border: `1px solid ${C.border}`, marginBottom: 12 }}>
-      <div style={{ marginBottom: 12 }}>
-        <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>{execution.symbol}</p>
-        <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 11.5, color: C.textMuted }}>{execution.checklistName}</p>
+    <div style={{ padding: "16px 16px", borderRadius: 16, background: C.card, border: `1px solid ${C.border}`, marginBottom: 14 }}>
+      <div style={{ marginBottom: 16 }}>
+        <p style={{ margin: 0, fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text }}>{execution.symbol}</p>
+        <p style={{ margin: "3px 0 0", fontFamily: font, fontSize: 12.5, color: C.textMuted }}>{execution.checklistName}</p>
       </div>
 
       {total === 0 ? (
         <p style={{ margin: 0, fontFamily: font, fontSize: 12.5, color: C.textDim, fontStyle: "italic" }}>Este checklist no tiene pasos.</p>
       ) : (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {/* Cada item es su propia "card" tocable — mismo tratamiento que
+              Tools/ChecklistDetail.jsx (padding+borde propios por fila), no
+              solo un botón inline: así el área táctil de cada checkbox
+              queda claramente separada de la del siguiente, en vez de
+              depender solo del espacio entre líneas de texto. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
             {execution.items.map((item, i) => {
               const isChecked = item.checked;
               const stepColor = isChecked ? (allDone ? CHECK_GREEN : C.gold) : null;
               return (
                 <button key={item.id} onClick={() => onToggleItem(execution, i)}
-                  style={{ display: "flex", alignItems: "center", gap: 9, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                  style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "14px 15px", borderRadius: 12, background: C.surface, border: `1px solid ${isChecked ? stepColor + "40" : C.border}`, cursor: "pointer", textAlign: "left", transition: "border-color 0.2s" }}>
                   {isChecked
-                    ? <CheckCircle2 size={17} color={stepColor} fill={`${stepColor}22`} style={{ flexShrink: 0 }} />
-                    : <Circle size={17} color={C.textDim} style={{ flexShrink: 0 }} />}
-                  <span style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: C.text, textDecoration: isChecked ? "line-through" : "none", opacity: isChecked ? 0.75 : 1 }}>
+                    ? <CheckCircle2 size={21} color={stepColor} fill={`${stepColor}22`} style={{ flexShrink: 0 }} />
+                    : <Circle size={21} color={C.textDim} style={{ flexShrink: 0 }} />}
+                  <span style={{ fontFamily: font, fontSize: 14.5, fontWeight: 600, color: C.text, textDecoration: isChecked ? "line-through" : "none", opacity: isChecked ? 0.75 : 1, lineHeight: 1.4 }}>
                     {item.label}
                   </span>
                 </button>
@@ -1805,9 +1810,9 @@ function ThreadChecklistExecutionCard({ execution, onToggleItem }) {
           <ProgressDots total={total} completed={completedCount} accent={allDone ? CHECK_GREEN : C.gold} trackColor={C.border} />
 
           {allDone && execution.completionMessage && (
-            <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 11, background: `${CHECK_GREEN}12`, border: `1px solid ${CHECK_GREEN}35`, display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <CheckCircle2 size={15} color={CHECK_GREEN} style={{ flexShrink: 0, marginTop: 1 }} />
-              <p style={{ margin: 0, fontFamily: font, fontSize: 12.5, color: C.text, lineHeight: 1.5, fontWeight: 600 }}>{execution.completionMessage}</p>
+            <div style={{ marginTop: 14, padding: "14px 15px", borderRadius: 12, background: `${CHECK_GREEN}12`, border: `1px solid ${CHECK_GREEN}35`, display: "flex", gap: 9, alignItems: "flex-start" }}>
+              <CheckCircle2 size={16} color={CHECK_GREEN} style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ margin: 0, fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.55, fontWeight: 600 }}>{execution.completionMessage}</p>
             </div>
           )}
         </>
@@ -1816,75 +1821,21 @@ function ThreadChecklistExecutionCard({ execution, onToggleItem }) {
   );
 }
 
-function ThreadChecklistTab({ isDesktop, thread }) {
-  const [checklistOptions, setChecklistOptions] = useState([]);
-  const [executions, setExecutions] = useState([]);
-  const [loaded, setLoaded] = useState(false);
+// Presentacional puro — todo el estado (checklistOptions/executions/loaded)
+// y la lógica de carga/toggle/alta viven en ThreadView de aquí abajo, para
+// que sobrevivan un cambio de pestaña. Ver el comentario en ThreadView
+// junto a checklistOptions/checklistExecutions/checklistLoaded para el
+// porqué exacto.
+function ThreadChecklistTab({ isDesktop, checklistOptions, executions, loaded, onToggleItem, onAdd }) {
   const [addingOpen, setAddingOpen] = useState(false);
   const [pickedChecklistId, setPickedChecklistId] = useState("");
   const [symbolInput, setSymbolInput] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Definitions used only to populate the "seleccionar checklist" picker;
-  // executions are this Post's own — merged with each execution's
-  // checklist definition (items + completion message) so the card can
-  // render without a second round-trip per toggle.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [defs, execs] = await Promise.all([fetchChecklists(), fetchExecutionsForPost(thread.id)]);
-      if (cancelled) return;
-      setChecklistOptions(defs.map(c => ({ id: c.id, name: c.name })));
-      const defCache = {};
-      const merged = [];
-      for (const e of execs) {
-        if (!defCache[e.checklistId]) defCache[e.checklistId] = await fetchChecklistById(e.checklistId);
-        const def = defCache[e.checklistId];
-        const checkedMap = new Map(e.items.map(i => [i.id, i.checked]));
-        merged.push({
-          ...e,
-          items: (def?.items || []).map(it => ({ id: it.id, label: it.label, checked: checkedMap.get(it.id) || false })),
-          completionMessage: def?.completionMessage || "",
-        });
-      }
-      if (!cancelled) { setExecutions(merged); setLoaded(true); }
-    })();
-    return () => { cancelled = true; };
-  }, [thread.id]);
-
-  // Same sequential semantics as Tools' ChecklistDetail (checking step N
-  // implies every step before it, unchecking clears everything after) —
-  // just persisted here: every affected item gets its own
-  // toggleExecutionItem write, then `completed` is recomputed and written
-  // once. Optimistic locally first, so the UI never waits on the network
-  // to feel responsive.
-  const handleToggleItem = async (execution, itemIndex) => {
-    const willCheck = !execution.items[itemIndex].checked;
-    const changed = execution.items
-      .map((it, i) => i)
-      .filter(i => willCheck ? (i <= itemIndex && !execution.items[i].checked) : (i >= itemIndex && execution.items[i].checked));
-
-    const updatedItems = execution.items.map((it, i) => changed.includes(i) ? { ...it, checked: willCheck } : it);
-    const allDoneNow = updatedItems.length > 0 && updatedItems.every(it => it.checked);
-
-    setExecutions(prev => prev.map(e => e.id === execution.id ? { ...e, items: updatedItems, completed: allDoneNow } : e));
-
-    await Promise.all(changed.map(i => toggleExecutionItem(execution.id, execution.items[i].id, willCheck)));
-    if (allDoneNow !== execution.completed) await setExecutionCompleted(execution.id, allDoneNow);
-  };
-
   const handleAdd = async () => {
     if (!pickedChecklistId || !symbolInput.trim() || saving) return;
     setSaving(true);
-    const created = await createExecution(thread.id, pickedChecklistId, symbolInput.trim());
-    if (created) {
-      const def = await fetchChecklistById(pickedChecklistId);
-      setExecutions(prev => [...prev, {
-        ...created,
-        items: (def?.items || []).map(it => ({ id: it.id, label: it.label, checked: false })),
-        completionMessage: def?.completionMessage || "",
-      }]);
-    }
+    await onAdd(pickedChecklistId, symbolInput.trim());
     setSaving(false);
     setAddingOpen(false);
     setPickedChecklistId("");
@@ -1916,7 +1867,10 @@ function ThreadChecklistTab({ isDesktop, thread }) {
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={fieldLabel}>Activo</label>
-              <input value={symbolInput} onChange={e => setSymbolInput(e.target.value)} placeholder="Ej. NAS100" style={fieldInput} />
+              {/* Mayúsculas mientras se escribe — el VALOR real del input
+                  queda en mayúsculas (no solo text-transform en CSS), así
+                  que lo que se guarda en Supabase también lo está. */}
+              <input value={symbolInput} onChange={e => setSymbolInput(e.target.value.toUpperCase())} placeholder="Ej. NAS100" style={fieldInput} />
             </div>
             <button onClick={handleAdd} disabled={!pickedChecklistId || !symbolInput.trim() || saving}
               style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: (pickedChecklistId && symbolInput.trim()) ? C.gold : C.surface, border: `1px solid ${(pickedChecklistId && symbolInput.trim()) ? C.gold : C.border}`, color: (pickedChecklistId && symbolInput.trim()) ? "#000" : C.textDim, fontFamily: font, fontSize: 13, fontWeight: 800, cursor: (pickedChecklistId && symbolInput.trim()) ? "pointer" : "default" }}>
@@ -1932,7 +1886,7 @@ function ThreadChecklistTab({ isDesktop, thread }) {
             <span style={{ fontFamily: font, fontSize: 13, color: C.textDim }}>Aún no hay checklists en este Post.</span>
           </div>
         ) : (
-          executions.map(e => <ThreadChecklistExecutionCard key={e.id} execution={e} onToggleItem={handleToggleItem} />)
+          executions.map(e => <ThreadChecklistExecutionCard key={e.id} execution={e} onToggleItem={onToggleItem} />)
         )}
       </div>
     </PageContainer>
@@ -1974,6 +1928,85 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
     });
     return () => { cancelled = true; };
   }, [activeThreadTab, thread.id, tradeLinkedSignal]);
+
+  // Checklist tab's data — lives here (ThreadView), not inside
+  // ThreadChecklistTab itself. ThreadChecklistTab only exists in the tree
+  // while activeThreadTab === "checklist" (a ternary in renderThreadSurface
+  // below), so it fully UNMOUNTS on every tab switch and REMOUNTS on
+  // return — that unmount/remount was exactly what caused the reload bug
+  // this state lift fixes: any state owned BY ThreadChecklistTab itself
+  // would be destroyed with it. ThreadView, on the other hand, is the
+  // right, minimal owner — it's already scoped per-Post (remounts fresh
+  // via key={openThread.id} in Post() whenever a DIFFERENT Post opens, or
+  // this same one is reopened later), so this needs no separate cache
+  // keyed by postId — the component instance IS the cache boundary.
+  //
+  // checklistLoaded gates the fetch to run only ONCE per this ThreadView
+  // instance (first tab visit) — unlike the Stats tab above, which
+  // deliberately re-fetches on every visit to catch edits made in Doers
+  // Journal, checklists are edited only within this same tab, so nothing
+  // external can go stale here.
+  const [checklistOptions, setChecklistOptions] = useState([]);
+  const [checklistExecutions, setChecklistExecutions] = useState([]);
+  const [checklistLoaded, setChecklistLoaded] = useState(false);
+  useEffect(() => {
+    if (activeThreadTab !== "checklist") return;
+    if (checklistLoaded) return; // already loaded once for this Post — don't reload on every tab revisit
+    let cancelled = false;
+    (async () => {
+      const [defs, execs] = await Promise.all([fetchChecklists(), fetchExecutionsForPost(thread.id)]);
+      if (cancelled) return;
+      const defCache = {};
+      const merged = [];
+      for (const e of execs) {
+        if (!defCache[e.checklistId]) defCache[e.checklistId] = await fetchChecklistById(e.checklistId);
+        const def = defCache[e.checklistId];
+        const checkedMap = new Map(e.items.map(i => [i.id, i.checked]));
+        merged.push({
+          ...e,
+          items: (def?.items || []).map(it => ({ id: it.id, label: it.label, checked: checkedMap.get(it.id) || false })),
+          completionMessage: def?.completionMessage || "",
+        });
+      }
+      if (cancelled) return;
+      setChecklistOptions(defs.map(c => ({ id: c.id, name: c.name })));
+      setChecklistExecutions(merged);
+      setChecklistLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [activeThreadTab, thread.id, checklistLoaded]);
+
+  // Same sequential semantics as Tools' ChecklistDetail (checking step N
+  // implies every step before it, unchecking clears everything after) —
+  // persisted here: every affected item gets its own toggleExecutionItem
+  // write, then `completed` is recomputed and written once. Optimistic
+  // locally first, so the UI never waits on the network to feel responsive.
+  const handleToggleChecklistItem = async (execution, itemIndex) => {
+    const willCheck = !execution.items[itemIndex].checked;
+    const changed = execution.items
+      .map((it, i) => i)
+      .filter(i => willCheck ? (i <= itemIndex && !execution.items[i].checked) : (i >= itemIndex && execution.items[i].checked));
+
+    const updatedItems = execution.items.map((it, i) => changed.includes(i) ? { ...it, checked: willCheck } : it);
+    const allDoneNow = updatedItems.length > 0 && updatedItems.every(it => it.checked);
+
+    setChecklistExecutions(prev => prev.map(e => e.id === execution.id ? { ...e, items: updatedItems, completed: allDoneNow } : e));
+
+    await Promise.all(changed.map(i => toggleExecutionItem(execution.id, execution.items[i].id, willCheck)));
+    if (allDoneNow !== execution.completed) await setExecutionCompleted(execution.id, allDoneNow);
+  };
+
+  const handleAddChecklistExecution = async (checklistId, symbol) => {
+    const created = await createExecution(thread.id, checklistId, symbol);
+    if (created) {
+      const def = await fetchChecklistById(checklistId);
+      setChecklistExecutions(prev => [...prev, {
+        ...created,
+        items: (def?.items || []).map(it => ({ id: it.id, label: it.label, checked: false })),
+        completionMessage: def?.completionMessage || "",
+      }]);
+    }
+  };
 
   const [tmem, setTmem] = useSectionMemory(`recaps:thread:${initialThread.id}`, () => ({ openSubtemaId: null }));
   const [liked, setLiked] = useState(initialThread.liked);
@@ -2451,7 +2484,13 @@ function ThreadView({ thread: initialThread, onBack, isHost, openSubtemaId, onSt
         ) : activeThreadTab === "stats" ? (
           <ThreadStatsTab isDesktop={isDesktop} trades={postTrades} loaded={postTradesLoaded} />
         ) : activeThreadTab === "checklist" ? (
-          <ThreadChecklistTab isDesktop={isDesktop} thread={thread} />
+          <ThreadChecklistTab isDesktop={isDesktop}
+            checklistOptions={checklistOptions}
+            executions={checklistExecutions}
+            loaded={checklistLoaded}
+            onToggleItem={handleToggleChecklistItem}
+            onAdd={handleAddChecklistExecution}
+          />
         ) : (
           <ThreadTabPlaceholder isDesktop={isDesktop}
             label={THREAD_TABS.find(t => t.id === activeThreadTab)?.label} />
