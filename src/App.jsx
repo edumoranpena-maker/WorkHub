@@ -17,6 +17,7 @@ import Post          from "./sections/Post";
 import Announcements, { StoryViewer } from "./sections/Announcements";
 import Stats          from "./sections/Stats";
 import Tools          from "./sections/Tools";
+import StickyNotesProfileWidget from "./tools/stickyNotes/StickyNotesProfileWidget.jsx";
 import { PageContainer } from "./lib/layout.jsx";
 
 // ─── API imports ─────────────────────────────────────────────────────────────
@@ -377,6 +378,9 @@ function PerfilContent({ onNavigate, visibleWidgets, sections, isHost, onCreateP
         <LatestTradesCard onNavigate={onNavigate} trades={latestTrades} />
         <ReviewsCard onVerMas={() => onNavigate("rooms")} />
       </div>
+
+      {/* ── Sticky Notes carousel ── */}
+      <StickyNotesProfileWidget isDesktop={isDesktop} />
 
       {/* ── Latest post from each section ── */}
       <div style={{ padding: "22px 18px 0" }}>
