@@ -244,7 +244,16 @@ export default function StickyNoteExpanded({
               <Check size={13} /> Listo
             </button>
           ) : (
-            <div ref={menuBtnRef} style={{ position: "relative" }}>
+            <div
+              ref={menuBtnRef}
+              style={{ position: "relative" }}
+              // The note frame itself is `drag="x"` (paging between notes).
+              // Stopping the pointerdown here in the capture phase keeps that
+              // drag gesture from ever starting on this control, so a tap on
+              // ⋮ always reaches its own onClick instead of being interpreted
+              // as the start of a page-swipe.
+              onPointerDownCapture={(e) => e.stopPropagation()}
+            >
               <button onClick={(e) => { e.stopPropagation(); menuOpen ? setMenuOpen(false) : openMenu(); }}
                 style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: c.text }}>
                 <MoreVertical size={15} />
