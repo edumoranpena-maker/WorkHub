@@ -266,7 +266,22 @@ export default function StickyNoteExpanded({
                       initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: -4 }}
                       transition={{ duration: 0.12 }}
                       onClick={(e) => e.stopPropagation()}
-                      style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 3200, background: "#181824", border: "1px solid #1c1c2e", borderRadius: 12, padding: 8, minWidth: 168, boxShadow: "0 10px 28px rgba(0,0,0,0.45)" }}
+                      style={{
+                        position: "fixed", top: menuPos.top, right: menuPos.right,
+                        // Sticky Notes runs inside ToolPortal's own
+                        // document.body portal (Tools.jsx's ToolPortalOverlay,
+                        // zIndex 9999, opaque background). This menu ALSO
+                        // portals straight to document.body, which makes it a
+                        // *sibling* of that overlay rather than a descendant
+                        // of it — so it has to out-rank 9999 on its own, or it
+                        // paints (and receives clicks) behind that opaque
+                        // panel and is effectively invisible/inert. 10050
+                        // matches the same "above the Tool shell" z-index
+                        // ChecklistDetail.jsx already uses for its own
+                        // document.body-level dialog, for the same reason.
+                        zIndex: 10050,
+                        background: "#181824", border: "1px solid #1c1c2e", borderRadius: 12, padding: 8, minWidth: 168, boxShadow: "0 10px 28px rgba(0,0,0,0.45)",
+                      }}
                     >
                       <button onClick={startEditing}
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "none", border: "none", cursor: "pointer", color: "#fafafa", fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, borderRadius: 8 }}>
