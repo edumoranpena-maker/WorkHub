@@ -62,7 +62,7 @@ import { PrivacyIcon } from "../lib/visibility.jsx";
 import { usePublishQueue } from "../lib/publishQueue.jsx";
 import { useSectionMemory, useScrollMemory } from "../lib/workContext.jsx";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
-import { fetchTradeCounts, fetchTradesForPost } from "../lib/postTradeLinksApi.js";
+import { fetchTradeCounts, fetchPostPnls, fetchTradesForPost } from "../lib/postTradeLinksApi.js";
 import { fetchChecklists, fetchChecklistById } from "../lib/checklistsApi.js";
 import { fetchExecutionsForPost, createExecution, toggleExecutionItem, setExecutionCompleted } from "../lib/checklistExecutionsApi.js";
 import ProgressDots from "../tools/checklists/ProgressDots.jsx";
@@ -802,7 +802,16 @@ const FilterBar = memo(function FilterBar({ searchQuery, filters, onSearch, onFi
 });
 
 // ─── PostCard — 2-column grid card with image thumbnail ───────────────────────
-const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onRegister, registerCount = 0, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
+// Doers PnL badge shown on each PostCard — dollars straight from Doers
+// Journal (see postTradeLinksApi.js#fetchPostPnls), formatted only for
+// display: sign prefix + 2 decimals, matching the "+$105.00" spec exactly.
+// Never used to compute anything — purely presentational.
+function fmtPostPnl(v) {
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  return `${sign}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEdit, onRegister, registerCount = 0, pnl, onDelete, onShare, onReport, onTogglePin, canPin = true, compact = false }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const thumb = thread.media?.[0]?.thumb || thread.media?.[0]?.url || null;
@@ -878,16 +887,27 @@ const PostCard = memo(function PostCard({ thread, unseenCount = 0, onClick, onEd
           tiles are much smaller there; mobile gets only a light reduction
           from its previous values, same structure throughout. */}
       <div style={{ padding: compact ? "8px 9px 8px" : "9px 11px 11px" }}>
-        <p style={{ margin: compact ? "0 0 6px" : "0 0 7px", fontFamily: font, fontSize: compact ? 12 : 12.5, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-          {thread.title || "Untitled"}
-        </p>
+        {/* Title + 3-dot menu, same line, menu pinned to the right margin */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: compact ? 5 : 6 }}>
+          <p style={{ margin: 0, flex: 1, minWidth: 0, fontFamily: font, fontSize: compact ? 12 : 12.5, fontWeight: 800, color: C.text, letterSpacing: "-0.01em", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+            {thread.title || "Untitled"}
+          </p>
+          <PostOptionsMenu actions={menuActions} size={compact ? 20 : 23} />
+        </div>
 
-        {/* Status + 3-dot menu, same line, menu pinned to the right margin */}
+        {/* Status (left) + Doers PnL in USD (right margin), same line.
+            pnl is undefined whenever this Post has no linked/executed trade
+            yet (see postTradeLinksApi.js#fetchPostPnls) — nothing renders in
+            that case, exactly as spec'd. */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: compact ? 5 : 6 }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, boxShadow: `0 0 5px ${opt.color}`, flexShrink: 0 }} />
           <span style={{ fontFamily: font, fontSize: compact ? 9.5 : 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
           <div style={{ flex: 1 }} />
-          <PostOptionsMenu actions={menuActions} size={compact ? 20 : 23} />
+          {pnl != null && (
+            <span style={{ fontFamily: font, fontSize: compact ? 11 : 11.5, fontWeight: 800, color: pnl > 0 ? C.green : pnl < 0 ? C.red : C.textMuted, flexShrink: 0 }}>
+              {fmtPostPnl(pnl)}
+            </span>
+          )}
         </div>
 
         {/* Footer: date + privacy + edited */}
@@ -945,7 +965,7 @@ function getFilteredThreads(threads, searchQuery, filters) {
   return list;
 }
 
-const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onRegisterTrade, tradeCounts, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
+const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenSubtemas, onOpenThread, onEditThread, onRegisterTrade, tradeCounts, postPnls, onDeleteThread, onShareThread, onReportThread, onTogglePin }) {
   const filtered = useMemo(
     () => getFilteredThreads(threads, searchQuery, filters),
     [threads, searchQuery, filters]
@@ -1002,7 +1022,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {pinned.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} pnl={postPnls?.[t.id]} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -1017,7 +1037,7 @@ const PostFeed = memo(function PostFeed({ threads, searchQuery, filters, unseenS
             <div style={gridStyle}>
               {items.map(t => (
                 <PostCard key={t.id} thread={t} unseenCount={(t.newUpdates || 0) + (unseenSubtemas?.[t.id] ? 1 : 0)} onClick={() => onOpenThread(t)}
-                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
+                  onEdit={onEditThread} onRegister={onRegisterTrade} registerCount={tradeCounts?.[t.id] || 0} pnl={postPnls?.[t.id]} onDelete={onDeleteThread} onShare={onShareThread} onReport={onReportThread}
                   onTogglePin={onTogglePin} canPin={pinned.length < PIN_LIMIT} compact={isDesktop} />
               ))}
             </div>
@@ -2756,6 +2776,13 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // at all instead of just trusting trade:saved in the moment.
   const [tradeCounts, setTradeCounts] = useState({}); // { [postId]: count }
 
+  // PnL (USD) per Post, straight from Doers Journal via the same
+  // post_trade_links relation as tradeCounts above — PostCard's own PnL
+  // badge, not a new/duplicated value. Batch-fetched alongside tradeCounts
+  // for the same reason (one query for the whole list, correct on first
+  // paint, survives a reload).
+  const [postPnls, setPostPnls] = useState({}); // { [postId]: dollars }
+
   // ── Load from Supabase ─────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -2765,6 +2792,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       if (data.length > 0) setThreads(data);
       setLoadingThreads(false);
       fetchTradeCounts(effectiveThreads.map(t => t.id)).then(counts => { if (!cancelled) setTradeCounts(counts); });
+      fetchPostPnls(effectiveThreads.map(t => t.id)).then(pnls => { if (!cancelled) setPostPnls(pnls); });
       if (openThreadId) {
         const t = openThreadId.startsWith("p")
           ? data.find(th => th.planningPostId === openThreadId)
@@ -2788,6 +2816,17 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   useEffect(() => {
     if (!tradeLinkedSignal?.postId) return;
     setTradeCounts(prev => ({ ...prev, [tradeLinkedSignal.postId]: (prev[tradeLinkedSignal.postId] || 0) + 1 }));
+  }, [tradeLinkedSignal]);
+
+  // Same trigger as above, but PnL can't be optimistically bumped by a
+  // fixed amount the way a count can (we don't know the new trade's PnL
+  // client-side) — instead re-read the true total for just this one post
+  // from the same source of truth, cheap since it's a single postId.
+  useEffect(() => {
+    if (!tradeLinkedSignal?.postId) return;
+    fetchPostPnls([tradeLinkedSignal.postId]).then(pnls => {
+      setPostPnls(prev => ({ ...prev, ...pnls }));
+    });
   }, [tradeLinkedSignal]);
 
   useEffect(() => {
@@ -2992,7 +3031,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
             </div>
           ) : (
             <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} tradeCounts={tradeCounts} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} tradeCounts={tradeCounts} postPnls={postPnls} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
                       onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
           )}
         </div>
