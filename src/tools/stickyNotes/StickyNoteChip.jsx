@@ -17,7 +17,7 @@
 import { motion } from "framer-motion";
 import { stickyColor, stickyTilt } from "./stickyNoteColors.js";
 
-const noteFont = "'Segoe Print','Bradley Hand','Comic Sans MS',cursive";
+const noteFont = "'DM Sans', sans-serif";
 
 export default function StickyNoteChip({ note, hidden, gridRef, onOpen }) {
   const c = stickyColor(note.color);
@@ -46,13 +46,13 @@ export default function StickyNoteChip({ note, hidden, gridRef, onOpen }) {
         }} />
 
         <p style={{
-          margin: "0 14px 4px 0", fontFamily: noteFont, fontWeight: 700, fontSize: 14,
-          lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          margin: "0 14px 4px 0", fontFamily: noteFont, fontWeight: 600, fontSize: 14,
+          lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>
           {note.title || "Sin título"}
         </p>
         <p style={{
-          margin: 0, fontFamily: noteFont, fontSize: 11.5, lineHeight: 1.4, opacity: 0.82,
+          margin: 0, fontFamily: noteFont, fontWeight: 500, fontSize: 11.5, lineHeight: 1.5, opacity: 0.82,
           display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", flex: 1,
         }}>
           {note.content || ""}

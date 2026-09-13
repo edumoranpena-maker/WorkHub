@@ -25,12 +25,13 @@
  * while editing flushes the pending autosave first.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical, Trash2, Pencil, Check } from "lucide-react";
 import { STICKY_COLOR_IDS, stickyColor } from "./stickyNoteColors.js";
 import { updateStickyNote } from "../../lib/stickyNotesApi.js";
 
-const noteFont = "'Segoe Print','Bradley Hand','Comic Sans MS',cursive";
+const noteFont = "'DM Sans', sans-serif";
 const uiFont = "'DM Sans', sans-serif";
 const AUTOSAVE_DELAY = 700;
 
@@ -50,6 +51,17 @@ export default function StickyNoteExpanded({
   const [dir, setDir] = useState(0);
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Screen-space position for the ⋮ menu, captured from the trigger button's
+  // real bounding rect at open time. The menu itself is portaled to
+  // document.body and positioned `fixed` from these coordinates instead of
+  // being absolutely positioned inside the note's paper rectangle — that
+  // rectangle has no fixed height (it sizes to content) and clips overflow,
+  // so a short note used to squash/hide the menu inside itself. Anchoring
+  // via the portal makes the menu's placement independent of the note's
+  // size entirely, same approach as PostOptionsMenu.jsx.
+  const [menuPos, setMenuPos] = useState(null);
+  const menuBtnRef = useRef(null);
+  const menuRef = useRef(null);
   const [saveLabel, setSaveLabel] = useState("idle"); // idle | typing | saving | saved
   const [localTitle, setLocalTitle] = useState(note.title);
   const [localContent, setLocalContent] = useState(note.content);
@@ -110,6 +122,35 @@ export default function StickyNoteExpanded({
   }, [flush]);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  // ── ⋮ menu: compute its floating position from the trigger button ──────
+  const openMenu = useCallback(() => {
+    const btn = menuBtnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+    setMenuOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocClick = (e) => {
+      if (menuBtnRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    // The menu's coordinates are captured once at open time; if the note's
+    // (internally scrollable) content or the page underneath scrolls, those
+    // coordinates go stale, so just close it — same behavior PostOptionsMenu
+    // uses for the same reason.
+    const onScroll = () => setMenuOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [menuOpen]);
 
   const startEditing = () => {
     setMenuOpen(false);
@@ -203,45 +244,49 @@ export default function StickyNoteExpanded({
               <Check size={13} /> Listo
             </button>
           ) : (
-            <div style={{ position: "relative" }}>
-              <button onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v); }}
+            <div ref={menuBtnRef} style={{ position: "relative" }}>
+              <button onClick={(e) => { e.stopPropagation(); menuOpen ? setMenuOpen(false) : openMenu(); }}
                 style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: c.text }}>
                 <MoreVertical size={15} />
               </button>
-              <AnimatePresence>
-                {menuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: -4 }}
-                    transition={{ duration: 0.12 }}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ position: "absolute", top: "115%", right: 0, background: "#181824", border: "1px solid #1c1c2e", borderRadius: 12, padding: 8, minWidth: 168, boxShadow: "0 10px 28px rgba(0,0,0,0.45)" }}
-                  >
-                    <button onClick={startEditing}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "none", border: "none", cursor: "pointer", color: "#fafafa", fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, borderRadius: 8 }}>
-                      <Pencil size={13} /> Editar
-                    </button>
+              {menuPos && createPortal(
+                <AnimatePresence>
+                  {menuOpen && (
+                    <motion.div
+                      ref={menuRef}
+                      initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                      transition={{ duration: 0.12 }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 3200, background: "#181824", border: "1px solid #1c1c2e", borderRadius: 12, padding: 8, minWidth: 168, boxShadow: "0 10px 28px rgba(0,0,0,0.45)" }}
+                    >
+                      <button onClick={startEditing}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "none", border: "none", cursor: "pointer", color: "#fafafa", fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, borderRadius: 8 }}>
+                        <Pencil size={13} /> Editar
+                      </button>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 9px 6px" }}>
-                      {STICKY_COLOR_IDS.map(id => {
-                        const cc = stickyColor(id);
-                        return (
-                          <button key={id} onClick={() => changeColor(id)} title={cc.label}
-                            style={{
-                              width: 18, height: 18, borderRadius: "50%", background: cc.bg, cursor: "pointer",
-                              border: id === note.color ? "2px solid #d4a843" : "1px solid rgba(255,255,255,0.15)",
-                              padding: 0,
-                            }} />
-                        );
-                      })}
-                    </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 9px 6px" }}>
+                        {STICKY_COLOR_IDS.map(id => {
+                          const cc = stickyColor(id);
+                          return (
+                            <button key={id} onClick={() => changeColor(id)} title={cc.label}
+                              style={{
+                                width: 18, height: 18, borderRadius: "50%", background: cc.bg, cursor: "pointer",
+                                border: id === note.color ? "2px solid #d4a843" : "1px solid rgba(255,255,255,0.15)",
+                                padding: 0,
+                              }} />
+                          );
+                        })}
+                      </div>
 
-                    <button onClick={() => { setMenuOpen(false); onDeleteRequest(note); }}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "none", border: "none", cursor: "pointer", color: "#ff4f6a", fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, borderRadius: 8, marginTop: 2 }}>
-                      <Trash2 size={13} /> Eliminar
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                      <button onClick={() => { setMenuOpen(false); onDeleteRequest(note); }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", background: "none", border: "none", cursor: "pointer", color: "#ff4f6a", fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, borderRadius: 8, marginTop: 2 }}>
+                        <Trash2 size={13} /> Eliminar
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>,
+                document.body
+              )}
             </div>
           )}
         </div>
@@ -260,7 +305,7 @@ export default function StickyNoteExpanded({
                     onChange={(e) => { setLocalTitle(e.target.value); scheduleSave({ title: e.target.value }); }}
                     placeholder="Título"
                     maxLength={80}
-                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontFamily: noteFont, fontWeight: 700, fontSize: 19, color: c.text, marginBottom: 8, padding: 0 }}
+                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontFamily: noteFont, fontWeight: 600, fontSize: 19, color: c.text, marginBottom: 8, padding: 0 }}
                   />
                   <textarea
                     ref={contentRef}
@@ -268,15 +313,15 @@ export default function StickyNoteExpanded({
                     onChange={(e) => { setLocalContent(e.target.value); scheduleSave({ content: e.target.value }); }}
                     placeholder="Escribe algo…"
                     rows={8}
-                    style={{ width: "100%", minHeight: 180, background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: noteFont, fontSize: 15.5, lineHeight: 1.55, color: c.text, padding: 0 }}
+                    style={{ width: "100%", minHeight: 180, background: "transparent", border: "none", outline: "none", resize: "none", fontFamily: noteFont, fontWeight: 500, fontSize: 15.5, lineHeight: 1.6, color: c.text, padding: 0 }}
                   />
                 </>
               ) : (
                 <>
-                  <p style={{ margin: "0 0 10px", fontFamily: noteFont, fontWeight: 700, fontSize: 19, lineHeight: 1.25, color: c.text }}>
+                  <p style={{ margin: "0 0 10px", fontFamily: noteFont, fontWeight: 600, fontSize: 19, lineHeight: 1.3, color: c.text }}>
                     {note.title || "Sin título"}
                   </p>
-                  <p style={{ margin: 0, fontFamily: noteFont, fontSize: 15.5, lineHeight: 1.55, color: c.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  <p style={{ margin: 0, fontFamily: noteFont, fontWeight: 500, fontSize: 15.5, lineHeight: 1.6, color: c.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                     {note.content || <span style={{ opacity: 0.55, fontStyle: "italic" }}>Nota vacía — toca ⋮ → Editar</span>}
                   </p>
                 </>
