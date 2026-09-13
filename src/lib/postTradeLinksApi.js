@@ -51,6 +51,33 @@ export async function linkTradeToPost(postId, tradeId) {
 }
 
 /**
+ * Batch PnL lookup for every postId in the list — same one-query-for-the-
+ * whole-feed shape as fetchTradeCounts above, so PostCard's PnL badge costs
+ * nothing extra per card. Returns { [postId]: pnl } in dollars, straight
+ * from Doers Journal's own `trades.pnl` column — nothing computed here,
+ * only summed when a Post has more than one registered trade (Registrar can
+ * be used more than once per Post). A postId with no *executed* linked
+ * trade simply doesn't appear as a key — callers should read a missing key
+ * as "no PnL to show" (see PostCard), not as $0.
+ */
+export async function fetchPostPnls(postIds) {
+  const ids = (postIds ?? []).filter(Boolean);
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from("post_trade_links")
+    .select(`post_id, trades(pnl, ejecutado)`)
+    .in("post_id", ids);
+  if (error) { console.error("[postTradeLinksApi] fetchPostPnls:", error.message); return {}; }
+  const pnls = {};
+  for (const row of data ?? []) {
+    if (!row.trades || !row.trades.ejecutado) continue; // same "no fake outcome for an un-executed setup" rule as fetchTradesForPost
+    const pnl = Number(row.trades.pnl) || 0;
+    pnls[row.post_id] = (pnls[row.post_id] || 0) + pnl;
+  }
+  return pnls;
+}
+
+/**
  * The actual trades registered from ONE specific Post — this is the real
  * Post↔Trade relation the Thread's Stats tab uses (see Post.jsx's
  * ThreadStatsTab), not "the latest trades globally" and not a second,
