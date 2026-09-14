@@ -293,7 +293,7 @@ export function removeCachedSubtema(threadId, subtemaId) {
  * else (audio upload, media upload incl. Archivos, DB insert) is identical,
  * so Subtemas get exactly the same persistence guarantees as Posts.
  */
-async function insertThreadRow({ title, content, privacy, audio, mediaFiles = [], planningPostId = null, parentThreadId = null }, author = "Luis Morp") {
+async function insertThreadRow({ title, content, privacy, audio, mediaFiles = [], planningPostId = null, parentThreadId = null, createdAt = null }, author = "Luis Morp") {
   // 1. Upload audio
   let audioUrl = null, audioDuration = 0, audioWaveform = [];
   if (audio?.blob) {
@@ -318,6 +318,11 @@ async function insertThreadRow({ title, content, privacy, audio, mediaFiles = []
       audio_url: audioUrl,
       audio_duration: audioDuration || null,
       audio_waveform: audioWaveform.length ? audioWaveform : null,
+      // Only set for a "New Session" created from a specific Calendar day
+      // (see Post.jsx's Calendar tab / App.jsx's handlePublishNewPost) — a
+      // normal "Crear Post" passes nothing here and the column's own
+      // default (now()) applies, exactly as before.
+      ...(createdAt ? { created_at: createdAt } : {}),
     })
     .select()
     .single();
