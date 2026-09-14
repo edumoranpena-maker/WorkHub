@@ -2725,7 +2725,185 @@ const GreenFAB = memo(function GreenFAB({ fabVisible, fabMenuOpen, setFabMenuOpe
   );
 });
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade, tradeLinkedSignal }) {
+const WEEKDAY_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
+const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function isSameDay(a, b) {
+  return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function fmtFullDate(d) {
+  return `${WEEKDAY_FULL[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+// Compact variant of fmtPostPnl for the small calendar day cells (no
+// decimals — the same value shown with full precision in the Day sheet's
+// Daily Profit line and the Post Card badge).
+function fmtPostPnlCompact(v) {
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  return `${sign}$${Math.round(Math.abs(v)).toLocaleString("en-US")}`;
+}
+
+// ─── SessionsTabBar ──────────────────────────────────────────────────────────
+function SessionsTabBar({ active, onChange }) {
+  const tabs = [{ id: "sessions", label: "Sessions" }, { id: "calendar", label: "Calendar" }];
+  return (
+    <div style={{ display: "flex", gap: 4, padding: 3, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12 }}>
+      {tabs.map(t => {
+        const isActive = active === t.id;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)}
+            style={{
+              flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
+              background: isActive ? C.accent : "transparent", color: isActive ? "#fff" : C.textMuted,
+              fontFamily: font, fontSize: 13, fontWeight: 700, transition: "background 0.15s, color 0.15s",
+            }}>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── CalendarMonthView ───────────────────────────────────────────────────────
+// Pure presentation over `days` (built by Post's calendarDays useMemo, from
+// the same threads/postPnls Sessions already uses) — no data fetching here.
+function CalendarMonthView({ month, days, monthlyProfit, onChangeMonth, onSelectDay, selectedDay }) {
+  const today = new Date();
+  const navBtnStyle = { width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.border}`, background: C.card, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <button onClick={() => onChangeMonth(-1)} style={navBtnStyle} aria-label="Previous month"><ChevronLeft size={17} color={C.text} /></button>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>{monthLabel(month)}</p>
+          <p style={{ margin: "3px 0 0", fontFamily: font, fontSize: 11, fontWeight: 700, color: C.textMuted }}>
+            Monthly Profit:{" "}
+            <span style={{ color: monthlyProfit > 0 ? C.green : monthlyProfit < 0 ? C.red : C.textMuted }}>{fmtPostPnl(monthlyProfit)}</span>
+          </p>
+        </div>
+        <button onClick={() => onChangeMonth(1)} style={navBtnStyle} aria-label="Next month"><ChevronRight size={17} color={C.text} /></button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
+        {WEEKDAY_SHORT.map((w, i) => (
+          <span key={i} style={{ textAlign: "center", fontFamily: font, fontSize: 10, fontWeight: 700, color: C.textDim, textTransform: "uppercase" }}>{w}</span>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {days.map((cell, i) => {
+          if (!cell) return <div key={`blank${i}`} />;
+          const isToday = isSameDay(cell.date, today);
+          const isSelected = isSameDay(cell.date, selectedDay);
+          return (
+            <button key={cell.dayNumber} onClick={() => onSelectDay(cell.date)}
+              style={{
+                aspectRatio: "1 / 1", borderRadius: 10, cursor: "pointer", padding: 2,
+                border: `1px solid ${isSelected ? C.accent : isToday ? C.accent + "50" : C.border}`,
+                background: isSelected ? `${C.accent}18` : C.card,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+              }}>
+              <span style={{ fontFamily: font, fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? C.accentLight : C.text }}>
+                {cell.dayNumber}
+              </span>
+              {cell.pnl != null ? (
+                <span style={{ fontFamily: font, fontSize: 8.5, fontWeight: 800, color: cell.pnl > 0 ? C.green : cell.pnl < 0 ? C.red : C.textMuted }}>
+                  {fmtPostPnlCompact(cell.pnl)}
+                </span>
+              ) : cell.sessions.length > 0 ? (
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.textDim }} />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── DaySheet ────────────────────────────────────────────────────────────────
+// Bottom sheet for a single Calendar day — Daily Profit + that day's
+// Sessions (each opens its real Thread via onOpenSession) + New Session.
+// Deliberately a plain component with no navigation/back-stack wiring of its
+// own (see the note on selectedDay in Post()) — dismissal is only the
+// backdrop tap or the X button, both just calling onClose().
+function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
+  const dailyProfit = cell.pnl ?? 0;
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+      style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 380, damping: 38 }}
+        style={{ width: "100%", maxWidth: 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${C.border}`, borderBottom: "none", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, flexShrink: 0 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "14px 18px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <div>
+            <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>{fmtFullDate(cell.date)}</p>
+            <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.textMuted }}>
+              Daily Profit:{" "}
+              <span style={{ color: dailyProfit > 0 ? C.green : dailyProfit < 0 ? C.red : C.textMuted }}>{fmtPostPnl(dailyProfit)}</span>
+            </p>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <X size={14} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px" }}>
+          {cell.sessions.length === 0 ? (
+            <p style={{ margin: "18px 4px", fontFamily: font, fontSize: 13, color: C.textMuted, textAlign: "center" }}>
+              No Sessions on this day yet.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {cell.sessions.map(s => {
+                const opt = STATUS_OPTIONS.find(o => o.id === s.status) || STATUS_OPTIONS[0];
+                const pnl = postPnls?.[s.id];
+                return (
+                  <motion.div key={s.id} whileTap={{ scale: 0.98 }} onClick={() => onOpenSession(s)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 3px", fontFamily: font, fontSize: 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.title || "Untitled"}
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: opt.color, flexShrink: 0 }} />
+                        <span style={{ fontFamily: font, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: opt.color }}>{opt.label}</span>
+                      </div>
+                    </div>
+                    {pnl != null && (
+                      <span style={{ fontFamily: font, fontSize: 12.5, fontWeight: 800, color: pnl > 0 ? C.green : pnl < 0 ? C.red : C.textMuted, flexShrink: 0 }}>
+                        {fmtPostPnl(pnl)}
+                      </span>
+                    )}
+                    <ChevronRight size={15} color={C.textDim} style={{ flexShrink: 0 }} />
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "10px 14px 18px", flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
+          <motion.button whileTap={{ scale: 0.96 }} onClick={onNewSession}
+            style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Plus size={16} strokeWidth={2.5} /> New Session
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade, tradeLinkedSignal, onRequestNewSession }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
@@ -2758,6 +2936,24 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   const [filters, setFilters] = useState({ statuses: [], fromDate: null });
   const handleSearch = useCallback((q) => setSearchQuery(q), []);
   const handleFilterChange = useCallback((f) => setFilters(f), []);
+
+  // ── Sessions / Calendar tabs ────────────────────────────────────────────────
+  // Plain local state, deliberately NOT part of the URL/route system: Post
+  // itself is permanently mounted (see NOTE above threads/setThreads), so
+  // activeTab/calendarMonth/selectedDay all simply survive opening and
+  // closing a Thread (a real route push/pop) untouched — that's what makes
+  // "Calendar → day → Session → Thread → back → still on Calendar, same
+  // month/day" work with no extra plumbing. selectedDay is intentionally
+  // NOT registered on the overlay/back stack (lib/navigation.jsx) either:
+  // that stack assumes overlay guards and real route pushes never interleave
+  // out of order, which opening a Thread (a real navigate()) from inside the
+  // day sheet would violate. Closing the sheet is a plain tap-to-dismiss
+  // instead — see DaySheet below.
+  const [activeTab, setActiveTab] = useState("sessions"); // "sessions" | "calendar"
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
+  });
+  const [selectedDay, setSelectedDay] = useState(null); // Date | null — day tapped in the Calendar grid
 
   // ── UI-only state ──────────────────────────────────────────────────────────
   // ── FAB + composer state ───────────────────────────────────────────────────
@@ -2996,6 +3192,65 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   };
   const springTrans = { type: "spring", stiffness: 380, damping: 38, mass: 0.85 };
 
+  // ── Calendar tab: days-of-month + per-day PnL, derived from the SAME
+  // threads/postPnls this component already fetches for Sessions — no
+  // second data source, nothing recomputed beyond a groupby+sum. ──────────
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear(), month = calendarMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstWeekday = new Date(year, month, 1).getDay(); // 0=Sun
+    const byDay = new Map(); // dayNumber -> thread[]
+    for (const t of threads) {
+      if (!t.timestamp) continue;
+      if (t.timestamp.getFullYear() !== year || t.timestamp.getMonth() !== month) continue;
+      const dn = t.timestamp.getDate();
+      if (!byDay.has(dn)) byDay.set(dn, []);
+      byDay.get(dn).push(t);
+    }
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null); // leading blanks
+    for (let dn = 1; dn <= daysInMonth; dn++) {
+      const sessions = (byDay.get(dn) || []).sort((a, b) => a.timestamp - b.timestamp);
+      let pnl = null;
+      for (const s of sessions) {
+        const v = postPnls?.[s.id];
+        if (v == null) continue;
+        pnl = (pnl ?? 0) + v;
+      }
+      cells.push({ date: new Date(year, month, dn), dayNumber: dn, sessions, pnl });
+    }
+    while (cells.length % 7 !== 0) cells.push(null); // trailing blanks — keeps the grid rectangular
+    return cells;
+  }, [threads, postPnls, calendarMonth]);
+
+  // Monthly Profit — sum of every known PnL in the displayed month (0 if the
+  // month has no Sessions with a registered trade yet, never hidden).
+  const monthlyProfit = useMemo(
+    () => calendarDays.reduce((sum, c) => sum + (c?.pnl ?? 0), 0),
+    [calendarDays]
+  );
+
+  const changeMonth = useCallback((delta) => {
+    setCalendarMonth(d => {
+      const next = new Date(d.getFullYear(), d.getMonth() + delta, 1);
+      return next;
+    });
+    setSelectedDay(null);
+  }, []);
+
+  // Whichever calendar cell selectedDay currently points at — recomputed
+  // live from calendarDays, so editing/deleting a Session (or a new one
+  // landing from the composer) updates the open day sheet immediately.
+  const selectedDayCell = useMemo(() => {
+    if (!selectedDay) return null;
+    return calendarDays.find(c => c && c.date.getFullYear() === selectedDay.getFullYear()
+      && c.date.getMonth() === selectedDay.getMonth() && c.date.getDate() === selectedDay.getDate()) || null;
+  }, [selectedDay, calendarDays]);
+
+  const handleNewSessionForDay = useCallback(() => {
+    onRequestNewSession?.(selectedDay || new Date());
+  }, [onRequestNewSession, selectedDay]);
+
   // ── Feed panel ─────────────────────────────────────────────────────────────
   // Single render path for both platforms now — Post's own width, height and
   // scroll are entirely delegated to the App-level layout system (PageContainer
@@ -3017,26 +3272,59 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
     <>
       <PageContainer isDesktop={isDesktop} variant="feed">
       <div style={{ background: C.surface, minHeight: 400 }}>
-        {/* Filter bar */}
-        <div style={{ padding: "12px 14px 10px" }}>
-          <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
+        {/* Sessions | Calendar tabs */}
+        <div style={{ padding: "12px 14px 0" }}>
+          <SessionsTabBar active={activeTab} onChange={setActiveTab} />
         </div>
 
-        {/* Posts list — flows naturally */}
-        <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
-          {loadingThreads ? (
-            <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-              <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
-              <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+        {activeTab === "sessions" ? (
+          <>
+            {/* Filter bar */}
+            <div style={{ padding: "12px 14px 10px" }}>
+              <FilterBar searchQuery={searchQuery} filters={filters} onSearch={handleSearch} onFilterChange={handleFilterChange} />
             </div>
-          ) : (
-            <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
-                      onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} tradeCounts={tradeCounts} postPnls={postPnls} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
-                      onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
-          )}
-        </div>
+
+            {/* Sessions list — flows naturally */}
+            <div ref={feedContainerRef} style={{ padding: "0 14px 24px" }}>
+              {loadingThreads ? (
+                <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <Loader size={16} color={C.teal} style={{ animation: "spin 1s linear infinite" }} />
+                  <span style={{ color: C.textMuted, fontFamily: font, fontSize: 14 }}>Loading posts…</span>
+                </div>
+              ) : (
+                <PostFeed threads={threads} searchQuery={searchQuery} filters={filters} onOpenThread={openThreadView}
+                          onEditThread={setEditingFeedThread} onRegisterTrade={onRegisterTrade} tradeCounts={tradeCounts} postPnls={postPnls} onDeleteThread={handleDeleteThread} onShareThread={() => {}} onReportThread={() => {}}
+                          onTogglePin={handleTogglePin} unseenSubtemas={unseenSubtemas} />
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: "14px 14px 32px" }}>
+            <CalendarMonthView
+              month={calendarMonth}
+              days={calendarDays}
+              monthlyProfit={monthlyProfit}
+              onChangeMonth={changeMonth}
+              onSelectDay={(date) => setSelectedDay(date)}
+              selectedDay={selectedDay}
+            />
+          </div>
+        )}
       </div>
       </PageContainer>
+
+      {/* Day sheet — Calendar tab only. Plain conditional render (see the
+          activeTab/calendarMonth/selectedDay note above for why this is
+          deliberately not on the overlay/back stack). */}
+      {activeTab === "calendar" && selectedDayCell && (
+        <DaySheet
+          cell={selectedDayCell}
+          postPnls={postPnls}
+          onClose={() => setSelectedDay(null)}
+          onOpenSession={(t) => openThreadView(t)}
+          onNewSession={handleNewSessionForDay}
+        />
+      )}
 
       {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement.
           key is static ("thread-overlay"), NOT tied to openThread.id — this wrapper only
