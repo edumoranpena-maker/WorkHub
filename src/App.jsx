@@ -1847,15 +1847,15 @@ function App({ onGoHome, onOpenSettings }) {
             )}
           </AnimatePresence>
 
-          {/* Main FAB — purple, always fixed, always visible */}
+          {/* Main FAB — Binance gold, always fixed, always visible */}
           <motion.button
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.88 }}
             onClick={() => setFabOpen(v => !v)}
-            style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.accent}, #5c2fff)`, boxShadow: fabOpen ? `0 4px 20px rgba(0,0,0,0.5)` : `0 6px 28px ${C.accent}70, 0 0 0 1px ${C.accent}30` }}
+            style={{ position: "fixed", bottom: 28, right: 20, width: 58, height: 58, borderRadius: "50%", zIndex: 999, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", background: fabOpen ? `linear-gradient(135deg, #1a1a2e, #2d2d4a)` : `linear-gradient(135deg, ${C.gold}, #f0c866)`, boxShadow: fabOpen ? `0 4px 20px rgba(0,0,0,0.5)` : `0 6px 28px ${C.gold}70, 0 0 0 1px ${C.gold}30` }}
           >
             <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 28 }}>
-              <Plus size={26} color="#fff" strokeWidth={2.5} />
+              <Plus size={26} color={fabOpen ? "#fff" : "#000"} strokeWidth={2.5} />
             </motion.div>
           </motion.button>
         </>
