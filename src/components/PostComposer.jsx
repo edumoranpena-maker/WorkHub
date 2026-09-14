@@ -66,7 +66,7 @@ function useIsDesktop() {
   return v;
 }
 
-export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], onSubmit, onClose }) {
+export default function PostComposer({ mode, initial = null, isEditing = false, checklists = [], presetDate = null, onSubmit, onClose }) {
   const isDesktop = useIsDesktop();
   const isPost = mode === "post";
   const isSubtema = mode === "subtema";
@@ -238,6 +238,7 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
       visibility,
       checklist: attachedChecklist,
       links: previews,
+      presetDate, // null unless opened as "New Session" from a specific Calendar day — see App.jsx's handlePublishNewPost
     });
     closeOverlay();
     onClose();
@@ -378,7 +379,14 @@ export default function PostComposer({ mode, initial = null, isEditing = false, 
             style={{ background: "none", border: "none", cursor: "pointer", color: C.accentLight, marginRight: 12, display: "flex", alignItems: "center" }}>
             <ChevronLeft size={24} strokeWidth={2.4} />
           </motion.button>
-          <span style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: C.text, flex: 1 }}>{labels.header}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontFamily: font, fontSize: 17, fontWeight: 800, color: C.text, display: "block" }}>{labels.header}</span>
+            {presetDate && (
+              <span style={{ fontFamily: font, fontSize: 11.5, fontWeight: 600, color: C.teal }}>
+                Session for {presetDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              </span>
+            )}
+          </div>
           <motion.button whileTap={{ scale: 0.92 }} onClick={submit} disabled={!canSubmit}
             style={{ padding: "8px 18px", borderRadius: 99, border: "none", cursor: canSubmit ? "pointer" : "default", background: canSubmit ? `linear-gradient(135deg, ${C.accent}, #5c2fff)` : C.border, color: canSubmit ? "#fff" : C.textMuted, fontFamily: font, fontSize: 14, fontWeight: 700 }}>
             {labels.submit}
