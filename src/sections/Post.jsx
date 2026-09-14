@@ -2746,7 +2746,7 @@ function fmtPostPnlCompact(v) {
 
 // ─── SessionsTabBar ──────────────────────────────────────────────────────────
 function SessionsTabBar({ active, onChange }) {
-  const tabs = [{ id: "sessions", label: "Sessions" }, { id: "calendar", label: "Calendar" }];
+  const tabs = [{ id: "calendar", label: "Calendar" }, { id: "sessions", label: "Sessions" }];
   return (
     <div style={{ display: "flex", gap: 4, padding: 3, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12 }}>
       {tabs.map(t => {
@@ -2755,7 +2755,7 @@ function SessionsTabBar({ active, onChange }) {
           <button key={t.id} onClick={() => onChange(t.id)}
             style={{
               flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
-              background: isActive ? C.accent : "transparent", color: isActive ? "#fff" : C.textMuted,
+              background: isActive ? C.gold : C.border, color: isActive ? "#000" : C.text,
               fontFamily: font, fontSize: 13, fontWeight: 700, transition: "background 0.15s, color 0.15s",
             }}>
             {t.label}
@@ -2802,11 +2802,11 @@ function CalendarMonthView({ month, days, monthlyProfit, onChangeMonth, onSelect
             <button key={cell.dayNumber} onClick={() => onSelectDay(cell.date)}
               style={{
                 aspectRatio: "1 / 1", borderRadius: 10, cursor: "pointer", padding: 2,
-                border: `1px solid ${isSelected ? C.accent : isToday ? C.accent + "50" : C.border}`,
+                border: `1px solid ${isSelected ? C.accent : isToday ? C.gold + "50" : C.border}`,
                 background: isSelected ? `${C.accent}18` : C.card,
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
               }}>
-              <span style={{ fontFamily: font, fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? C.accentLight : C.text }}>
+              <span style={{ fontFamily: font, fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? C.gold : C.text }}>
                 {cell.dayNumber}
               </span>
               {cell.pnl != null ? (
@@ -2825,26 +2825,22 @@ function CalendarMonthView({ month, days, monthlyProfit, onChangeMonth, onSelect
 }
 
 // ─── DaySheet ────────────────────────────────────────────────────────────────
-// Bottom sheet for a single Calendar day — Daily Profit + that day's
-// Sessions (each opens its real Thread via onOpenSession) + New Session.
-// Deliberately a plain component with no navigation/back-stack wiring of its
-// own (see the note on selectedDay in Post()) — dismissal is only the
-// backdrop tap or the X button, both just calling onClose().
+// Centered day panel (Daily Profit + that day's Sessions, each opening its
+// real Thread via onOpenSession, + New Session). Deliberately a plain
+// component with no navigation/back-stack wiring of its own (see the note on
+// selectedDay in Post()) — dismissal is only the backdrop tap or the X
+// button, both just calling onClose().
 function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
   const dailyProfit = cell.pnl ?? 0;
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={e => e.target === e.currentTarget && onClose()}
-      style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-        transition={{ type: "spring", stiffness: 380, damping: 38 }}
-        style={{ width: "100%", maxWidth: 520, background: C.card, borderRadius: "24px 24px 0 0", border: `1px solid ${C.border}`, borderBottom: "none", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }}
+        transition={{ type: "spring", stiffness: 380, damping: 34 }}
+        style={{ width: "min(92vw, 480px)", minHeight: "min(70vh, 480px)", maxHeight: "84vh", background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-        <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, flexShrink: 0 }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
-        </div>
-
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "14px 18px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "18px 18px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <div>
             <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text }}>{fmtFullDate(cell.date)}</p>
             <p style={{ margin: "4px 0 0", fontFamily: font, fontSize: 12, fontWeight: 700, color: C.textMuted }}>
@@ -2894,7 +2890,7 @@ function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
 
         <div style={{ padding: "10px 14px 18px", flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
           <motion.button whileTap={{ scale: 0.96 }} onClick={onNewSession}
-            style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.accent}, #5c2fff)`, color: "#fff", fontFamily: font, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            style={{ width: "100%", height: 46, borderRadius: 14, border: "none", cursor: "pointer", background: `linear-gradient(135deg, ${C.gold}, #f0c866)`, color: "#000", fontFamily: font, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <Plus size={16} strokeWidth={2.5} /> New Session
           </motion.button>
         </div>
@@ -2949,7 +2945,7 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
   // out of order, which opening a Thread (a real navigate()) from inside the
   // day sheet would violate. Closing the sheet is a plain tap-to-dismiss
   // instead — see DaySheet below.
-  const [activeTab, setActiveTab] = useState("sessions"); // "sessions" | "calendar"
+  const [activeTab, setActiveTab] = useState("calendar"); // "sessions" | "calendar" — Calendar is the default view
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
   });
