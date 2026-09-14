@@ -1351,6 +1351,12 @@ function App({ onGoHome, onOpenSettings }) {
 
   const [showNewStory,      setShowNewStory]      = useState(false);
   const [showFullPostSheet, setShowFullPostSheet]  = useState(false);
+  // Set only when the composer is opened as "New Session" from a specific
+  // Calendar day (Post.jsx's Calendar tab) — carries that day's Date so
+  // handlePublishNewPost can pass it through as the new Session's created_at.
+  // null for the normal "Crear Post" FAB path, which behaves exactly as
+  // before (today's date, via the DB column's own default).
+  const [newSessionDate, setNewSessionDate] = useState(null);
   // Callback ref: Post registers this so App can prepend a created thread to the feed
   const onPostCreatedRef = useRef(null);
   // Callback ref: Announcements registers its handlePublishPost for mobile NewDiffusionSheet
@@ -1360,7 +1366,15 @@ function App({ onGoHome, onOpenSettings }) {
   // Shared submit handler for the Post composer (create mode) — closes the
   // composer immediately (PostComposer already does this) and runs the actual
   // Supabase save in the background via the publish queue.
-  const handlePublishNewPost = useCallback(({ title, content, mediaFiles, audio, visibility, checklist }) => {
+  // "New Session" from Post.jsx's Calendar day sheet — opens the exact same
+  // composer/flow as the "Crear Post" FAB (handlePublishNewPost above),
+  // just with that day's date carried along.
+  const handleRequestNewSession = useCallback((date) => {
+    setNewSessionDate(date || null);
+    setShowFullPostSheet(true);
+  }, []);
+
+  const handlePublishNewPost = useCallback(({ title, content, mediaFiles, audio, visibility, checklist, presetDate }) => {
     const rawFiles = (mediaFiles || []).filter(m => m.file).map(m => ({ file: m.file, type: m.type }));
     enqueuePublish("Publicando post…", async () => {
       const saved = await createRecapThread({
@@ -1369,12 +1383,14 @@ function App({ onGoHome, onOpenSettings }) {
         privacy: visibility,
         audio,
         mediaFiles: rawFiles,
+        createdAt: presetDate ? presetDate.toISOString() : undefined,
       });
       if (!saved) { console.error("[App] createRecapThread returned null — post was NOT saved"); return; }
       if (checklist) saved.checklist = checklist; // client-side only, not persisted (no Supabase column yet)
       onPostCreatedRef.current?.(saved);
     });
     setShowFullPostSheet(false);
+    setNewSessionDate(null);
     navigateTo("recaps");
   }, [enqueuePublish]); // eslint-disable-line
 
@@ -1615,7 +1631,7 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} latestTrades={latestTrades} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} />
+          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} onRequestNewSession={handleRequestNewSession} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
@@ -1906,8 +1922,9 @@ function App({ onGoHome, onOpenSettings }) {
           <PostComposer
             mode="post"
             checklists={checklists}
+            presetDate={newSessionDate}
             onSubmit={handlePublishNewPost}
-            onClose={() => setShowFullPostSheet(false)}
+            onClose={() => { setShowFullPostSheet(false); setNewSessionDate(null); }}
           />
         )}
       </AnimatePresence>
