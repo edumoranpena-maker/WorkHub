@@ -2833,7 +2833,7 @@ function CalendarMonthView({ month, days, monthlyProfit, onChangeMonth, onSelect
 function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
   const dailyProfit = cell.pnl ?? 0;
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    <motion.div {...isolateOverlayGestures} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={e => e.target === e.currentTarget && onClose()}
       style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
       <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }}
@@ -3311,16 +3311,21 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
 
       {/* Day sheet — Calendar tab only. Plain conditional render (see the
           activeTab/calendarMonth/selectedDay note above for why this is
-          deliberately not on the overlay/back stack). */}
-      {activeTab === "calendar" && selectedDayCell && (
-        <DaySheet
-          cell={selectedDayCell}
-          postPnls={postPnls}
-          onClose={() => setSelectedDay(null)}
-          onOpenSession={(t) => openThreadView(t)}
-          onNewSession={handleNewSessionForDay}
-        />
-      )}
+          deliberately not on the overlay/back stack). Wrapped in
+          AnimatePresence purely so it mounts/unmounts with its own
+          fade/scale instead of popping in and out abruptly. */}
+      <AnimatePresence>
+        {activeTab === "calendar" && selectedDayCell && (
+          <DaySheet
+            key="day-sheet"
+            cell={selectedDayCell}
+            postPnls={postPnls}
+            onClose={() => setSelectedDay(null)}
+            onOpenSession={(t) => openThreadView(t)}
+            onNewSession={handleNewSessionForDay}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Thread — real fullscreen overlay, a sibling of the feed above, not a replacement.
           key is static ("thread-overlay"), NOT tied to openThread.id — this wrapper only
