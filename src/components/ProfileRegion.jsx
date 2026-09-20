@@ -79,17 +79,22 @@ const SOCIAL_ICON_MAP = {
   youtube: Youtube, linkedin: Linkedin, github: Github, website: Globe,
 };
 
-// ─── Header (avatar, name, bio, stats, actions) ─────────────────────────────
-function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
-                       followed, onToggleFollow, subscribed, onToggleSubscribe, isDesktop }) {
-  const stats = profile?.stats ?? [
-    { key: "followers", label: "Followers", value: "12.4k" },
-    { key: "posts",      label: "Posts",     value: "86" },
-    { key: "winrate",    label: "Winrate",   value: "—" },
-  ];
-  const socials = profile?.socials ?? [];
-
-  const Avatar = ({ size }) => (
+// ─── Header pieces — Avatar/Socials/Buttons/Stats ───────────────────────────
+// Deliberately module-level, not defined inside ProfileHeader(). A `const Foo
+// = (...) => (...)` declared inside another component's body is a NEW
+// function — a new component *type* — on every single render of that parent.
+// React tells components apart by type, so at every one of ProfileHeader's
+// re-renders (which, per this file's own header comment, happens on every
+// App-level state change since this region "never remounts" but still
+// re-renders like anything else) React saw a "different" Avatar/Socials/
+// Buttons/Stats than the render before, and fully unmounted + remounted
+// each one's whole DOM subtree — the actual mechanism behind the app-wide
+// flicker on basically any interaction. Declaring them here instead, taking
+// everything they need as props, keeps their identity stable across
+// ProfileHeader's own re-renders, so a re-render just updates props/DOM in
+// place like normal, with no unmount/remount involved. Behavior unchanged.
+function ProfileAvatar({ size, onNavigate, profile, onEditAvatar }) {
+  return (
     <div style={{ position: "relative", flexShrink: 0 }}>
       <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
         <div style={{
@@ -114,8 +119,11 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
       )}
     </div>
   );
+}
 
-  const Socials = () => socials.length > 0 && (
+function ProfileSocials({ socials }) {
+  if (!socials || socials.length === 0) return null;
+  return (
     <div style={{ display: "flex", gap: 10 }}>
       {socials.map((s) => {
         const Icon = SOCIAL_ICON_MAP[s.platform] ?? LinkIcon;
@@ -128,12 +136,15 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
       })}
     </div>
   );
+}
 
-  // Follow/Subscribe/Message are viewer-only actions — they don't make sense
-  // on your own profile. Gated on !isOwner (see file header for the Owner/
-  // Viewer design note); isOwner defaults to false below, which is exactly
-  // today's single-user behavior (buttons always show) preserved as-is.
-  const Buttons = ({ style }) => !isOwner && (
+// Follow/Subscribe/Message are viewer-only actions — they don't make sense
+// on your own profile. Gated on !isOwner (see file header for the Owner/
+// Viewer design note); isOwner defaults to false below, which is exactly
+// today's single-user behavior (buttons always show) preserved as-is.
+function ProfileButtons({ style, isOwner, isDesktop, followed, onToggleFollow, subscribed, onToggleSubscribe }) {
+  if (isOwner) return null;
+  return (
     <div style={{ display: "flex", gap: 9, ...style }}>
       <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleFollow}
         style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em", background: followed ? "transparent" : C.accent, border: followed ? `1.5px solid ${C.accent}` : "none", color: followed ? C.accent : "#fff", transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
@@ -149,8 +160,10 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
       </motion.button>
     </div>
   );
+}
 
-  const Stats = ({ align = "center" }) => (profile?.showStats !== false) && (
+function ProfileStats({ align = "center", stats, isDesktop }) {
+  return (
     <div style={{ display: "flex", gap: isDesktop ? 28 : 0 }}>
       {stats.map((s, i) => (
         <div key={s.label} style={{
@@ -163,6 +176,18 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
       ))}
     </div>
   );
+}
+
+// ─── Header (avatar, name, bio, stats, actions) ─────────────────────────────
+function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
+                       followed, onToggleFollow, subscribed, onToggleSubscribe, isDesktop }) {
+  const stats = profile?.stats ?? [
+    { key: "followers", label: "Followers", value: "12.4k" },
+    { key: "posts",      label: "Posts",     value: "86" },
+    { key: "winrate",    label: "Winrate",   value: "—" },
+  ];
+  const socials = profile?.socials ?? [];
+  const showStats = profile?.showStats !== false;
 
   // ── Desktop — horizontal header: avatar left, identity+actions right ────
   if (isDesktop) {
@@ -174,7 +199,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
         style={{ padding: "32px 0 24px" }}>
 
         <div style={{ display: "flex", alignItems: "flex-start", gap: 22 }}>
-          <Avatar size={104} />
+          <ProfileAvatar size={104} onNavigate={onNavigate} profile={profile} onEditAvatar={onEditAvatar} />
 
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
@@ -189,7 +214,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
                 </div>
                 <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 13, color: C.textMuted, fontWeight: 600 }}>{profile?.handle ?? "@luismorp"}</p>
               </div>
-              <Stats align="left" />
+              {showStats && <ProfileStats align="left" stats={stats} isDesktop={isDesktop} />}
             </div>
 
             {(profile?.showBio !== false) && (
@@ -200,8 +225,8 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
             )}
 
             <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <Buttons style={{ flexShrink: 0 }} />
-              <Socials />
+              <ProfileButtons style={{ flexShrink: 0 }} isOwner={isOwner} isDesktop={isDesktop} followed={followed} onToggleFollow={onToggleFollow} subscribed={subscribed} onToggleSubscribe={onToggleSubscribe} />
+              <ProfileSocials socials={socials} />
             </div>
           </div>
         </div>
@@ -218,7 +243,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
       style={{ padding: "28px 20px 0" }}>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Avatar size={84} />
+        <ProfileAvatar size={84} onNavigate={onNavigate} profile={profile} onEditAvatar={onEditAvatar} />
         <div style={{ textAlign: "center" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
             <h2 style={{ margin: 0, fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
@@ -232,7 +257,7 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
         </div>
       </div>
 
-      <div style={{ marginTop: 20 }}><Stats /></div>
+      {showStats && <div style={{ marginTop: 20 }}><ProfileStats stats={stats} isDesktop={isDesktop} /></div>}
 
       {(profile?.showBio !== false) && (
         <p style={{ margin: "18px 0 0", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, textAlign: "center" }}>
@@ -243,11 +268,11 @@ function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
 
       {socials.length > 0 && (
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 14 }}>
-          <Socials />
+          <ProfileSocials socials={socials} />
         </div>
       )}
 
-      <Buttons style={{ marginTop: 20, paddingBottom: 18 }} />
+      <ProfileButtons style={{ marginTop: 20, paddingBottom: 18 }} isOwner={isOwner} isDesktop={isDesktop} followed={followed} onToggleFollow={onToggleFollow} subscribed={subscribed} onToggleSubscribe={onToggleSubscribe} />
     </motion.div>
   );
 }
