@@ -900,7 +900,16 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         style={{
-          position: "fixed", inset: 0, zIndex: 3000,
+          // Was 3000. Raised to match the one other "must always be the
+          // topmost thing in the whole app" tier already established here
+          // (ChecklistDetail.jsx's dialog, StickyNoteExpanded's ⋮ menu
+          // portal both use 10050 for exactly this reason). 3000 used to be
+          // the highest z-index in the app, but PublishProgressBar (3500)
+          // grew past it since, and there's no guarantee nothing else ever
+          // will again — a fullscreen media viewer should never depend on
+          // being "higher than whatever else currently exists", it should
+          // just always win. 10100 keeps it clearly above that whole tier.
+          position: "fixed", inset: 0, zIndex: 10100,
           background: "rgba(0,0,0,0.95)", backdropFilter: "blur(8px)",
           display: "flex", alignItems: "center", justifyContent: "center",
           touchAction: "none",
@@ -942,7 +951,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             aria-label="Close"
             style={{
               position: "fixed", top: "max(16px, env(safe-area-inset-top))", right: 16,
-              width: 40, height: 40, borderRadius: "50%", zIndex: 3001,
+              width: 40, height: 40, borderRadius: "50%", zIndex: 10101, // was 3001 — see the 10100 note on the backdrop above
               background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
               display: "flex", alignItems: "center", justifyContent: "center",
               cursor: "pointer", color: "#fff",
@@ -1044,7 +1053,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             aria-label="Previous"
             style={{
               position: "fixed", top: "50%", left: 20, transform: "translateY(-50%)",
-              width: 44, height: 44, borderRadius: "50%", zIndex: 3001,
+              width: 44, height: 44, borderRadius: "50%", zIndex: 10101, // was 3001 — see the 10100 note on the backdrop above
               background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
               display: "flex", alignItems: "center", justifyContent: "center",
               cursor: "pointer", color: "#fff",
@@ -1059,7 +1068,7 @@ function GlobalImageViewer({ items, startIndex, context, groups, onClose }) {
             aria-label="Next"
             style={{
               position: "fixed", top: "50%", right: 20, transform: "translateY(-50%)",
-              width: 44, height: 44, borderRadius: "50%", zIndex: 3001,
+              width: 44, height: 44, borderRadius: "50%", zIndex: 10101, // was 3001 — see the 10100 note on the backdrop above
               background: "rgba(20,20,20,0.7)", border: "1px solid rgba(255,255,255,0.15)",
               display: "flex", alignItems: "center", justifyContent: "center",
               cursor: "pointer", color: "#fff",

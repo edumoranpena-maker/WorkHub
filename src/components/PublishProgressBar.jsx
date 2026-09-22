@@ -21,7 +21,15 @@ export default function PublishProgressBar() {
 
   return (
     <div style={{
-      position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 3500,
+      position: "fixed", left: 0, right: 0, bottom: 0,
+      // Was 3500 — higher than GlobalImageViewer's fullscreen backdrop
+      // (3000). A publish toast has no business painting over a fullscreen
+      // photo/video viewer; when a job happens to be in flight while
+      // someone opens an image, that's exactly what was happening. 2700
+      // keeps it above the feed and above PostComposer's own screens (2000/
+      // 2600) — still visible from wherever a publish was started — but
+      // below every fullscreen viewer/overlay in the app.
+      zIndex: 2700,
       display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
       padding: "0 16px calc(14px + env(safe-area-inset-bottom, 0px))",
       pointerEvents: "none",
