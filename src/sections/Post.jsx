@@ -2835,7 +2835,19 @@ function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
   return (
     <motion.div {...isolateOverlayGestures} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={e => e.target === e.currentTarget && onClose()}
-      style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+      style={{
+        position: "fixed", inset: 0,
+        // Was 400. That's fine among Post's own overlays (Thread 500,
+        // GreenFAB 650) but PublishProgressBar (formerly 3500, now 2700)
+        // and other app-wide fixed overlays sit well above 400 — if one of
+        // those is visible at the same moment (e.g. a publish toast still
+        // finishing), it would paint over this modal. Matches the same
+        // "always-on-top" tier as GlobalImageViewer/ChecklistDetail now,
+        // for the same reason: a modal like this shouldn't depend on
+        // nothing else in the app currently using a higher number.
+        zIndex: 10100,
+        background: "rgba(8,8,14,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18
+      }}>
       <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }}
         transition={{ type: "spring", stiffness: 380, damping: 34 }}
         style={{ width: "min(92vw, 480px)", minHeight: "min(70vh, 480px)", maxHeight: "84vh", background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
