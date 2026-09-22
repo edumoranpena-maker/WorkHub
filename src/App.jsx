@@ -1798,21 +1798,26 @@ function App({ onGoHome, onOpenSettings }) {
       ══════════════════════════════════════════════════════════════════════════ */}
       {isHost && (!activeSectionId || activeSectionId === "recaps") && !insideFullscreenOverlay ? (
         <>
-          {/* Backdrop */}
+          {/* Backdrop + speed-dial options — a single shared AnimatePresence
+              instead of two independent ones both gating the same `fabOpen`
+              boolean. Two separate AnimatePresence instances each track
+              their own child's exit-completion independently; nothing keeps
+              them in lockstep with each other or with the surrounding
+              render cycle, which is exactly the kind of desync that can
+              make an exiting element flash back in before its real removal.
+              One AnimatePresence with both pieces as keyed siblings gives
+              them one unified presence lifecycle. Same visuals, same
+              per-element initial/animate/exit/transition as before. */}
           <AnimatePresence>
             {fabOpen && (
-              <motion.div
+              <motion.div key="fab-backdrop"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 onClick={() => setFabOpen(false)}
                 style={{ position: "fixed", inset: 0, zIndex: 998, background: "rgba(8,8,14,0.55)", backdropFilter: "blur(6px)" }}
               />
             )}
-          </AnimatePresence>
-
-          {/* Speed-dial options */}
-          <AnimatePresence>
             {fabOpen && (
-              <motion.div
+              <motion.div key="fab-menu"
                 initial={{ opacity: 0, y: 16, scale: 0.92 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 16, scale: 0.92 }}
