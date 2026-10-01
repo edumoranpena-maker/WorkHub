@@ -1502,6 +1502,18 @@ function App({ onGoHome, onOpenSettings }) {
   // no separate "consume the URL once on mount" step to keep in sync.
 
   const activeSection = allSections.find(s => s.id === activeSectionId) || null;
+  // Stable props for <Post/> (memo()-wrapped — see Post.jsx). Without these,
+  // `section={{ ...activeSection, label: "Post" }}` and the two inline
+  // callbacks below would each be a brand-new object/function on every
+  // single App render, which defeats memo's shallow prop comparison just as
+  // completely as not using memo at all — Post would still re-render on
+  // every unrelated App-level state change (FAB, image viewer, anything).
+  // activeSection itself is already reference-stable here (allSections is
+  // memoized off static config, so .find() returns the same object across
+  // renders for the same activeSectionId) — this just stabilizes the spread.
+  const postSectionProp = useMemo(() => ({ ...activeSection, label: "Post" }), [activeSection]);
+  const handlePostUpdateResolved = useCallback(() => setOpenUpdateId(null), []);
+  const handleRegisterPostCallback = useCallback((cb) => { onPostCreatedRef.current = cb; }, []);
   const accentColor   = activeSection?.accentColor || C.accent;
 
   // ── UNIFIED SHELL ────────────────────────────────────────────────────────
@@ -1631,7 +1643,7 @@ function App({ onGoHome, onOpenSettings }) {
           <PerfilContent onNavigate={(id) => { setDirection(1); setActiveSectionId(id); }} visibleWidgets={visibleWidgets} sections={allSections} isHost={isHost} onCreatePost={() => { navigateTo("recaps"); }} isDesktop={isDesktop} latestTrades={latestTrades} />
         </div>
         <div style={visible("recaps")}>
-          <Post section={{ ...activeSection, label: "Post" }} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={() => setOpenUpdateId(null)} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={cb => { onPostCreatedRef.current = cb; }} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} onRequestNewSession={handleRequestNewSession} />
+          <Post section={postSectionProp} onBack={goHome} isHost={isHost} onNavigate={navigateTo} openThreadId={openThreadId} openSubtemaId={openSubtemaId} openUpdateId={openUpdateId} onUpdateResolved={handlePostUpdateResolved} onThreadChange={setInsideFullscreenOverlay} onRegisterPostCallback={handleRegisterPostCallback} onRegisterTrade={handleRegisterTrade} tradeLinkedSignal={tradeLinkedSignal} onRequestNewSession={handleRequestNewSession} />
         </div>
         <div style={visible("announcements")}>
           <Announcements section={allSections.find(s => s.id === "announcements") ?? activeSection} onBack={goHome} isHost={isHost} onNavigate={navigateTo} mobileTab openComposerSignal={annComposerSignal} openStorySignal={annStorySignal} onShowComposer={() => setShowAnnComposer(true)} onRegisterAnnPublish={cb => { annPublishRef.current = cb; }} onShowStory={() => setShowAnnStory(true)} onRegisterAnnStory={cb => { annStoryRef.current = cb; }} onShowStoryViewer={i => setViewingAnnStory(i)} onRegisterAnnStories={arr => setAnnStories(arr)} openAnnouncementId={openAnnouncementId} onOpenAnnouncementHandled={() => setOpenAnnouncementId(null)} />
