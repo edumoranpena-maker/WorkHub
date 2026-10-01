@@ -2911,7 +2911,22 @@ function DaySheet({ cell, postPnls, onClose, onOpenSession, onNewSession }) {
   );
 }
 
-export default function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade, tradeLinkedSignal, onRequestNewSession }) {
+// memo() — Post is a permanently-mounted sibling of Tools/Announcements/
+// Stats under App.jsx's always-mounted, CSS-toggled section system (see the
+// "single render path" note further down). Without it, Post re-renders
+// every time App.jsx re-renders for ANY reason — a FAB click, an image
+// opening, anything — even when none of Post's own props actually changed.
+// That doesn't just waste work: it's extra reconciliation happening
+// *underneath* whatever's mid-animation elsewhere (the FAB's own
+// AnimatePresence, GlobalImageViewer's transition) for literally no reason,
+// which is exactly the kind of "renders innecesarios de gran parte del
+// árbol" that contributes to visible jank without any of Post's own state
+// (activeTab, selectedDay, etc.) having changed. memo only skips
+// re-renders triggered by the *parent*; Post's own setState calls (picking
+// a Calendar day, switching tabs) always re-render Post itself exactly as
+// before. For this to actually take effect, App.jsx must pass stable
+// props — see the useMemo/useCallback around the <Post .../> call site.
+const Post = memo(function Post({ section, onBack, isHost, onNavigate, openThreadId, openSubtemaId, openUpdateId, onUpdateResolved, onThreadChange, onRegisterPostCallback, onRegisterTrade, tradeLinkedSignal, onRequestNewSession }) {
   const { navigate, replace: replaceRoute, goBack } = useNavigation();
   // ── Feed state — never mutated by search or UI events ─────────────────────
   // NOTE: Post.jsx is permanently mounted by App.jsx now (sections are
@@ -3388,4 +3403,5 @@ export default function Post({ section, onBack, isHost, onNavigate, openThreadId
       )}
     </>
   );
-}
+});
+export default Post;

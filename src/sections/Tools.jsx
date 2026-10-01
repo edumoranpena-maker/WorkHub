@@ -34,7 +34,7 @@
  *   - Supabase, persistence, categories, favorites, search, permissions,
  *     deep links — explicitly out of scope for this pass.
  */
-import { useState, useEffect, useLayoutEffect } from "react";
+import { useState, useEffect, useLayoutEffect, memo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, usePresence } from "framer-motion";
 import { ChevronLeft, Calculator, ListChecks, StickyNote } from "lucide-react";
@@ -117,7 +117,22 @@ function ToolCard({ tool, onClick }) {
 // it, and no separate "report which tool is open" callback back up to
 // App.jsx either — navigate()/goBack() below update the URL directly, which
 // IS what openToolId is derived from one level up.
-export default function Tools({ onToolsPortalChange, openToolId }) {
+// memo() here is the actual fix for the "[CHECKLIST-DEBUG] RENDER
+// ToolPortal[tool=none] #1...#22" pattern: Tools (and the ToolPortal it
+// renders) is a permanently-mounted sibling of Post/Announcements/Stats/etc
+// under App.jsx's always-mounted, CSS-toggled section system — by design,
+// per this file's own header. Without memo, a non-memoized component always
+// re-renders whenever its PARENT re-renders, for ANY reason, regardless of
+// whether its own props changed — so every FAB click, Calendar day tap, or
+// image open (all App-level state changes) was re-rendering Tools/ToolPortal
+// too, even with no tool open and nothing about Tools involved at all. Its
+// props (onToolsPortalChange is a stable setState function; openToolId is a
+// primitive derived from the route) are already reference-stable, so memo
+// needs no other change here to be effective. This doesn't skip its own
+// re-renders when ITS OWN state changes — only when a parent re-render
+// leaves its props untouched, which is the "renders innecesarios de gran
+// parte del árbol" case.
+const Tools = memo(function Tools({ onToolsPortalChange, openToolId }) {
   const isDesktop = useIsDesktop();
   const { navigate, goBack } = useNavigation();
   const openTool = TOOLS.find(t => t.id === openToolId) ?? null;
@@ -155,7 +170,8 @@ export default function Tools({ onToolsPortalChange, openToolId }) {
       />
     </PageContainer>
   );
-}
+});
+export default Tools;
 
 // ─── ToolPortalOverlay — the actual animated/portaled node ─────────────────
 // Split out from ToolPortal so it can call usePresence(): Framer Motion's
