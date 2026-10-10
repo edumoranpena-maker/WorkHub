@@ -1,279 +1,240 @@
 /**
  * ProfileRegion.jsx
  *
- * The one persistent "identity region" of PlanSpace — avatar, name, bio,
- * stats, action buttons, and the tab strip — mounted exactly once, directly
- * under TopBar, for the lifetime of the app session:
+ * The one persistent "identity region" of Planation, mounted exactly once,
+ * directly under TopBar, for the lifetime of the app session:
  *
  *   TopBar
  *     ↓
  *   ProfileRegion (this file) — persistent, never remounts on tab switch
+ *     ├─ ProfileCard — compact identity card (avatar, name, action button),
+ *     │                tap to unfold stats + description + socials
+ *     └─ TabBar      — sticky tab strip
  *     ↓
  *   Content region (Post / Announcements / Stats / Rooms / future sections)
  *
- * Nobody outside this file renders a header, avatar, bio, stats block, or
- * tab strip — App.jsx mounts <ProfileRegion> once, and every section below
- * it only ever swaps the content region. Sections never receive profile data
- * and never render identity chrome; if a future section needs to show
- * something about the profile owner, it asks for that data as a prop, it
- * does not reach for a second copy of this UI.
+ * Nobody outside this file renders an identity header or the tab strip —
+ * App.jsx mounts <ProfileRegion> once and every section below it only swaps
+ * the content region. Sections never receive profile data; if one needs
+ * something about the profile owner it asks for it as a prop, it does not
+ * build a second copy of this UI.
  *
- * ── Owner vs Viewer (no auth yet, but designed for it) ───────────────────
- * `profile` describes WHOSE identity is being shown — never assumed to be
- * "the current app user". `isOwner` describes whether the person looking at
- * the screen right now owns that profile. Today there's no real auth, so
- * every call site simply passes `isOwner={false}` (matches today's visible
- * behavior — see the prop's default below) — but the moment auth exists,
- * a caller flips that to `isOwner={session.user.id === profile.id}` and the
- * right actions show/hide with zero changes inside this file. That's the
- * whole point of drawing this line now instead of later.
+ * ── Data ─────────────────────────────────────────────────────────────────────
+ * Presentation only. `profile` arrives ready-made from App.jsx:
+ *   { name, handle, avatarUrl, bio, bioHighlight, verified, liveNow, socials,
+ *     stats: { followers, trades, winrate } }
+ * where each stat is a raw number or null (null renders "—" — nothing in this
+ * file invents or formats-from-nothing a figure). Stats come from the same
+ * allTimeStats Stats.jsx reads; followers has no source yet, so it is null.
  *
- * `onEditAvatar` follows the same idea but doesn't need any internal gating
- * at all: it's caller-gated by construction — only pass a handler when
- * `isOwner` is true, and the edit pencil naturally never renders otherwise.
- * Today it's still always passed (single-user reality), which is exactly
- * why the pencil still shows today — no behavior change.
+ * ── Owner vs Viewer (no auth yet, but designed for it) ───────────────────────
+ * `profile` describes WHOSE identity is shown; `isOwner` whether the person
+ * looking owns it. The action button is "Editar" (→ onEditProfile) on your
+ * own profile and Follow/Following on anyone else's. Today App.jsx passes
+ * isOwner={false} (no auth), so Follow shows; the day auth exists the caller
+ * flips that to `session.user.id === profile.id` with zero changes here.
+ * Follow state is local on purpose: this region never remounts, so lifting it
+ * into App bought nothing — when follows get a real backend, it comes in as
+ * props like everything else.
  *
- * ── Visibility handoff — the single source of truth for this whole region ──
- * TopBar (a sibling, outside this file) needs to know whether the header is
- * currently on screen, to decide whether to show the profile name in its own
- * center column. That's the ONLY thing that depends on scroll position here
- * — the tab strip's sticky behavior is plain CSS (position:sticky) and needs
- * no JS state at all. So there is exactly one derived value in this whole
- * region: "is the header visible right now", detected once via
- * IntersectionObserver and reported upward through onVisibilityChange.
- * Nothing here duplicates that as a second "isSticky" flag — sticky and
- * "header visible" describe the same physical moment, they just don't need
- * the same mechanism to work (one is native CSS, the other crosses a
- * component boundary and genuinely needs JS).
+ * ── Expand / collapse ────────────────────────────────────────────────────────
+ * One boolean (`expanded`) inside ProfileCard. Tapping the identity area or
+ * the hint row toggles it; the first scroll of `scrollRef` (App's single
+ * scroll container) folds it. The listener only exists while expanded, so a
+ * compact card costs nothing per scroll. The panel animates `grid-template-
+ * rows` 0fr↔1fr — a pure-CSS height transition that needs no measuring — and
+ * the card wrapper opts out of scroll anchoring so the browser doesn't fight
+ * that animation by adjusting scrollTop mid-collapse.
  *
- * ── `hidden` — visually off while a fullscreen portal covers everything ────
- * App.jsx passes `hidden={true}` while a Thread/Dashboard/Tool portal is
- * open on top of this region, instead of conditionally unmounting
- * <ProfileRegion> the way it used to. Each of this component's two pieces
- * (header, sticky tab strip) gets `visibility:hidden` individually, applied
- * directly on the div that piece already renders — never on a wrapper
- * around them. That distinction matters: see the comment right above the
- * return statement for why wrapping the header and the sticky strip
- * together, even just for a visibility toggle, breaks position:sticky.
+ * ── Layout contract with App.jsx — don't wrap ───────────────────────────────
+ * ProfileRegion renders two direct siblings (card, sticky tab strip) inside
+ * the scroll container, deliberately NOT wrapped in one shared box: the tab
+ * strip's position:sticky is bounded by its own parent, so sharing a short
+ * parent with the card leaves sticky nothing to stick within once you scroll
+ * past it. There is still exactly one scroll container in the app.
+ *
+ * `hidden` — visually off while a fullscreen portal covers everything.
+ * App.jsx passes hidden={true} instead of unmounting (an unmount shrinks
+ * scrollHeight and clamps scrollTop on short sections). Applied as
+ * visibility:hidden on each of the two pieces individually, never on a
+ * wrapper — see above.
  */
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useId } from "react";
 import { motion } from "framer-motion";
 import {
-  Pencil, Plus, Globe, Instagram, Youtube, Twitter, Linkedin, Github,
+  Plus, ChevronDown, BadgeCheck, Globe, Instagram, Youtube, Twitter, Linkedin, Github,
   Link as LinkIcon,
 } from "lucide-react";
 import { PageContainer, isolateOverlayGestures } from "../lib/layout.jsx";
 
 const font = "'DM Sans', sans-serif";
 const C = {
-  bg: "#000000", surface: "#0a0a0a", card: "#13131f", border: "#1c1c2e",
-  accent: "#7c4dff", accentLight: "#9d71ff", accentDim: "#3d2480",
-  text: "#fafafa", textMuted: "#8e8e8e",
-  blue: "#4fa3ff", gold: "#d4a843", green: "#1ed99a", orange: "#f97316",
+  surface: "#0a0a0a", border: "#1c1c2e", text: "#fafafa", textMuted: "#8e8e8e", // shared with the tab strip
+  card: "#14171d", divider: "#262a33", gold: "#F0B90B", onGold: "#1a1300", green: "#1ed99a",
 };
 const BRAND_ACCENT = "#2DD4BF"; // teal — tab strip active state / indicator, matches App.jsx's brand constant
+
+const REDUCED_MOTION = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const FOLD_MS = REDUCED_MOTION ? 0 : 240;
+const FOLD_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 const SOCIAL_ICON_MAP = {
   instagram: Instagram, x: Twitter, twitter: Twitter,
   youtube: Youtube, linkedin: Linkedin, github: Github, website: Globe,
 };
 
-// ─── Header pieces — Avatar/Socials/Buttons/Stats ───────────────────────────
-// Deliberately module-level, not defined inside ProfileHeader(). A `const Foo
-// = (...) => (...)` declared inside another component's body is a NEW
-// function — a new component *type* — on every single render of that parent.
-// React tells components apart by type, so at every one of ProfileHeader's
-// re-renders (which, per this file's own header comment, happens on every
-// App-level state change since this region "never remounts" but still
-// re-renders like anything else) React saw a "different" Avatar/Socials/
-// Buttons/Stats than the render before, and fully unmounted + remounted
-// each one's whole DOM subtree — the actual mechanism behind the app-wide
-// flicker on basically any interaction. Declaring them here instead, taking
-// everything they need as props, keeps their identity stable across
-// ProfileHeader's own re-renders, so a re-render just updates props/DOM in
-// place like normal, with no unmount/remount involved. Behavior unchanged.
-function ProfileAvatar({ size, onNavigate, profile, onEditAvatar }) {
+const fmtCount   = (n) => (n == null ? "—" : n.toLocaleString());
+const fmtPercent = (n) => (n == null ? "—" : `${n.toFixed(1)}%`);
+
+// Plain-button reset — the toggle areas are real <button>s (keyboard + screen
+// reader support for free) that must look like the plain card they sit in.
+const bareButton = { background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" };
+
+// ─── Pieces — module-level, never defined inside another component ──────────
+// A component declared inside another one's body is a new *type* on every
+// render, so React unmounts/remounts its whole subtree each time — this
+// region re-renders on every App-level state change. Keeping these at module
+// level keeps their identity stable.
+function Avatar({ profile }) {
+  const initial = profile.name?.trim()?.[0]?.toUpperCase() ?? "";
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <div style={{ cursor: "pointer" }} onClick={() => onNavigate && onNavigate("announcements")}>
-        <div style={{
-          width: size, height: size, borderRadius: "50%",
-          background: `conic-gradient(${C.orange} 0deg, #fbbf24 120deg, ${C.orange} 240deg, #fbbf24 360deg)`,
-          padding: 3,
-          boxShadow: `0 0 10px ${C.orange}30`,
-        }}>
-          <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: `3px solid ${C.bg}`, overflow: "hidden", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: font, fontSize: size * 0.33, fontWeight: 800, color: C.accentLight, letterSpacing: "-0.02em" }}>A</span>
-          </div>
-        </div>
+    <div style={{ position: "relative", flexShrink: 0, width: 52, height: 52 }}>
+      <div style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", background: "#1d2128", border: `1px solid ${C.divider}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {profile.avatarUrl
+          ? <img src={profile.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : <span style={{ fontFamily: font, fontSize: 20, fontWeight: 800, color: C.textMuted }}>{initial}</span>}
       </div>
-      {profile?.showLiveDot !== false && (
-        <div style={{ position: "absolute", bottom: 5, right: 5, width: 14, height: 14, borderRadius: "50%", background: C.green, border: `2px solid ${C.bg}`, boxShadow: `0 0 6px ${C.green}70` }} />
-      )}
-      {onEditAvatar && (
-        <motion.button whileTap={{ scale: 0.88 }} onClick={onEditAvatar}
-          style={{ position: "absolute", bottom: 0, left: 0, width: 25, height: 25, borderRadius: "50%", background: C.accent, border: `2px solid ${C.bg}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <Pencil size={11} color="#fff" strokeWidth={2.5} />
-        </motion.button>
+      {profile.liveNow && (
+        <div style={{ position: "absolute", bottom: 1, right: 1, width: 11, height: 11, borderRadius: "50%", background: C.green, border: "2px solid " + C.card }} />
       )}
     </div>
   );
 }
 
-function ProfileSocials({ socials }) {
-  if (!socials || socials.length === 0) return null;
+function StatCell({ value, label, color = C.text }) {
   return (
-    <div style={{ display: "flex", gap: 10 }}>
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+      <p style={{ margin: 0, fontFamily: font, fontSize: 22, fontWeight: 800, color, letterSpacing: "-0.02em" }}>{value}</p>
+      <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 13, color: C.textMuted }}>{label}</p>
+    </div>
+  );
+}
+
+function SocialsColumn({ socials }) {
+  return (
+    <div style={{ flex: "0 0 auto", maxWidth: "42%", display: "flex", flexDirection: "column", gap: 14 }}>
       {socials.map((s) => {
         const Icon = SOCIAL_ICON_MAP[s.platform] ?? LinkIcon;
         return (
-          <motion.a key={s.platform + s.url} href={s.url} target="_blank" rel="noopener noreferrer" whileTap={{ scale: 0.88 }}
-            style={{ width: 34, height: 34, borderRadius: "50%", background: C.card, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, cursor: "pointer" }}>
-            <Icon size={15} strokeWidth={2} />
-          </motion.a>
+          <a key={s.platform + s.url} href={s.url} target="_blank" rel="noopener noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 10, color: C.text, textDecoration: "none", minWidth: 0 }}>
+            <Icon size={20} strokeWidth={2} style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: font, fontSize: 14, fontWeight: 500, textTransform: "capitalize", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {s.label ?? s.platform}
+            </span>
+          </a>
         );
       })}
     </div>
   );
 }
 
-// Follow/Subscribe/Message are viewer-only actions — they don't make sense
-// on your own profile. Gated on !isOwner (see file header for the Owner/
-// Viewer design note); isOwner defaults to false below, which is exactly
-// today's single-user behavior (buttons always show) preserved as-is.
-function ProfileButtons({ style, isOwner, isDesktop, followed, onToggleFollow, subscribed, onToggleSubscribe }) {
-  if (isOwner) return null;
-  return (
-    <div style={{ display: "flex", gap: 9, ...style }}>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleFollow}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em", background: followed ? "transparent" : C.accent, border: followed ? `1.5px solid ${C.accent}` : "none", color: followed ? C.accent : "#fff", transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-        {followed ? "Following" : "Follow"}
-      </motion.button>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={onToggleSubscribe}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em", background: subscribed ? "transparent" : C.gold, border: subscribed ? `1.5px solid ${C.gold}` : "none", color: subscribed ? C.gold : "#1a0f00", transition: "all 0.22s cubic-bezier(0.22,1,0.36,1)" }}>
-        {subscribed ? "Subscribed" : "Subscribe"}
-      </motion.button>
-      <motion.button whileTap={{ scale: 0.95 }}
-        style={{ flex: isDesktop ? "0 0 auto" : 1, minWidth: isDesktop ? 100 : undefined, height: 36, borderRadius: 22, padding: isDesktop ? "0 20px" : 0, border: "none", cursor: "pointer", fontFamily: font, fontSize: 12, fontWeight: 700, letterSpacing: "0.01em", background: C.blue, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        Message
-      </motion.button>
-    </div>
-  );
-}
+// ─── ProfileCard — identity (always) + info (when expanded) ────────────────
+function ProfileCard({ profile, isOwner, onEditProfile, isDesktop, scrollRef }) {
+  const [expanded, setExpanded] = useState(false);
+  const [followed, setFollowed] = useState(false);
+  const panelId = useId();
+  const toggle = useCallback(() => setExpanded((e) => !e), []);
 
-function ProfileStats({ align = "center", stats, isDesktop }) {
+  // Fold as soon as the content starts scrolling. Only attached while
+  // expanded; `once` because folding is all this ever does.
+  useEffect(() => {
+    const scroller = scrollRef?.current;
+    if (!expanded || !scroller) return;
+    const fold = () => setExpanded(false);
+    scroller.addEventListener("scroll", fold, { passive: true, once: true });
+    return () => scroller.removeEventListener("scroll", fold);
+  }, [expanded, scrollRef]);
+
+  const stats = profile.stats ?? {};
+  const socials = profile.socials ?? [];
+  const hasDescription = !!(profile.bio || profile.bioHighlight);
+  const hasMore = hasDescription || socials.length > 0;
+
+  const actionStyle = {
+    flexShrink: 0, minWidth: 92, height: 40, padding: "0 18px", borderRadius: 12, cursor: "pointer",
+    fontFamily: font, fontSize: 15, fontWeight: 700,
+    transition: "background 0.2s, color 0.2s",
+  };
+
   return (
-    <div style={{ display: "flex", gap: isDesktop ? 28 : 0 }}>
-      {stats.map((s, i) => (
-        <div key={s.label} style={{
-          flex: isDesktop ? "0 0 auto" : 1, textAlign: isDesktop ? align : "center", padding: isDesktop ? 0 : "0 8px",
-          borderLeft: !isDesktop && i > 0 ? `1px solid ${C.border}` : "none",
-        }}>
-          <p style={{ margin: 0, fontFamily: font, fontSize: isDesktop ? 20 : 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>{s.value}</p>
-          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 11, color: C.textMuted }}>{s.label}</p>
+    <div style={{ padding: isDesktop ? "20px 0 14px" : "14px 14px 12px" }}>
+      <div style={{ maxWidth: isDesktop ? 640 : undefined, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "14px 16px 6px" }}>
+
+        {/* Identity row — the toggle area and the action button are siblings
+            (never nested buttons), so tapping the action never folds the card. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button type="button" onClick={toggle} aria-expanded={expanded} aria-controls={panelId}
+            style={{ ...bareButton, flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 14 }}>
+            <Avatar profile={profile} />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontFamily: font, fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.name}</span>
+                {profile.verified && <BadgeCheck size={17} color={C.gold} strokeWidth={2.2} style={{ flexShrink: 0 }} aria-label="Verificado" />}
+              </span>
+              <span style={{ display: "block", marginTop: 2, fontFamily: font, fontSize: 15, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile.handle}</span>
+            </span>
+          </button>
+
+          {isOwner ? (
+            <motion.button whileTap={{ scale: 0.95 }} onClick={onEditProfile}
+              style={{ ...actionStyle, background: C.gold, border: "none", color: C.onGold }}>
+              Editar
+            </motion.button>
+          ) : (
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => setFollowed((f) => !f)}
+              style={{ ...actionStyle, background: followed ? "transparent" : C.gold, border: followed ? `1.5px solid ${C.gold}` : "none", color: followed ? C.gold : C.onGold }}>
+              {followed ? "Following" : "Follow"}
+            </motion.button>
+          )}
         </div>
-      ))}
-    </div>
-  );
-}
 
-// ─── Header (avatar, name, bio, stats, actions) ─────────────────────────────
-function ProfileHeader({ onNavigate, isOwner, profile, onEditAvatar,
-                       followed, onToggleFollow, subscribed, onToggleSubscribe, isDesktop }) {
-  const stats = profile?.stats ?? [
-    { key: "followers", label: "Followers", value: "12.4k" },
-    { key: "posts",      label: "Posts",     value: "86" },
-    { key: "winrate",    label: "Winrate",   value: "—" },
-  ];
-  const socials = profile?.socials ?? [];
-  const showStats = profile?.showStats !== false;
-
-  // ── Desktop — horizontal header: avatar left, identity+actions right ────
-  if (isDesktop) {
-    return (
-      <motion.div
-        data-profile-card="1"
-        initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-        style={{ padding: "32px 0 24px" }}>
-
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 22 }}>
-          <ProfileAvatar size={104} onNavigate={onNavigate} profile={profile} onEditAvatar={onEditAvatar} />
-
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <h2 style={{ margin: 0, fontFamily: font, fontSize: 21, fontWeight: 800, color: C.text, letterSpacing: "-0.015em" }}>{profile?.name ?? "Luis Morp"}</h2>
-                  {profile?.verified && (
-                    <div style={{ width: 17, height: 17, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <span style={{ fontSize: 10, color: "#fff" }}>✓</span>
-                    </div>
-                  )}
-                </div>
-                <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 13, color: C.textMuted, fontWeight: 600 }}>{profile?.handle ?? "@luismorp"}</p>
-              </div>
-              {showStats && <ProfileStats align="left" stats={stats} isDesktop={isDesktop} />}
+        {/* Expandable info. grid 0fr↔1fr animates height without measuring;
+            visibility keeps the folded content out of the tab order, delayed
+            on the way out so it stays visible while it folds. */}
+        <div id={panelId} style={{ display: "grid", gridTemplateRows: expanded ? "1fr" : "0fr", transition: `grid-template-rows ${FOLD_MS}ms ${FOLD_EASE}` }}>
+          <div style={{ minHeight: 0, overflow: "hidden", visibility: expanded ? "visible" : "hidden", opacity: expanded ? 1 : 0, transition: `opacity ${FOLD_MS}ms ${FOLD_EASE}, visibility 0s linear ${expanded ? 0 : FOLD_MS}ms` }}>
+            <div style={{ display: "flex", padding: "16px 0", marginTop: 14, borderTop: `1px solid ${C.divider}` }}>
+              <StatCell value={fmtCount(stats.followers)} label="Followers" />
+              <StatCell value={fmtCount(stats.trades)} label="Trades" />
+              <StatCell value={fmtPercent(stats.winrate)} label="Winrate" color={C.gold} />
             </div>
 
-            {(profile?.showBio !== false) && (
-              <p style={{ margin: 0, fontFamily: font, fontSize: 13.5, color: C.text, lineHeight: 1.6, maxWidth: 480 }}>
-                {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
-                {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
-              </p>
-            )}
-
-            <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <ProfileButtons style={{ flexShrink: 0 }} isOwner={isOwner} isDesktop={isDesktop} followed={followed} onToggleFollow={onToggleFollow} subscribed={subscribed} onToggleSubscribe={onToggleSubscribe} />
-              <ProfileSocials socials={socials} />
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
-
-  // ── Mobile — centered vertical stack ─────────────────────────────────────
-  return (
-    <motion.div
-      data-profile-card="1"
-      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      style={{ padding: "28px 20px 0" }}>
-
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <ProfileAvatar size={84} onNavigate={onNavigate} profile={profile} onEditAvatar={onEditAvatar} />
-        <div style={{ textAlign: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <h2 style={{ margin: 0, fontFamily: font, fontSize: 16, fontWeight: 800, color: C.text, letterSpacing: "-0.01em" }}>{profile?.name ?? "Luis Morp"}</h2>
-            {profile?.verified && (
-              <div style={{ width: 15, height: 15, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 9, color: "#fff" }}>✓</span>
+            {hasMore && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "16px 0", borderTop: `1px solid ${C.divider}` }}>
+                {hasDescription && (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontFamily: font, fontSize: 15, fontWeight: 700, color: C.gold }}>Descripción</p>
+                    <p style={{ margin: "6px 0 0", fontFamily: font, fontSize: 15, lineHeight: 1.5, color: C.text, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>
+                      {profile.bio}{profile.bio && profile.bioHighlight ? " " : ""}
+                      {profile.bioHighlight && <span style={{ color: C.gold, fontWeight: 600 }}>{profile.bioHighlight}</span>}
+                    </p>
+                  </div>
+                )}
+                {socials.length > 0 && <SocialsColumn socials={socials} />}
               </div>
             )}
           </div>
-          <p style={{ margin: "2px 0 0", fontFamily: font, fontSize: 12, color: C.textMuted, fontWeight: 600, letterSpacing: "0.01em" }}>{profile?.handle ?? "@luismorp"}</p>
         </div>
+
+        {/* Hint row — the same element in both states, always last in the card */}
+        <button type="button" onClick={toggle} aria-expanded={expanded} aria-controls={panelId}
+          style={{ ...bareButton, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 0 8px" }}>
+          <ChevronDown size={16} color={C.gold} strokeWidth={2.4} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: `transform ${FOLD_MS}ms ${FOLD_EASE}` }} />
+          <span style={{ fontFamily: font, fontSize: 14, color: C.textMuted }}>{expanded ? "Toca para contraer" : "Toca para ver el perfil"}</span>
+        </button>
       </div>
-
-      {showStats && <div style={{ marginTop: 20 }}><ProfileStats stats={stats} isDesktop={isDesktop} /></div>}
-
-      {(profile?.showBio !== false) && (
-        <p style={{ margin: "18px 0 0", fontFamily: font, fontSize: 13, color: C.text, lineHeight: 1.6, textAlign: "center" }}>
-          {profile?.bio ?? "Trader & educator — 6+ years in FX & commodities."}{" "}
-          {profile?.bioHighlight && <span style={{ color: C.accentLight, fontWeight: 600 }}>{profile.bioHighlight}</span>}
-        </p>
-      )}
-
-      {socials.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 14 }}>
-          <ProfileSocials socials={socials} />
-        </div>
-      )}
-
-      <ProfileButtons style={{ marginTop: 20, paddingBottom: 18 }} isOwner={isOwner} isDesktop={isDesktop} followed={followed} onToggleFollow={onToggleFollow} subscribed={subscribed} onToggleSubscribe={onToggleSubscribe} />
-    </motion.div>
+    </div>
   );
 }
 
@@ -351,69 +312,23 @@ function TabBar({ activeSectionId, onNavigate, onHome, onSections, onAddSection 
 }
 
 // ─── ProfileRegion — the public API of this file ────────────────────────────
-// The only export. App.jsx (or, later, a per-user profile route) mounts this
-// once; nothing else in the app builds its own header or tab strip.
-//
-// Rendered as two direct children of whatever scroll container hosts it
-// (unifiedScrollRef in App.jsx today) — deliberately NOT wrapped in one
-// shared box together, and deliberately introduces no overflow/scroll of its
-// own. Both matter for the same reason: the tab strip's position:sticky is
-// bounded by its own parent's box, so if the header and the sticky wrapper
-// shared one (short) parent, sticky would have nothing left to stick within
-// once you scrolled past it — this is literally the bug a previous pass
-// found and fixed (and a later pass re-broke by wrapping both in a div just
-// to toggle visibility — don't do that; that's exactly why `hidden` below
-// is a prop applied inside, per-piece, instead). Keeping them as siblings
-// inside the tall, single, already-existing page scroll is what makes
-// sticky work AND keeps scrolling itself completely untouched — there is
-// still exactly one scroll container in the whole app, this component
-// doesn't add another.
+// The only export. See the file header for the two-sibling layout contract.
 export default function ProfileRegion({
-  profile, isOwner = false, onEditAvatar,
-  followed, onToggleFollow, subscribed, onToggleSubscribe,
+  profile, isOwner = false, onEditProfile,
   activeSectionId, onNavigate, onHome, onSections, onAddSection,
-  isDesktop,
-  onVisibilityChange,
+  isDesktop, scrollRef,
   hidden = false,
 }) {
-  // The one piece of state this region produces: whether the header is
-  // currently visible. Detected here (the component that owns the DOM node
-  // being watched), reported upward via a callback — App.jsx doesn't need
-  // to know an IntersectionObserver is involved at all, just that
-  // "visible: true/false" happened. See the file header for why this is the
-  // single source of truth for both the TopBar name and — implicitly,
-  // through plain CSS rather than a second flag — the sticky tab strip.
-  const headerAnchorRef = useRef(null);
-
-  useEffect(() => {
-    const target = headerAnchorRef.current;
-    if (!target) return;
-    // root:null (the nearest scrolling ancestor, i.e. whatever scroll
-    // container this is mounted inside) — ProfileRegion doesn't need to
-    // know that container's ref explicitly, IntersectionObserver finds it
-    // on its own by walking up the DOM.
-    const observer = new IntersectionObserver(
-      ([entry]) => onVisibilityChange?.(entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [onVisibilityChange]);
-
   return (
     <>
-      <div ref={headerAnchorRef} style={{ visibility: hidden ? "hidden" : "visible" }}>
+      <div style={{ visibility: hidden ? "hidden" : "visible", overflowAnchor: "none" }}>
         <PageContainer isDesktop={isDesktop} variant="feed">
-          <ProfileHeader
-            onNavigate={onNavigate}
+          <ProfileCard
             profile={profile}
             isOwner={isOwner}
-            onEditAvatar={onEditAvatar}
-            followed={followed}
-            onToggleFollow={onToggleFollow}
-            subscribed={subscribed}
-            onToggleSubscribe={onToggleSubscribe}
+            onEditProfile={onEditProfile}
             isDesktop={isDesktop}
+            scrollRef={scrollRef}
           />
         </PageContainer>
       </div>
