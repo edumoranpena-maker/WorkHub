@@ -11,34 +11,27 @@
 export const DEFAULT_PROFILE_CONFIG = {
 
   // ── Identity ────────────────────────────────────────────────────────────────
+  // Everything ProfileRegion shows about the profile owner, minus live
+  // numbers: Trades and Winrate come from Doers Journal (statsApi.js, via
+  // App.jsx), and there is no followers source yet — so none of those are
+  // stored here, and nothing in this file should ever hold a placeholder
+  // figure for them.
   identity: {
     name:       "Luis Morp",
     handle:     "@luismorp",
-    initials:   "L",
-    avatarUrl:  null,          // null = use initials fallback
+    avatarUrl:  null,          // null = initial-of-name fallback
     bio:        "Trader & educator — 6+ years in FX & commodities. Sharing live setups, weekly recaps & real-time analysis.",
     bioHighlight: "XAUUSD · DXY · EURUSD",
     verified:   true,
-    liveNow:    true,
+    liveNow:    true,          // green dot on the avatar
   },
 
-  // ── Social links shown as a row of icons below the bio. Empty by default —
-  // ready for the user to connect accounts; each entry needs { platform, url }.
-  // platform resolves to an icon via SOCIAL_ICON_MAP in App.jsx (falls back to
-  // a generic Globe icon for anything not explicitly mapped yet).
+  // ── Social links shown in the side column of the expanded profile. Empty by
+  // default — ready for the user to connect accounts; each entry needs
+  // { platform, url }. platform resolves to an icon via SOCIAL_ICON_MAP in
+  // ProfileRegion.jsx (falls back to a generic link icon for anything not
+  // explicitly mapped yet).
   socials: [],
-
-  // ── Stats shown in profile header (order = display order) ──────────────────
-  // "winrate"'s value here is only the placeholder shown before
-  // fetchAllTimeStats() resolves — App.jsx overwrites it with the real
-  // All-Time Winrate from Doers Journal every render (see profileStats
-  // there). Kept as a real entry (not omitted) so the stat's position in
-  // the row never shifts once real data arrives.
-  stats: [
-    { key: "followers",  label: "Followers",   value: "12.4k" },
-    { key: "posts",      label: "Posts",        value: "86"    },
-    { key: "winrate",    label: "Winrate",      value: "—"     },
-  ],
 
   // ── Theme ───────────────────────────────────────────────────────────────────
   theme: {
@@ -49,17 +42,6 @@ export const DEFAULT_PROFILE_CONFIG = {
     density:        "comfortable",   // "compact" | "comfortable" | "spacious"
     glowEffects:    false,
     animationSpeed: "normal",        // "reduced" | "normal" | "expressive"
-  },
-
-  // ── Profile layout ──────────────────────────────────────────────────────────
-  layout: {
-    profileTemplate: "centered",     // "avatar-left" | "centered" | "banner"
-    showRating:      false,
-    showLiveDot:     true,
-    showBio:         true,
-    showStats:       true,
-    showActionButtons: true,         // Follow / Subscribe / Message
-    actionButtons:   ["follow", "subscribe", "message"],
   },
 
   // ── Feed widgets shown on the Perfil (home) tab (order = display order) ────
