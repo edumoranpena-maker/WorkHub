@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, FileText, Megaphone, Hash, MessageSquare,
-  Bell, Search, ChevronLeft, ChevronRight, ArrowRight, Mic,
+  ArrowLeft, MoreHorizontal, ChevronRight, ArrowRight, Mic,
   Users, BarChart2, TrendingUp, TrendingDown, Minus, Star, X, Plus, Zap, Pencil, CheckSquare,
 } from "lucide-react";
 import ProfileRegion from "./components/ProfileRegion.jsx";
@@ -143,12 +143,13 @@ function IconBtn({ icon: Icon, badge, onClick }) {
 // ─── TopBar ───────────────────────────────────────────────────────────────────
 // The one bar in the whole app that's deliberately edge-to-edge, full
 // viewport width — everything else (Profile, TabBar, feeds) lives inside
-// PageContainer. A 3-column CSS grid (not flex + space-between) is what
-// guarantees the profile name is *actually* centered on the viewport
-// regardless of how wide the left cluster (chevron + wordmark) or right
-// cluster (icons) end up being — flex space-between would bias the center
-// toward whichever side is narrower.
-function TopBar({ onHome, profileName, onOpenSettings, isDesktop, showProfileName }) {
+// PageContainer. Back arrow left, "Planation" centered, three-dots menu right
+// (opens Settings — the only action the old right-hand cluster actually
+// had). A 3-column CSS grid (not flex + space-between) is what guarantees the
+// title is *actually* centered on the viewport regardless of how wide either
+// side ends up being.
+const topBarBtn = { display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, background: "none", border: "none", cursor: "pointer", borderRadius: 10, color: C.textMuted, flexShrink: 0 };
+function TopBar({ onHome, onOpenSettings, isDesktop }) {
   return (
     <div style={{
       display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center",
@@ -157,49 +158,19 @@ function TopBar({ onHome, profileName, onOpenSettings, isDesktop, showProfileNam
       backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
       position: "sticky", top: 0, zIndex: 30, minHeight: isDesktop ? 56 : 50, flexShrink: 0,
     }}>
-      {/* Left — chevron always, "PlanSpace" wordmark too on desktop (this is
-          where it lived back when there was a sidebar; it belongs here now
-          that the sidebar is gone) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, justifySelf: "start", minWidth: 0 }}>
-        <motion.button whileTap={{ scale: 0.93 }} onClick={onHome}
-          style={{ display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: "4px 2px 4px 0", borderRadius: 8, color: C.accentLight, flexShrink: 0 }}>
-          <ChevronLeft size={22} strokeWidth={2.6} color={C.accentLight} />
-        </motion.button>
-        {isDesktop && (
-          <span style={{ fontFamily: font, fontSize: 15, fontWeight: 900, letterSpacing: "-0.03em", color: C.text, whiteSpace: "nowrap" }}>
-            Plan<span style={{ color: BRAND_ACCENT }}>Space</span>
-          </span>
-        )}
-      </div>
+      <motion.button whileTap={{ scale: 0.9 }} onClick={onHome} aria-label="Volver"
+        style={{ ...topBarBtn, justifySelf: "start", marginLeft: -6 }}>
+        <ArrowLeft size={22} strokeWidth={2.4} />
+      </motion.button>
 
-      {/* Center — profile name. Contextual: only shown once the Profile
-          Header has scrolled out of view (see profileVisible/IntersectionObserver
-          in the root component) — the identity lives in exactly one place on
-          screen at a time, never duplicated. Grid keeps it truly centered
-          regardless of how wide either side ends up being, whether the name
-          is currently mounted or not. */}
-      <AnimatePresence mode="wait">
-        {showProfileName && (
-          <motion.span
-            key="topbar-profile-name"
-            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.18 }}
-            style={{ fontFamily: font, fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: isDesktop ? 320 : 160, justifySelf: "center" }}>
-            {profileName}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      <span style={{ fontFamily: font, fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em", color: C.textMuted, whiteSpace: "nowrap" }}>
+        Planation
+      </span>
 
-      {/* Right — actions, flush to the far edge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 5, justifySelf: "end", flexShrink: 0 }}>
-        <motion.div whileTap={{ scale: 0.88 }} onClick={onOpenSettings}
-          style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg, ${C.accentDim}, #1a0a3a)`, border: `1.5px solid ${C.accent}55`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
-          <span style={{ fontFamily: font, fontSize: 11, fontWeight: 800, color: C.accentLight }}>A</span>
-        </motion.div>
-        <IconBtn icon={Bell} badge />
-        <IconBtn icon={MessageSquare} />
-        <IconBtn icon={Search} />
-      </div>
+      <motion.button whileTap={{ scale: 0.9 }} onClick={onOpenSettings} aria-label="Menú"
+        style={{ ...topBarBtn, justifySelf: "end", marginRight: -6 }}>
+        <MoreHorizontal size={22} strokeWidth={2.4} />
+      </motion.button>
     </div>
   );
 }
@@ -1403,41 +1374,26 @@ function App({ onGoHome, onOpenSettings }) {
   const [annComposerSignal, setAnnComposerSignal]  = useState(0); // increment to trigger
   const [annStorySignal,    setAnnStorySignal]     = useState(0);
   const [showAnnComposer,   setShowAnnComposer]    = useState(false); // mobile fullscreen sheet
-  // ── Persistent button state — survives section changes ──────────────────────
-  const [followed,        setFollowed]        = useState(false);
-  const [subscribed,      setSubscribed]      = useState(false);
-
   // ── Central profile config — static source of truth, render engine reads it ──
   const [profileConfig, setProfileConfig] = useState(DEFAULT_PROFILE_CONFIG);
 
-  // profileConfig.stats stays exactly what it is (the user-editable config,
-  // untouched) — this only overlays the Winrate value onto the "winrate"
-  // entry at render time. Lives here, right after profileConfig itself is
-  // declared (reads profileConfig — see the TDZ note this comment used to
-  // carry, now resolved by this placement).
+  // Live numbers for the profile's expanded info — raw values (or null),
+  // never formatted strings: ProfileRegion owns presentation and renders
+  // null as "—". Nothing here is invented: Trades and Winrate come from the
+  // same allTimeStats Stats.jsx's own cards read, and there is no followers
+  // source yet, so that one stays null instead of showing a made-up figure.
   //
-  // allTimeStats (the live, shared value — same one Stats.jsx's own cards
-  // read via summaryFromStats) always wins when present. The ONLY case
-  // where allTimeStats is null AND we don't show "—" is before the very
-  // first fetch of this page load has resolved (!statsLoaded) — that's the
-  // narrow window lastKnownWinrate (seeded from localStorage) exists for.
-  //
-  // Critically: once statsLoaded is true, a null allTimeStats is trusted
-  // exactly like Stats.jsx trusts it (→ "—"), never masked by
-  // lastKnownWinrate. Gating on statsLoaded was the actual missing piece —
-  // without it, a refetch that legitimately (or transiently) resolves to
-  // null after the first load would keep showing the stale cached number
-  // in Profile while Stats correctly went to "—", which is exactly the
-  // "Profile lags behind Stats" symptom: not a timing difference, a
-  // permanent fallback that never let go once the first value arrived.
-  const profileStats = useMemo(
-    () => profileConfig.stats.map(s =>
-      s.key === "winrate"
-        ? { ...s, value: allTimeStats ? `${allTimeStats.winrate.toFixed(1)}%` : (!statsLoaded && lastKnownWinrate != null ? `${lastKnownWinrate.toFixed(1)}%` : "—") }
-        : s
-    ),
-    [profileConfig.stats, allTimeStats, statsLoaded, lastKnownWinrate]
-  );
+  // Winrate: allTimeStats always wins when present. Only before the very
+  // first fetch of this page load has resolved (!statsLoaded) does the
+  // localStorage-seeded lastKnownWinrate stand in. Once statsLoaded is true a
+  // null allTimeStats is trusted exactly like Stats.jsx trusts it (null →
+  // "—"), never masked by the cached value — that gate is what keeps Profile
+  // from lagging behind Stats.
+  const profileStats = useMemo(() => ({
+    followers: null,
+    trades:  allTimeStats ? allTimeStats.totalTrades : null,
+    winrate: allTimeStats ? allTimeStats.winrate : (!statsLoaded ? lastKnownWinrate : null),
+  }), [allTimeStats, statsLoaded, lastKnownWinrate]);
 
   // Derive runtime data from profileConfig
   const allSections   = useMemo(
@@ -1541,15 +1497,6 @@ function App({ onGoHome, onOpenSettings }) {
   const contentWrapperRef = useRef(null); // the section-content div, right after profile+chips
   const workStore = useWorkContextStore();
   const sectionScrollKey = `scroll:${activeSectionId ?? "perfil"}`;
-
-  // ── Profile ↔ TopBar name handoff ────────────────────────────────────────
-  // The single derived value this region of the app produces: whether the
-  // Profile Header is currently visible. The detection mechanism itself
-  // (IntersectionObserver) now lives inside ProfileRegion — App.jsx just
-  // holds the resulting boolean and hands it to TopBar. One piece of state,
-  // one source of truth, consumed by two places (TopBar's name, implicitly
-  // the tab strip's sticky CSS which needs no state of its own at all).
-  const [profileVisible, setProfileVisible] = useState(true);
 
   // Thread/Subtema are real fullscreen overlays now — position:fixed, siblings
   // of the document below, which never unmounts and never has its scrollTop
@@ -1681,10 +1628,8 @@ function App({ onGoHome, onOpenSettings }) {
       {/* ── TOPBAR — full viewport width, own 3-zone layout (see component) ── */}
       <TopBar
         onHome={goHome}
-        profileName={profileConfig.identity.name}
         onOpenSettings={onOpenSettings}
         isDesktop={isDesktop}
-        showProfileName={!profileVisible}
       />
 
       {/*
@@ -1706,7 +1651,7 @@ function App({ onGoHome, onOpenSettings }) {
         onTouchEnd={handleTouchEnd}
       >
         {/* ── ProfileRegion — the one persistent identity region ──────────────
-            Avatar, name, bio, stats, action buttons and the tab strip, all
+            Identity card (expandable), action button and the tab strip, all
             mounted here once. Rendered directly inside unifiedScrollRef with
             no wrapper of its own — see ProfileRegion.jsx's own file header
             for why: it renders its header and its sticky tab strip as two
@@ -1717,8 +1662,10 @@ function App({ onGoHome, onOpenSettings }) {
             through instead; ProfileRegion applies visibility:hidden to each
             of its two pieces individually. isOwner is hardcoded false for
             now: there's no auth yet, so every visitor sees the same "viewer"
-            actions (Follow/Subscribe/Message) — see ProfileRegion.jsx's file
-            header for how this becomes real once auth exists.
+            action (Follow) — see ProfileRegion.jsx's file header for how
+            this becomes real once auth exists. `scrollRef` is this same
+            container: ProfileRegion listens to it to fold the expanded
+            profile as soon as the content starts scrolling.
 
             `hidden` (not a conditional unmount) is what keeps
             unifiedScrollRef's scrollHeight constant while a fullscreen
@@ -1735,20 +1682,16 @@ function App({ onGoHome, onOpenSettings }) {
             triggered there. */}
         <ProfileRegion
           hidden={insideFullscreenOverlay}
-          profile={{ ...profileConfig.identity, ...profileConfig.layout, stats: profileStats, socials: profileConfig.socials }}
+          scrollRef={unifiedScrollRef}
+          profile={{ ...profileConfig.identity, socials: profileConfig.socials, stats: profileStats }}
           isOwner={false}
-          onEditAvatar={onOpenSettings}
-          followed={followed}
-          onToggleFollow={() => setFollowed(f => !f)}
-          subscribed={subscribed}
-          onToggleSubscribe={() => setSubscribed(s => !s)}
+          onEditProfile={onOpenSettings}
           activeSectionId={activeSectionId}
           onNavigate={(id) => { setDirection(MOBILE_TABS.indexOf(id) > mobileTabIdx ? 1 : -1); setActiveSectionId(id); }}
           onHome={() => { setDirection(-1); setActiveSectionId(null); }}
           onSections={allSections}
           onAddSection={() => setShowAddSection(true)}
           isDesktop={isDesktop}
-          onVisibilityChange={setProfileVisible}
         />
 
         {/* Section content — all sections stay permanently mounted (visibility
